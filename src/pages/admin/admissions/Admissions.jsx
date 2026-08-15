@@ -1547,7 +1547,7 @@ import {
   rejectAdmission,
   reinstateAdmission
 } from "../../../api/admissions";
-import { getClasses } from "../../../api/class";
+import { getClasses } from "../../../api/Class";
 import useAuthStore from "../../../store/authStore";
 
 import { PageContainer, PageHeader } from "../../../components/page-shell";

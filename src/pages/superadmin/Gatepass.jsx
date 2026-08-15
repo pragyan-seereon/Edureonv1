@@ -24,7 +24,7 @@ const seed = [
 ];
 
 
-export default function GatePass() {
+export default function GatePassPage() {
   const [items, setItems] = useState(seed);
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState(null);

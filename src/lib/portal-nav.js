@@ -32,6 +32,7 @@ import {
   Trophy,
   Megaphone,
   FileBox,
+  // eslint-disable-next-line no-unused-vars
   Wallet,
   IdCard,
   ShieldCheck
@@ -110,11 +111,11 @@ const superGroups = [
     label: "Platform Overview",
     items: [
       { title: "Dashboard", url: "/super/dashboard", icon: LayoutDashboard },
-      { title: "Analytics", url: "/analytics", icon: BarChart3 },
-      { title: "Notifications", url: "/notifications", icon: Bell },
-      { title: "Transactions", url: "/transactions", icon: Wallet },
-      { title: "Audit Log", url: "/super/audit", icon: History },
-      { title: "Security & Sessions", url: "/super/security", icon: Shield },
+      // { title: "Analytics", url: "/analytics", icon: BarChart3 },
+      // { title: "Notifications", url: "/notifications", icon: Bell },
+      // { title: "Transactions", url: "/transactions", icon: Wallet },
+      // { title: "Audit Log", url: "/super/audit", icon: History },
+      // { title: "Security & Sessions", url: "/super/security", icon: Shield },
     ],
   },
 
@@ -124,7 +125,7 @@ const superGroups = [
       { title: "Institutes", url: "/super/institutes", icon: School },
       { title: "Users", url: "/super/users", icon: Users },
       { title: "Roles & Permissions", url: "/super/roles", icon: Shield },
-      { title: "Subscriptions", url: "/super/subscription", icon: IndianRupee },
+      // { title: "Subscriptions", url: "/super/subscription", icon: IndianRupee },
     ],
   },
 
@@ -134,7 +135,7 @@ const superGroups = [
       { title: "Admissions", url: "/admissions", icon: KanbanSquare },
       { title: "Students", url: "/students", icon: GraduationCap },
       { title: "Studentarchive", url: "/sudents/archive", icon: Megaphone },
-      { title: "Teachers", url: "/teachers", icon: UserCog },
+      // { title: "Teachers", url: "/teachers", icon: UserCog },
       { title: "Classes & Sections", url: "/classes", icon: School },
       // { title: "Attendance", url: "/attendance", icon: CalendarCheck },
       { title: "Assignments", url: "assignments", icon: ClipboardList },

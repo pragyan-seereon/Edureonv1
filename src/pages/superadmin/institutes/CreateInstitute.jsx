@@ -1173,9 +1173,9 @@ const confirmSubmit = async () => {
                 <Field label="TAN Number" error={errors.tan}>
                   <Input value={form.tan} onChange={(e) => set("tan", e.target.value.toUpperCase())} placeholder="ABCD12345E" maxLength={10} />
                 </Field>
-                <Field label={<>Bank Name <span className="text-red-500">*</span></>}>
+                {/* <Field label={<>Bank Name <span className="text-red-500">*</span></>}>
                   <Input value={form.bankName} onChange={(e) => set("bankName", e.target.value)} placeholder="Enter bank name" />
-                </Field>
+                </Field> */}
                 <Field label={<>Bank Account Number <span className="text-red-500">*</span></>} error={errors.accountNumber}>
 <Input
   type="text"

@@ -7,6 +7,7 @@ import {
 } from "../api/admissions";
 
 import { getClasses } from "../api/Class";
+import { getEmployees } from "../api/employee"; // adjust path if your employees API lives elsewhere
 import useAuthStore from "../store/authStore";
 
 import {
@@ -34,7 +35,7 @@ import {
 } from "./ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { Badge } from "./ui/badge";
-import { Eye, FileCheck2, FileUp, Trash2, X } from "lucide-react";
+import { Eye, FileCheck2, FileUp, Trash2, X, UserCheck2 } from "lucide-react";
 import { toast } from "sonner";
 
 const DOC_SLOTS = [
@@ -93,6 +94,7 @@ const initialState = {
   last_aggregate_percentage: "",
 
   // Father Details
+  employee_uuid: "", // set when Father's details are linked to a staff record
   father_name: "",
   father_profession: "",
   father_dob: "",
@@ -161,6 +163,7 @@ const TAB_OF_FIELD = {
   attendance_percentage: "academic",
   last_aggregate_percentage: "academic",
 
+  employee_uuid: "guardian",
   father_name: "guardian",
   father_profession: "guardian",
   father_dob: "guardian",
@@ -401,8 +404,10 @@ export function NewInquiryDialog({ trigger, onCreate }) {
   const [sources, setSources] = useState([]);
   const [classes, setClasses] = useState([]);
   const [sections, setSections] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [loadingSections, setLoadingSections] = useState(false);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [saving, setSaving] = useState(false);
   const [d, setD] = useState(initialState);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -413,19 +418,23 @@ export function NewInquiryDialog({ trigger, onCreate }) {
 
     const fetchLookups = async () => {
       setLoadingClasses(true);
+      setLoadingEmployees(true);
       try {
-        const [sourcesRes, classesRes] = await Promise.all([
+        const [sourcesRes, classesRes, employeesRes] = await Promise.all([
           getAdmissionSources(),
           getClasses(),
+          getEmployees({ is_active: true }),
         ]);
 
         setSources(sourcesRes?.data?.data ?? sourcesRes?.data ?? []);
         setClasses(classesRes?.data ?? []);
+        setEmployees(employeesRes?.data?.data ?? employeesRes?.data ?? []);
       } catch (error) {
         console.log(error);
         toast.error("Failed to load classes / admission sources");
       } finally {
         setLoadingClasses(false);
+        setLoadingEmployees(false);
       }
     };
 
@@ -434,6 +443,7 @@ export function NewInquiryDialog({ trigger, onCreate }) {
 
   useEffect(() => {
     if (!d.class_uuid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSections([]);
       return;
     }
@@ -471,6 +481,55 @@ export function NewInquiryDialog({ trigger, onCreate }) {
       delete next[k];
       return next;
     });
+  };
+
+  // Auto-fills Father's details from a selected staff record.
+  // Fields stay editable afterwards — this only sets the starting values.
+  const handleEmployeeSelect = (employeeUUID) => {
+    if (!employeeUUID) {
+      set("employee_uuid", "");
+      return;
+    }
+
+    const emp = employees.find((e) => e.employee_uuid === employeeUUID);
+    if (!emp) return;
+
+    // Aadhaar can come back as a number, a string, or null depending on the
+    // API — normalize to a plain digit string so it actually lands in the input.
+    const empAadhaar =
+      emp.aadhaar !== null && emp.aadhaar !== undefined && String(emp.aadhaar).trim() !== ""
+        ? String(emp.aadhaar).trim()
+        : "";
+
+    setD((p) => ({
+      ...p,
+      employee_uuid: employeeUUID,
+      father_name: emp.full_name || p.father_name,
+      father_profession: emp.designation || p.father_profession,
+      father_dob: emp.dob || p.father_dob,
+      father_aadhaar_no: empAadhaar || p.father_aadhaar_no,
+      primary_phone: emp.phone || p.primary_phone,
+      email: emp.email || p.email,
+    }));
+
+    if (!empAadhaar) {
+      toast.warning(`${emp.full_name} has no Aadhaar on file — enter it manually`);
+    }
+
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      [
+        "father_name",
+        "father_profession",
+        "father_dob",
+        "father_aadhaar_no",
+        "primary_phone",
+        "email",
+      ].forEach((k) => delete next[k]);
+      return next;
+    });
+
+    toast.success(`Father's details filled from ${emp.full_name}`);
   };
 
   const handleFileUpload = (slotId, files) => {
@@ -517,7 +576,7 @@ export function NewInquiryDialog({ trigger, onCreate }) {
       const formData = new FormData();
       formData.append("institute_uuid", instituteUUID);
 
-      // All fields now match backend exactly
+      // All fields now match backend exactly (employee_uuid included when set)
       Object.entries(d).forEach(([key, value]) => {
         if (value !== null && value !== undefined && value !== "") {
           formData.append(key, value);
@@ -897,6 +956,34 @@ export function NewInquiryDialog({ trigger, onCreate }) {
 
           {/* ── GUARDIAN ── */}
           <TabsContent value="guardian" className="grid sm:grid-cols-2 gap-3 mt-4">
+            <F label="Link Father to Staff Record" wide>
+              <Select
+                value={d.employee_uuid}
+                onValueChange={handleEmployeeSelect}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      loadingEmployees ? "Loading staff..." : "Select staff (optional)"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees.map((emp) => (
+                    <SelectItem key={emp.employee_uuid} value={emp.employee_uuid}>
+                      {emp.full_name} · {emp.employee_no}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {d.employee_uuid && (
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-1">
+                  <UserCheck2 className="h-3 w-3" />
+                  Father's name, profession, DOB, Aadhaar, phone & email filled from staff record — still editable below.
+                </p>
+              )}
+            </F>
+
             <F label="Father's Name" error={fieldErrors.father_name}>
               <Input
                 value={d.father_name}

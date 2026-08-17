@@ -9,27 +9,75 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { DoorOpen, Plus, Printer, ShieldCheck } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { KpiCard } from "../../components/kpi-card";
 import { toast } from "sonner";
+import { getClasses } from "../../api/Class";
+import { getSections } from "../../api/section";
+import { getDepartments } from "../../api/department";
 
 // Route registration (add this in your router file, e.g. router.jsx):
 //   import GatePassPage from "./pages/superadmin/GatePass";
 //   { path: "admin/gate-pass", element: <GatePassPage /> },
 
 const seed = [
-  { id: "GP-1042", passType: "Student", name: "Aarav Sharma", deptClass: "X-A · Roll 14", contact: "+91 98765 43210", outTime: "11:30", inTime: "13:00", purpose: "Dental appointment", vehicleNo: "—", authority: "Principal", accompaniedBy: "Parent — Mr. Sharma", status: "Returned" },
-  { id: "GP-1041", passType: "Staff", name: "Meera Iyer", deptClass: "Science Dept.", contact: "+91 99887 66554", outTime: "14:15", inTime: "—", purpose: "Board meeting at DEO office", vehicleNo: "DL 3C AB 1234", authority: "Vice Principal", accompaniedBy: "—", status: "Out" },
-  { id: "GP-1040", passType: "Visitor", name: "Rajesh Kumar", deptClass: "Vendor — CoolFix", contact: "+91 90011 22334", outTime: "16:00", inTime: "16:45", purpose: "AC maintenance pickup", vehicleNo: "DL 1A XY 9090", authority: "Admin Officer", accompaniedBy: "Security — Gate 2", status: "Returned" },
+  { id: "GP-1042", passType: "Student", name: "Aarav Sharma", className: "X-A", section: "A", department: "", rollNo: "14", contact: "+91 98765 43210", outTime: "11:30", inTime: "13:00", purpose: "Dental appointment", vehicleNo: "—", authority: "Principal", accompaniedBy: "Parent — Mr. Sharma", status: "Returned" },
+  { id: "GP-1041", passType: "Staff", name: "Meera Iyer", className: "", section: "", department: "Science Dept.", rollNo: "", contact: "+91 99887 66554", outTime: "14:15", inTime: "—", purpose: "Board meeting at DEO office", vehicleNo: "DL 3C AB 1234", authority: "Vice Principal", accompaniedBy: "—", status: "Out" },
+  { id: "GP-1040", passType: "Visitor", name: "Rajesh Kumar", className: "", section: "", department: "Vendor — CoolFix", rollNo: "", contact: "+91 90011 22334", outTime: "16:00", inTime: "16:45", purpose: "AC maintenance pickup", vehicleNo: "DL 1A XY 9090", authority: "Admin Officer", accompaniedBy: "Security — Gate 2", status: "Returned" },
 ];
 
+// Builds the compact "Class / Dept." display string used in the table & print preview
+function deptClassLabel(p) {
+  if (p.passType === "Student") {
+    const bits = [p.className, p.section && `Sec ${p.section}`, p.rollNo && `Roll ${p.rollNo}`].filter(Boolean);
+    return bits.length ? bits.join(" · ") : "—";
+  }
+  return p.department || "—";
+}
 
 export default function GatePassPage() {
   const [items, setItems] = useState(seed);
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState(null);
-  const blank = { passType: "Student", name: "", deptClass: "", contact: "", outTime: "", inTime: "", purpose: "", vehicleNo: "", authority: "", accompaniedBy: "" };
+  const blank = { passType: "Student", name: "", classUUID: "", className: "", sectionUUID: "", section: "", rollNo: "", departmentUUID: "", department: "", contact: "", outTime: "", inTime: "", purpose: "", vehicleNo: "", authority: "", accompaniedBy: "" };
   const [f, setF] = useState(blank);
+
+const [classes, setClasses] = useState([]);
+const [sections, setSections] = useState([]);
+const [loadingSections, setLoadingSections] = useState(false);
+const [departments, setDepartments] = useState([]);
+
+useEffect(() => {
+  if (!open) return;
+  getClasses()
+    .then((res) => setClasses(res?.data || res || []))
+    .catch(() => toast.error("Failed to load classes"));
+}, [open]);
+
+useEffect(() => {
+  if (!open) return;
+  getDepartments()
+    .then((res) => setDepartments(res?.data || res || []))
+    .catch(() => toast.error("Failed to load departments"));
+}, [open]);
+
+useEffect(() => {
+  if (!f.classUUID) {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSections([]);
+    return;
+  }
+  setLoadingSections(true);
+  getSections()
+    .then((res) => {
+      const all = res?.data || res || [];
+      setSections(all.filter((s) => s.class_uuid === f.classUUID));
+    })
+    .catch(() => toast.error("Failed to load sections"))
+    .finally(() => setLoadingSections(false));
+}, [f.classUUID]);
+
+  const isStudent = f.passType === "Student";
 
   const submit = () => {
     if (!f.name || !f.outTime) return toast.error("Name and Out Time are required");
@@ -47,7 +95,6 @@ export default function GatePassPage() {
       <PageHeader
         eyebrow="Admin · Documents"
         title="Gate Pass Generation"
-        description="Issue and track gate passes for students, staff and visitors. Capture timing, purpose, vehicle and approving authority, then print."
         actions={
           <Button size="sm" className="gradient-primary border-0" onClick={() => setOpen(true)}><Plus className="h-4 w-4" />New Gate Pass</Button>
         }
@@ -81,7 +128,7 @@ export default function GatePassPage() {
                   <TableCell className="font-mono text-xs">{p.id}</TableCell>
                   <TableCell><Badge variant="secondary" className="text-[10px]">{p.passType}</Badge></TableCell>
                   <TableCell className="text-sm font-medium">{p.name}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{p.deptClass}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{deptClassLabel(p)}</TableCell>
                   <TableCell className="text-xs">{p.outTime}</TableCell>
                   <TableCell className="text-xs">{p.inTime}</TableCell>
                   <TableCell className="text-xs max-w-[180px] truncate">{p.purpose}</TableCell>
@@ -106,9 +153,70 @@ export default function GatePassPage() {
                 <SelectContent>{["Student", "Staff", "Visitor"].map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <Field label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-            <Field label="Class / Section / Department"><Input value={f.deptClass} onChange={(e) => setF({ ...f, deptClass: e.target.value })} placeholder="X-A · Roll 14 / Science Dept." /></Field>
-            <Field label="Contact No."><Input value={f.contact} onChange={(e) => setF({ ...f, contact: e.target.value })} placeholder="+91 …" /></Field>
+           <Field label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+
+            {isStudent ? (
+              <>
+               <Field label="Class">
+                  <Select
+                    value={f.classUUID}
+                    onValueChange={(v) => {
+                      const cls = classes.find((c) => c.class_uuid === v);
+                      setF({ ...f, classUUID: v, className: cls?.class_name || "", sectionUUID: "", section: "" });
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
+                    <SelectContent>
+                      {classes.map((c) => (
+                        <SelectItem key={c.class_uuid} value={c.class_uuid}>{c.class_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+            <Field label="Section">
+                  <Select
+                    value={f.sectionUUID}
+                    onValueChange={(v) => {
+                      const sec = sections.find((s) => s.section_uuid === v);
+                      setF({ ...f, sectionUUID: v, section: sec?.section_name || "" });
+                    }}
+                    disabled={!f.classUUID || loadingSections}
+                  >
+                    <SelectTrigger><SelectValue placeholder={loadingSections ? "Loading…" : "Select section"} /></SelectTrigger>
+                    <SelectContent>
+                      {sections.map((s) => (
+                        <SelectItem key={s.section_uuid} value={s.section_uuid}>{s.section_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                <Field label="Roll No."><Input value={f.rollNo} onChange={(e) => setF({ ...f, rollNo: e.target.value })} placeholder="14" /></Field>
+                <Field label="Contact No."><Input value={f.contact} onChange={(e) => setF({ ...f, contact: e.target.value })} placeholder="+91 …" /></Field>
+              </>
+           ) : (
+              <>
+                <Field label="Department">
+                  <Select
+                    value={f.departmentUUID}
+                    onValueChange={(v) => {
+                      const dept = departments.find((d) => d.department_uuid === v);
+                      setF({ ...f, departmentUUID: v, department: dept?.department_name || "" });
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+                    <SelectContent>
+                      {departments.map((d) => (
+                        <SelectItem key={d.department_uuid} value={d.department_uuid}>{d.department_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Contact No."><Input value={f.contact} onChange={(e) => setF({ ...f, contact: e.target.value })} placeholder="+91 …" /></Field>
+              </>
+            )}
+
             <Field label="Out Time *"><Input type="time" value={f.outTime} onChange={(e) => setF({ ...f, outTime: e.target.value })} /></Field>
             <Field label="In Time"><Input type="time" value={f.inTime} onChange={(e) => setF({ ...f, inTime: e.target.value })} /></Field>
             <Field label="Vehicle No."><Input value={f.vehicleNo} onChange={(e) => setF({ ...f, vehicleNo: e.target.value })} placeholder="DL 3C AB 1234" /></Field>
@@ -156,7 +264,7 @@ function PreviewDialog({ pass, onClose }) {
             </div>
             <div className="p-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
               <Row label="Name" value={pass.name} />
-              <Row label="Class / Dept." value={pass.deptClass || "—"} />
+              <Row label="Class / Dept." value={deptClassLabel(pass)} />
               <Row label="Contact" value={pass.contact || "—"} />
               <Row label="Vehicle No." value={pass.vehicleNo} />
               <Row label="Out Time" value={pass.outTime} />

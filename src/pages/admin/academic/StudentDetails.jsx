@@ -1,9 +1,12 @@
+/* eslint-disable react-hooks/immutability */
+
 import {
   getStudentByUuid,
   deleteStudent,
   archiveStudent,
   restoreStudent,
   getStudentActivity,
+  // eslint-disable-next-line no-unused-vars
   updateStudent,
 } from "../../../api/students";
 import { useEffect, useMemo, useState } from "react";
@@ -18,6 +21,7 @@ import {
 } from "../../../components/ui/card";
 import { Button } from "../../../components/ui/button";
 import { Badge } from "../../../components/ui/badge";
+// eslint-disable-next-line no-unused-vars
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Textarea } from "../../../components/ui/textarea";
@@ -32,6 +36,7 @@ import {
   AvatarImage,
   AvatarFallback,
 } from "../../../components/ui/avatar";
+// eslint-disable-next-line no-unused-vars
 import { Progress } from "../../../components/ui/progress";
 import {
   Table,
@@ -60,7 +65,6 @@ import {
   ChevronLeft,
   ArrowUpRight,
   ArrowRightLeft,
-  UserX,
   Bus,
   Building2,
   IdCard,
@@ -81,6 +85,7 @@ import {
   Users,
   MapPin,
   HeartPulse,
+  Briefcase,
 } from "lucide-react";
 import { toast } from "sonner";
 import { StudentDialog } from "../../../components/student-dialog";
@@ -128,6 +133,7 @@ function seedFrom(str) {
 
 export default function StudentDetails() {
   const { id } = useParams();
+  // eslint-disable-next-line no-unused-vars
   const navigate = useNavigate();
 
   const [editOpen, setEditOpen] = useState(false);
@@ -136,6 +142,7 @@ export default function StudentDetails() {
   const [loading, setLoading] = useState(true);
   const [activityLogs, setActivityLogs] = useState([]);
   const [notes, setNotes] = useState([]);
+  // eslint-disable-next-line no-unused-vars
   const [viewingDoc, setViewingDoc] = useState(null);
 
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
@@ -280,6 +287,10 @@ export default function StudentDetails() {
 
   const seed = seedFrom(s.student_uuid || s.admission_no || s.full_name);
 
+  // Student's Father record is linked to a staff (employee) account — highlight it
+  const isStaffChild = Boolean(s.employee_uuid);
+  const staffChildName = s.employee_name || s.employee?.full_name || null;
+
   return (
     <PageContainer>
       <PageHeader
@@ -335,8 +346,20 @@ export default function StudentDetails() {
         }
       />
 
+      {isStaffChild && (
+        <div className="mb-5 flex items-center gap-2.5 rounded-md border border-chart-3/30 bg-chart-3/10 px-4 py-2.5">
+          <Briefcase className="h-4 w-4 text-chart-3 shrink-0" />
+          <p className="text-sm text-chart-3">
+            <span className="font-semibold">Staff child</span>
+            {staffChildName
+              ? ` — Father's details are linked to staff record for ${staffChildName}.`
+              : " — Father's details are linked to a staff record."}
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-        <Card className="lg:col-span-2 border-border/60">
+        <Card className={`lg:col-span-2 ${isStaffChild ? "border-chart-3/40" : "border-border/60"}`}>
           <CardContent className="p-5 flex items-center gap-5">
             <Avatar className="h-24 w-24">
               {s.passport_photo_file ? (
@@ -355,6 +378,15 @@ export default function StudentDetails() {
                 {s.blood_group && <Badge variant="outline">{s.blood_group}</Badge>}
                 {s.category && s.category !== "General" && (
                   <Badge variant="outline">{s.category}</Badge>
+                )}
+                {isStaffChild && (
+                  <Badge
+                    className="bg-chart-3/15 text-chart-3 border-chart-3/20 gap-1"
+                    title={staffChildName ? `Linked to staff: ${staffChildName}` : "Linked to a staff record"}
+                  >
+                    <Briefcase className="h-3 w-3" />
+                    Staff Child
+                  </Badge>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
@@ -483,6 +515,17 @@ export default function StudentDetails() {
           </SectionCard>
 
           <SectionCard icon={<Users className="h-4 w-4" />} title="Father Details">
+            {isStaffChild && (
+              <div className="mb-3 flex items-center gap-2.5 rounded-md border border-chart-3/30 bg-chart-3/10 px-3 py-2">
+                <Briefcase className="h-3.5 w-3.5 text-chart-3 shrink-0" />
+                <p className="text-xs text-chart-3">
+                  <span className="font-semibold">Staff Child</span>
+                  {staffChildName
+                    ? ` — these details were linked from ${staffChildName}'s staff record.`
+                    : " — these details were linked from a staff record."}
+                </p>
+              </div>
+            )}
             <DetailGrid rows={[
               ["Father Name", s.father_name],
               ["Father Profession", s.father_profession],
@@ -1014,6 +1057,7 @@ function ResultsTab({ seed, onPrint }) {
 }
 
 /* ====================== FEES TAB ====================== */
+// eslint-disable-next-line no-unused-vars
 function FeesTab({ student, seed }) {
   const myTxns = useMemo(() => ([
     { id: "FEE-001", head: "Tuition Fee", amount: 25000, mode: "Online", status: "Success", date: "15 Jul 2026" },
@@ -1263,6 +1307,7 @@ function Stat({ label, value }) {
   );
 }
 
+// eslint-disable-next-line no-unused-vars
 function VF({ label, value, mono }) {
   return (
     <div className="space-y-0.5 min-w-0">

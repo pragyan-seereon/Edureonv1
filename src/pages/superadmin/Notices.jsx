@@ -172,17 +172,12 @@ const buildHolidayFormData = ({
   formData.append("description", body);
   formData.append("category", CATEGORY_MAP[category] ?? category ?? "HOLIDAY");
   formData.append("audience_type", AUDIENCE_MAP[audience] ?? audience);
-  if (audience === "Class") {
-    if (classUUID) {
-      formData.append(
-        "class_audiences",
-        JSON.stringify([
-          {
-            class_uuid: classUUID,
-            ...(sectionUUID ? { section_uuids: [sectionUUID] } : {}),
-          },
-        ])
-      );
+  if (audience === "Class" && classUUID) {
+    // Backend's HolidayCalendarDraftRequest.as_form reads class_uuid and
+    // section_uuids as direct form fields (not a class_audiences JSON blob).
+    formData.append("class_uuid", classUUID);
+    if (sectionUUID) {
+      formData.append("section_uuids", sectionUUID);
     }
   }
   formData.append("start_date", startDate);
@@ -236,10 +231,7 @@ const buildAcademicCalendarFormData = ({
   return formData;
 };
 
-// Badge styling for the Academic Calendar list, matching the reference design
-// (solid, colored pill per category — Exam = red, Event = blue, etc.)
-// The API returns event_type/display_type as singular ("Exam", "Event"),
-// while the create/edit form's category dropdown uses "Events" — both are covered.
+
 const CALENDAR_BADGE_STYLES = {
   Exam: "bg-red-600 text-white hover:bg-red-600 border-transparent",
   Event: "bg-blue-600 text-white hover:bg-blue-600 border-transparent",
@@ -385,7 +377,17 @@ const getHolidayAttachments = (item) =>
     url: a.file_url ?? a.url,
   }));
 const getHolidayAudience = (item) => item.audience_type ?? item.audience ?? "";
-const getHolidayTargetClass = (item) => item.section_name ?? item.class_name ?? item.targetClass;
+const getHolidayCategory = (item) =>
+  CATEGORY_REVERSE_MAP[item.category] ?? item.category ?? "Holiday";
+const getHolidayTargetClass = (item) => {
+  if (Array.isArray(item.sections) && item.sections.length > 0) {
+    return item.sections
+      .map((s) => s.section_name)
+      .filter(Boolean)
+      .join(", ");
+  }
+  return item.class_name ?? item.targetClass ?? "";
+};
 
 export default function Notices() {
   const [notices, setNotices] = useState([]);
@@ -450,25 +452,47 @@ const [openMenuUUID, setOpenMenuUUID] = useState(null);
   }
 }, []);
 
-  useEffect(() => {
-  if (form.audience === "Class" && classesList.length === 0 && !loadingClasses) {
+ useEffect(() => {
+  if (form.audience !== "Class") return;
+
+  const loadClasses = async () => {
     setLoadingClasses(true);
-    getClasses()
-      .then((res) => setClassesList(getResponseList(res)))
-      .catch(() => toast.error("Failed to load classes"))
-      .finally(() => setLoadingClasses(false));
-  }
-}, [form.audience, classesList.length, loadingClasses]);
+
+    try {
+      const res = await getClasses();
+      const list = getResponseList(res);
+      setClassesList(list);
+    } catch (error) {
+      console.error("Failed to load classes:", error);
+      toast.error("Failed to load classes");
+    } finally {
+      setLoadingClasses(false);
+    }
+  };
+
+  loadClasses();
+}, [form.audience]);
 
 useEffect(() => {
-  if (form.audience === "Class" && sectionsList.length === 0 && !loadingSections) {
+  if (form.audience !== "Class") return;
+
+  const loadSections = async () => {
     setLoadingSections(true);
-    getSections()
-      .then((res) => setSectionsList(getResponseList(res)))
-      .catch(() => toast.error("Failed to load sections"))
-      .finally(() => setLoadingSections(false));
-  }
-}, [form.audience, sectionsList.length, loadingSections]);
+
+    try {
+      const res = await getSections();
+      const list = getResponseList(res);
+      setSectionsList(list);
+    } catch (error) {
+      console.error("Failed to load sections:", error);
+      toast.error("Failed to load sections");
+    } finally {
+      setLoadingSections(false);
+    }
+  };
+
+  loadSections();
+}, [form.audience]);
 
 const filteredSections = sectionsList.filter(
   (s) => String(s.class_uuid ?? s.classUUID) === String(form.selectedClassUUID)
@@ -1099,7 +1123,7 @@ const openEditEvent = async (item) => {
     }
   };
 
-  const openEditHoliday = async (item) => {
+ const openEditHoliday = async (item) => {
   const uuid = getHolidayUUID(item);
   setOpenMenuUUID(null);
   setEditingHolidayUUID(uuid);
@@ -1109,14 +1133,16 @@ const openEditEvent = async (item) => {
   try {
     const response = await getHolidayById(uuid);
     const detail = response?.data ?? response;
+    const firstSection = Array.isArray(detail.sections) ? detail.sections[0] : null;
     setForm({
       title: detail.title ?? "",
       body: getHolidayBody(detail),
       category: CATEGORY_REVERSE_MAP[detail.category] ?? detail.category ?? "Holiday",
-      audience: AUDIENCE_REVERSE_MAP[getHolidayAudience(detail)] ?? getHolidayAudience(detail) ?? "All",
+      audience:
+        AUDIENCE_REVERSE_MAP[getHolidayAudience(detail)] ?? getHolidayAudience(detail) ?? "All",
       targetClass: getHolidayTargetClass(detail) ?? "",
-      selectedClassUUID: detail.class_uuid ?? "",
-      selectedSectionUUID: detail.section_uuid ?? "",
+      selectedClassUUID: detail.class_uuid ?? firstSection?.class_uuid ?? "",
+      selectedSectionUUID: firstSection?.section_uuid ?? "",
       attachments: [],
       existingAttachments: getHolidayAttachments(detail),
       dateRange: {
@@ -1254,7 +1280,11 @@ const displayList = isAcademicTab ? academicItems : isEventsTab ? events : isHol
 const listLoading = isAcademicTab ? loadingCalendar : isEventsTab ? loadingEvents : isHolidaysTab ? loadingHolidays : loadingNotices;
 const getItemUUID = isAcademicTab ? getCalendarUUID : isEventsTab ? getEventUUID : isHolidaysTab ? getHolidayUUID : getNoticeUUID;
 const getItemTitle = isAcademicTab ? getCalendarTitle : (item) => item.title;
-const getItemCategory = isAcademicTab ? getCalendarCategory : (item) => item.category;
+const getItemCategory = isAcademicTab
+  ? getCalendarCategory
+  : isHolidaysTab
+  ? getHolidayCategory
+  : (item) => item.category;
 const getItemBody = isAcademicTab ? getCalendarDescription : isEventsTab ? getEventBody : isHolidaysTab ? getHolidayBody : getNoticeBody;
 const getItemStatus = isAcademicTab ? getCalendarStatus : isEventsTab ? getEventStatus : isHolidaysTab ? getHolidayStatus : getNoticeStatus;
 const getItemAttachments = isAcademicTab ? getCalendarAttachments : isEventsTab ? getEventAttachments : isHolidaysTab ? getHolidayAttachments : getNoticeAttachments;

@@ -1,4 +1,7 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Dialog,
   DialogContent,
@@ -135,7 +138,13 @@ const MAX_FILE_MB = 5;
 // NOTE: as of the backend code available, there is no endpoint that
 // lets the client SET this directly; it's shown here read-only and
 // reset to "Pending" server-side whenever a document is replaced.
+// eslint-disable-next-line no-unused-vars
 const VERIFICATION_STATUSES = ["Pending", "Verified", "Rejected"];
+
+// localStorage key used to remember an in-progress employee-onboarding
+// draft across sessions, mirroring the same pattern used for student
+// admission drafts (see StudentDialog's DRAFT_STORAGE_KEY).
+const DRAFT_STORAGE_KEY = "employeeOnboardingDraftUuid";
 
 // ==========================================================
 // Reference-data helpers
@@ -163,6 +172,7 @@ const asOptions = (list, valueKeys, labelKeys) =>
     }))
     .filter((opt) => opt.value !== "");
 
+// eslint-disable-next-line no-unused-vars
 const isEmployeeRole = (role) => {
   const t = firstOf(role, ["role_type", "type", "category", "role_category"]);
   return String(t).trim().toLowerCase() === "employee";
@@ -252,6 +262,9 @@ const empty = {
   ifsc: "",
 };
 
+// ==========================================================
+// Regex / format constants - mirror backend Pydantic patterns exactly
+// ==========================================================
 const NAME_RE = /^[A-Za-z ]+$/;
 const PHONE_RE = /^[6-9]\d{9}$/;
 const PIN_RE = /^\d{6}$/;
@@ -260,6 +273,47 @@ const AADHAAR_RE = /^\d{12}$/;
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 const ACCOUNT_RE = /^\d{9,18}$/;
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+// Backend uses pydantic's EmailStr; this is a practical client-side
+// approximation of it (full RFC validation happens server-side anyway).
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Matches Field(min_length=36, max_length=36) UUID string fields
+// (department_uuid, shift_uuid, reporting_manager_uuid, approver_*_uuid).
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+// Mirrors Pydantic's Decimal(..., decimal_places=2) constraint used on
+// EmployeeDraftSalaryUpdate's gross_salary / basic_salary / hra /
+// other_allowance / allowances fields.
+function hasValidDecimalPlaces(value, maxPlaces = 2) {
+  if (value === "" || value === null || value === undefined) return true;
+  const str = String(value);
+  const dot = str.indexOf(".");
+  if (dot === -1) return true;
+  return str.length - dot - 1 <= maxPlaces;
+}
+
+// Strips everything but digits and hard-caps the length, so numeric-only
+// fields (phone, aadhaar, pin, etc.) can never physically accept more
+// characters than the backend pattern allows - matches the field's
+// regex length on every keystroke instead of only failing validation
+// after the fact.
+const digitsOnly = (value, maxLen) =>
+  (value || "").replace(/\D/g, "").slice(0, maxLen);
+
+// Native <input type="date"> lets some browsers keep accepting extra
+// digits in the year segment (e.g. "111111-11-11") instead of capping
+// it at 4. This clamps the year segment to 4 digits on every change so
+// a fat-fingered year can never make it into state.
+const sanitizeDateValue = (value) => {
+  if (!value) return value;
+  const parts = value.split("-");
+  if (parts.length === 3 && parts[0].length > 4) {
+    parts[0] = parts[0].slice(0, 4);
+  }
+  return parts.join("-");
+};
+
+const TODAY_STR = new Date().toISOString().slice(0, 10);
+const MIN_DATE_STR = "1900-01-01";
 
 function calcAge(dobStr) {
   const dob = new Date(dobStr);
@@ -303,7 +357,11 @@ function validatePersonal(f, isEditMode, passwordMode) {
     else if (age > 70) e.dob = "Invalid date of birth.";
   }
 
-  if (!f.email) e.email = "Email is required.";
+  if (!f.email) {
+    e.email = "Email is required.";
+  } else if (!EMAIL_RE.test(f.email)) {
+    e.email = "Enter a valid email address.";
+  }
 
   if (!isEditMode) {
     if (passwordMode !== "auto") {
@@ -362,12 +420,25 @@ function validatePersonal(f, isEditMode, passwordMode) {
     e.pin = "PIN must be exactly 6 digits.";
   }
 
+  if (f.nationality && f.nationality.length > 100) {
+    e.nationality = "Nationality must be at most 100 characters.";
+  }
+
   if (f.passport_number && !PASSPORT_RE.test(f.passport_number)) {
     e.passport_number = "Invalid passport number format.";
   }
 
   if (f.marital_status === "Married" && !f.spouse_name) {
     e.spouse_name = "Spouse name is required when marital status is Married.";
+  }
+  if (f.spouse_name && f.spouse_name.length > 150) {
+    e.spouse_name = "Spouse name must be at most 150 characters.";
+  }
+  if (f.child_name && f.child_name.length > 150) {
+    e.child_name = "Child name must be at most 150 characters.";
+  }
+  if (f.id_number && f.id_number.length > 50) {
+    e.id_number = "ID number must be at most 50 characters.";
   }
 
   return e;
@@ -381,6 +452,8 @@ function validateJob(f) {
   }
   if (!f.department_uuid) {
     e.department_uuid = "Department is required.";
+  } else if (!UUID_RE.test(f.department_uuid)) {
+    e.department_uuid = "Invalid department selected.";
   }
   if (!STAFF_TYPE.includes(f.staff_type)) {
     e.staff_type = "Staff type is required.";
@@ -415,6 +488,16 @@ function validateJob(f) {
         "Probation period and probation date are required when status is Probation.";
     }
   }
+  if (
+    f.probation_period !== "" &&
+    f.probation_period !== null &&
+    f.probation_period !== undefined
+  ) {
+    const pp = Number(f.probation_period);
+    if (!Number.isInteger(pp) || pp < 0 || pp > 365) {
+      e.probation_period = "Probation period must be an integer between 0 and 365.";
+    }
+  }
   if (f.employee_status === "Resigned" && !f.leaving_date) {
     e.leaving_date = "Leaving date is required when status is Resigned.";
   }
@@ -433,13 +516,45 @@ function validateJob(f) {
     e.probation_date = "Probation date cannot be before join date.";
   }
 
-  if (!f.shift_uuid) e.shift_uuid = "Shift is required.";
+  if (!f.shift_uuid) {
+    e.shift_uuid = "Shift is required.";
+  } else if (!UUID_RE.test(f.shift_uuid)) {
+    e.shift_uuid = "Invalid shift selected.";
+  }
 
+  if (f.reporting_manager_uuid && !UUID_RE.test(f.reporting_manager_uuid)) {
+    e.reporting_manager_uuid = "Invalid reporting manager selected.";
+  }
+  if (f.approver_one_uuid && !UUID_RE.test(f.approver_one_uuid)) {
+    e.approver_one_uuid = "Invalid approver selected.";
+  }
+  if (f.approver_two_uuid && !UUID_RE.test(f.approver_two_uuid)) {
+    e.approver_two_uuid = "Invalid approver selected.";
+  }
   if (
     f.approver_one_uuid &&
     f.approver_one_uuid === f.approver_two_uuid
   ) {
     e.approver_two_uuid = "Approver One and Approver Two cannot be the same.";
+  }
+
+  if (f.specialization && f.specialization.length > 100) {
+    e.specialization = "Specialization must be at most 100 characters.";
+  }
+  if (f.experience && f.experience.length > 100) {
+    e.experience = "Experience must be at most 100 characters.";
+  }
+  if (f.previous_employment && f.previous_employment.length > 200) {
+    e.previous_employment = "Previous employment must be at most 200 characters.";
+  }
+  if (f.additional_duties && f.additional_duties.length > 500) {
+    e.additional_duties = "Additional duties must be at most 500 characters.";
+  }
+  if (f.remark && f.remark.length > 500) {
+    e.remark = "Remark must be at most 500 characters.";
+  }
+  if (f.biometric_id && f.biometric_id.length > 50) {
+    e.biometric_id = "Biometric ID must be at most 50 characters.";
   }
 
   return e;
@@ -455,10 +570,34 @@ function validateSalary(f) {
 
   if (!f.gross_salary || gross <= 0) {
     e.gross_salary = "Gross salary must be greater than 0.";
+  } else if (!hasValidDecimalPlaces(f.gross_salary)) {
+    e.gross_salary = "Gross salary can have at most 2 decimal places.";
   }
+
   if (f.basic_salary === "" || basic < 0) {
     e.basic_salary = "Basic salary is required.";
+  } else if (!hasValidDecimalPlaces(f.basic_salary)) {
+    e.basic_salary = "Basic salary can have at most 2 decimal places.";
   }
+
+  if (hra < 0) {
+    e.hra = "HRA cannot be negative.";
+  } else if (!hasValidDecimalPlaces(f.hra)) {
+    e.hra = "HRA can have at most 2 decimal places.";
+  }
+
+  if (other < 0) {
+    e.other_allowance = "Other allowance cannot be negative.";
+  } else if (!hasValidDecimalPlaces(f.other_allowance)) {
+    e.other_allowance = "Other allowance can have at most 2 decimal places.";
+  }
+
+  if (allowances < 0) {
+    e.allowances = "Allowances cannot be negative.";
+  } else if (!hasValidDecimalPlaces(f.allowances)) {
+    e.allowances = "Allowances can have at most 2 decimal places.";
+  }
+
   if (!e.gross_salary && !e.basic_salary) {
     if (basic > gross) {
       e.basic_salary = "Basic salary cannot exceed gross salary.";
@@ -482,6 +621,15 @@ function validateLegal(f) {
   }
   if (f.uan_number && !AADHAAR_RE.test(f.uan_number)) {
     e.uan_number = "UAN number must be exactly 12 digits.";
+  }
+  if (f.pf_number && f.pf_number.length > 30) {
+    e.pf_number = "PF number must be at most 30 characters.";
+  }
+  if (f.esi_number && f.esi_number.length > 20) {
+    e.esi_number = "ESI number must be at most 20 characters.";
+  }
+  if (f.medical_notes && f.medical_notes.length > 1000) {
+    e.medical_notes = "Medical notes must be at most 1000 characters.";
   }
   return e;
 }
@@ -895,6 +1043,15 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
   // so re-saving never creates a duplicate draft.
   const [draftUuid, setDraftUuid] = useState(null);
 
+  // Resume-draft prompt: when the onboarding dialog opens in "new
+  // employee" mode and a saved draft_uuid is found in localStorage, we
+  // fetch that draft and ask the user whether to pick up where they
+  // left off or discard it and start fresh. The form stays blank/inert
+  // until the user answers. Mirrors the same pattern used in
+  // StudentDialog.
+  const [resumePrompt, setResumePrompt] = useState(null); // { draftUuid, record } | null
+  const [checkingDraft, setCheckingDraft] = useState(false);
+
   // Review-tab state: completion summary returned by reviewEmployeeDraft,
   // fetched when the user reaches the Review tab. Only used in "onboard
   // new employee" mode - edit mode has no draft to review.
@@ -969,11 +1126,107 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
     }
   }, [ref.roles]);
 
+  // Whenever we have a real draft_uuid backing the form in new-employee
+  // mode, remember it so the draft can be resumed later (see the
+  // load-effect below) or explicitly discarded via handleDiscardDraft /
+  // handleStartNewFromPrompt.
+  useEffect(() => {
+    if (draftUuid && !isEditMode) {
+      localStorage.setItem(DRAFT_STORAGE_KEY, draftUuid);
+    }
+  }, [draftUuid, isEditMode]);
+
+  // Resets every piece of per-dialog state back to a blank "new
+  // employee" form. Used both when there's no draft to resume and after
+  // the user explicitly chooses to discard/start over.
+  const resetToBlankEmployeeForm = () => {
+    setF(empty);
+    setAssignments([]);
+    setDocFiles({});
+    setExistingDocuments([]);
+    setDraftUuid(null);
+    setPasswordMode("manual");
+    setShowPassword(false);
+    setResumePrompt(null);
+  };
+
+  // User chose "Resume Draft" on the resume-prompt — hydrate the form
+  // from the fetched draft record and jump back to whichever step it
+  // was last saved on (falling back to Personal if the backend doesn't
+  // send current_step, or sends one we don't recognise).
+  const handleResumeDraft = () => {
+    if (!resumePrompt) return;
+    const { draftUuid: uuid, record } = resumePrompt;
+
+    setF({
+      ...empty,
+      ...record,
+      // Never resurrect a password from a fetched draft — it's hashed
+      // server-side (or not yet set) and shouldn't round-trip into the
+      // form.
+      password: "",
+      employee_status: record.status || record.employee_status || empty.employee_status,
+    });
+
+    setAssignments(
+      record.assignments?.length
+        ? record.assignments.map((a, i) => ({
+            id: a.id ?? `A${i}-${a.class_uuid ?? ""}-${a.subject_uuid ?? ""}`,
+            class_uuid: a.class_uuid ?? "",
+            subject_uuid: a.subject_uuid ?? "",
+          }))
+        : []
+    );
+
+    setDocFiles({});
+    // Drafts don't expose the same "existing document" shape a
+    // submitted employee record does, so there's nothing to preview
+    // here yet — any documents already uploaded to this draft are kept
+    // as-is server-side unless the user uploads a replacement.
+    setExistingDocuments([]);
+    setDraftUuid(uuid);
+    setPasswordMode("manual");
+    setShowPassword(false);
+    setErrors({});
+    setTab(TAB_ORDER.includes(record.current_step) ? record.current_step : "personal");
+    setResumePrompt(null);
+  };
+
+  // User chose "Start New" on the resume-prompt — abandon the old draft
+  // reference and start completely blank.
+  const handleStartNewFromPrompt = () => {
+    setResumePrompt(null);
+    localStorage.removeItem(DRAFT_STORAGE_KEY);
+    resetToBlankEmployeeForm();
+    // NOTE: there's currently no deleteEmployeeDraft endpoint wired up
+    // in ../api/employee (unlike the student flow's deleteStudentDraft),
+    // so the abandoned draft row is only forgotten locally, not removed
+    // server-side. Wire in a delete call here if/when that endpoint
+    // exists.
+  };
+
+  // Explicit "Discard Draft" action in the footer, available once a
+  // draft exists for the current session (same idea as
+  // handleStartNewFromPrompt, just triggered from the footer instead of
+  // the resume-prompt).
+  const handleDiscardDraft = () => {
+    localStorage.removeItem(DRAFT_STORAGE_KEY);
+    resetToBlankEmployeeForm();
+    toast.success("Draft discarded");
+  };
+
   // ==========================================================
   // Load employee data for edit mode. Also captures the employee's
   // existing documents into `existingDocuments` for display.
+  //
+  // In "new employee" (onboarding) mode, checks localStorage for a
+  // draft_uuid left over from a previous session; if found, fetches it
+  // and shows the Resume/Start New prompt instead of assuming either
+  // choice. The form itself stays blank until the user answers.
   // ==========================================================
   useEffect(() => {
+    if (!open) return;
+
     if (employee) {
       const loadEmployeeData = async () => {
         try {
@@ -1025,21 +1278,44 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
       };
 
       loadEmployeeData();
-    } else if (open) {
-      setF(empty);
-      setAssignments([]);
-      setDocFiles({});
-      setExistingDocuments([]);
-      setDraftUuid(null);
-      setPasswordMode("manual");
-      setShowPassword(false);
-    }
-
-    if (open) {
       setTab("personal");
       setErrors({});
       setReviewData(null);
+      setResumePrompt(null);
+      return;
     }
+
+    // ── NEW EMPLOYEE (onboarding) — check for a resumable draft first ──
+    setTab("personal");
+    setErrors({});
+    setReviewData(null);
+
+    const savedUuid = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!savedUuid) {
+      resetToBlankEmployeeForm();
+      return;
+    }
+
+    setCheckingDraft(true);
+    Promise.resolve(getEmployeeDraft(savedUuid))
+      .then((res) => {
+        const record = res?.data ?? res;
+        if (record) {
+          setResumePrompt({ draftUuid: savedUuid, record });
+        } else {
+          localStorage.removeItem(DRAFT_STORAGE_KEY);
+          resetToBlankEmployeeForm();
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        // Stale / expired / already-submitted draft reference — drop it
+        // rather than dangling a prompt the server can't back up.
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+        resetToBlankEmployeeForm();
+      })
+      .finally(() => setCheckingDraft(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee, open]);
 
   const addAssignment = () =>
@@ -1519,6 +1795,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
       }
 
       await submitEmployeeDraft(draftUuid);
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
       toast.success("Employee onboarded successfully");
       onOpenChange(false);
       onSuccess?.();
@@ -1556,16 +1833,19 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const managerOptions = asOptions(
     ref.managers,
     ["employee_uuid", "uuid", "id"],
     ["full_name", "name"],
   );
+  // eslint-disable-next-line no-unused-vars
   const classOptions = asOptions(
     ref.classes,
     ["class_uuid", "uuid", "id"],
     ["class_name", "name"],
   );
+  // eslint-disable-next-line no-unused-vars
   const subjectOptions = asOptions(
     ref.subjects,
     ["subject_uuid"],
@@ -1616,16 +1896,44 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        onPointerDownOutside={(e) => {
+          // The resume-draft prompt is portaled straight to
+          // document.body (outside Radix's own internal Portal for
+          // DialogContent), so Radix's DismissableLayer would otherwise
+          // treat clicks on it as "outside" this DialogContent and
+          // auto-close the whole Dialog. Block that while it's open —
+          // it manages its own closing explicitly (Resume / Start New).
+          if (resumePrompt) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+          if (resumePrompt) {
+            e.preventDefault();
+          }
+        }}
+      >
         <DialogHeader>
-          <DialogTitle className="font-display">
+          <DialogTitle className="font-display flex items-center gap-2">
             {employee ? "Edit Employee" : "Onboard Employee"}
+            {!isEditMode && draftUuid && (
+              <Badge variant="outline" className="text-[10px] font-normal">
+                Draft in progress
+              </Badge>
+            )}
           </DialogTitle>
           <DialogDescription>
             {employee
               ? "Update staff record."
               : "Add a teaching or non-teaching staff member."}
           </DialogDescription>
+          {!isEditMode && checkingDraft && (
+            <p className="text-xs text-muted-foreground">
+              Checking for an in-progress draft…
+            </p>
+          )}
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={setTab}>
@@ -1645,7 +1953,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
             value="personal"
             className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2"
           >
-            <Field label="ID number">
+            <Field label="ID number" error={errors.id_number}>
               <Input
                 value={f.id_number}
                 onChange={(e) => setF({ ...f, id_number: e.target.value })}
@@ -1677,16 +1985,25 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
             <Field label="Date of birth *" error={errors.dob}>
               <Input
                 type="date"
+                min={MIN_DATE_STR}
+                max={TODAY_STR}
                 value={f.dob}
-                onChange={(e) => setF({ ...f, dob: e.target.value })}
+                onChange={(e) =>
+                  setF({ ...f, dob: sanitizeDateValue(e.target.value) })
+                }
               />
             </Field>
             <Field label="Anniversary date">
               <Input
                 type="date"
+                min={MIN_DATE_STR}
+                max={TODAY_STR}
                 value={f.anniversary_date}
                 onChange={(e) =>
-                  setF({ ...f, anniversary_date: e.target.value })
+                  setF({
+                    ...f,
+                    anniversary_date: sanitizeDateValue(e.target.value),
+                  })
                 }
               />
             </Field>
@@ -1818,15 +2135,24 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
 
             <Field label="Phone *" error={errors.phone}>
               <Input
+                inputMode="numeric"
+                maxLength={10}
                 value={f.phone}
-                onChange={(e) => setF({ ...f, phone: e.target.value })}
+                onChange={(e) =>
+                  setF({ ...f, phone: digitsOnly(e.target.value, 10) })
+                }
               />
             </Field>
             <Field label="Emergency contact" error={errors.emergency_contact}>
               <Input
+                inputMode="numeric"
+                maxLength={10}
                 value={f.emergency_contact}
                 onChange={(e) =>
-                  setF({ ...f, emergency_contact: e.target.value })
+                  setF({
+                    ...f,
+                    emergency_contact: digitsOnly(e.target.value, 10),
+                  })
                 }
               />
             </Field>
@@ -1876,15 +2202,20 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 </Field>
                 <Field label="Spouse contact" error={errors.spouse_contact}>
                   <Input
+                    inputMode="numeric"
+                    maxLength={10}
                     value={f.spouse_contact}
                     onChange={(e) =>
-                      setF({ ...f, spouse_contact: e.target.value })
+                      setF({
+                        ...f,
+                        spouse_contact: digitsOnly(e.target.value, 10),
+                      })
                     }
                   />
                 </Field>
               </>
             )}
-            <Field label="Child name">
+            <Field label="Child name" error={errors.child_name}>
               <Input
                 value={f.child_name}
                 onChange={(e) => setF({ ...f, child_name: e.target.value })}
@@ -1892,9 +2223,14 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
             </Field>
             <Field label="Child contact" error={errors.child_contact}>
               <Input
+                inputMode="numeric"
+                maxLength={10}
                 value={f.child_contact}
                 onChange={(e) =>
-                  setF({ ...f, child_contact: e.target.value })
+                  setF({
+                    ...f,
+                    child_contact: digitsOnly(e.target.value, 10),
+                  })
                 }
               />
             </Field>
@@ -1934,11 +2270,15 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
             </Field>
             <Field label="PIN *" error={errors.pin}>
               <Input
+                inputMode="numeric"
+                maxLength={6}
                 value={f.pin}
-                onChange={(e) => setF({ ...f, pin: e.target.value })}
+                onChange={(e) =>
+                  setF({ ...f, pin: digitsOnly(e.target.value, 6) })
+                }
               />
             </Field>
-            <Field label="Nationality">
+            <Field label="Nationality" error={errors.nationality}>
               <Input
                 value={f.nationality}
                 onChange={(e) => setF({ ...f, nationality: e.target.value })}
@@ -2084,8 +2424,12 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
             <Field label="Join date *" error={errors.join_date}>
               <Input
                 type="date"
+                min={MIN_DATE_STR}
+                max={TODAY_STR}
                 value={f.join_date}
-                onChange={(e) => setF({ ...f, join_date: e.target.value })}
+                onChange={(e) =>
+                  setF({ ...f, join_date: sanitizeDateValue(e.target.value) })
+                }
               />
             </Field>
             {f.employee_status === "Probation" && (
@@ -2096,18 +2440,33 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 >
                   <Input
                     type="number"
+                    min={0}
+                    max={365}
                     value={f.probation_period}
-                    onChange={(e) =>
-                      setF({ ...f, probation_period: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "") {
+                        setF({ ...f, probation_period: "" });
+                        return;
+                      }
+                      const clamped = Math.max(
+                        0,
+                        Math.min(365, Number(raw)),
+                      );
+                      setF({ ...f, probation_period: clamped });
+                    }}
                   />
                 </Field>
                 <Field label="Probation date *" error={errors.probation_date}>
                   <Input
                     type="date"
+                    min={MIN_DATE_STR}
                     value={f.probation_date}
                     onChange={(e) =>
-                      setF({ ...f, probation_date: e.target.value })
+                      setF({
+                        ...f,
+                        probation_date: sanitizeDateValue(e.target.value),
+                      })
                     }
                   />
                 </Field>
@@ -2117,9 +2476,13 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
               <Field label="Leaving date *" error={errors.leaving_date}>
                 <Input
                   type="date"
+                  min={MIN_DATE_STR}
                   value={f.leaving_date}
                   onChange={(e) =>
-                    setF({ ...f, leaving_date: e.target.value })
+                    setF({
+                      ...f,
+                      leaving_date: sanitizeDateValue(e.target.value),
+                    })
                   }
                 />
               </Field>
@@ -2130,7 +2493,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 onChange={(e) => setF({ ...f, qualification: e.target.value })}
               />
             </Field>
-            <Field label="Specialization">
+            <Field label="Specialization" error={errors.specialization}>
               <Input
                 value={f.specialization}
                 onChange={(e) =>
@@ -2138,13 +2501,13 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 }
               />
             </Field>
-            <Field label="Experience">
+            <Field label="Experience" error={errors.experience}>
               <Input
                 value={f.experience}
                 onChange={(e) => setF({ ...f, experience: e.target.value })}
               />
             </Field>
-            <Field label="Previous employment">
+            <Field label="Previous employment" error={errors.previous_employment}>
               <Input
                 value={f.previous_employment}
                 onChange={(e) =>
@@ -2152,7 +2515,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 }
               />
             </Field>
-            <Field label="Additional duties" wide>
+            <Field label="Additional duties" wide error={errors.additional_duties}>
               <Textarea
                 rows={2}
                 value={f.additional_duties}
@@ -2161,14 +2524,14 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 }
               />
             </Field>
-            <Field label="Remark" wide>
+            <Field label="Remark" wide error={errors.remark}>
               <Textarea
                 rows={2}
                 value={f.remark}
                 onChange={(e) => setF({ ...f, remark: e.target.value })}
               />
             </Field>
-            <Field label="Biometric ID">
+            <Field label="Biometric ID" error={errors.biometric_id}>
               <Input
                 value={f.biometric_id}
                 onChange={(e) => setF({ ...f, biometric_id: e.target.value })}
@@ -2197,7 +2560,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
               </Select>
             </Field>
 
-            <Field label="Reporting manager">
+            <Field label="Reporting manager" error={errors.reporting_manager_uuid}>
               <Select
                 value={f.reporting_manager_uuid}
                 onValueChange={(v) =>
@@ -2241,7 +2604,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
               </div>
             </Field>
 
-            <Field label="Approver One">
+            <Field label="Approver One" error={errors.approver_one_uuid}>
               <Select
                 value={f.approver_one_uuid}
                 onValueChange={(v) =>
@@ -2448,7 +2811,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 }
               />
             </Field>
-            <Field label="HRA">
+            <Field label="HRA" error={errors.hra}>
               <Input
                 type="number"
                 step="0.01"
@@ -2456,7 +2819,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 onChange={(e) => setF({ ...f, hra: e.target.value })}
               />
             </Field>
-            <Field label="Other allowance">
+            <Field label="Other allowance" error={errors.other_allowance}>
               <Input
                 type="number"
                 step="0.01"
@@ -2466,7 +2829,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 }
               />
             </Field>
-            <Field label="Allowances">
+            <Field label="Allowances" error={errors.allowances}>
               <Input
                 type="number"
                 step="0.01"
@@ -2483,37 +2846,48 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
           >
             <Field label="Aadhaar" error={errors.aadhaar}>
               <Input
+                inputMode="numeric"
+                maxLength={12}
                 value={f.aadhaar}
-                onChange={(e) => setF({ ...f, aadhaar: e.target.value })}
+                onChange={(e) =>
+                  setF({ ...f, aadhaar: digitsOnly(e.target.value, 12) })
+                }
               />
             </Field>
             <Field label="PAN" error={errors.pan}>
               <Input
+                maxLength={10}
                 value={f.pan}
                 onChange={(e) =>
-                  setF({ ...f, pan: e.target.value.toUpperCase() })
+                  setF({ ...f, pan: e.target.value.toUpperCase().slice(0, 10) })
                 }
               />
             </Field>
             <Field label="UAN number" error={errors.uan_number}>
               <Input
+                inputMode="numeric"
+                maxLength={12}
                 value={f.uan_number}
-                onChange={(e) => setF({ ...f, uan_number: e.target.value })}
+                onChange={(e) =>
+                  setF({ ...f, uan_number: digitsOnly(e.target.value, 12) })
+                }
               />
             </Field>
-            <Field label="PF number">
+            <Field label="PF number" error={errors.pf_number}>
               <Input
+                maxLength={30}
                 value={f.pf_number}
                 onChange={(e) => setF({ ...f, pf_number: e.target.value })}
               />
             </Field>
-            <Field label="ESI number">
+            <Field label="ESI number" error={errors.esi_number}>
               <Input
+                maxLength={20}
                 value={f.esi_number}
                 onChange={(e) => setF({ ...f, esi_number: e.target.value })}
               />
             </Field>
-            <Field label="Medical notes" wide>
+            <Field label="Medical notes" wide error={errors.medical_notes}>
               <Textarea
                 rows={3}
                 value={f.medical_notes}
@@ -2537,17 +2911,26 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
             </Field>
             <Field label="Account number *" error={errors.account_number}>
               <Input
+                inputMode="numeric"
+                maxLength={18}
                 value={f.account_number}
                 onChange={(e) =>
-                  setF({ ...f, account_number: e.target.value })
+                  setF({
+                    ...f,
+                    account_number: digitsOnly(e.target.value, 18),
+                  })
                 }
               />
             </Field>
             <Field label="IFSC *" error={errors.ifsc}>
               <Input
+                maxLength={11}
                 value={f.ifsc}
                 onChange={(e) =>
-                  setF({ ...f, ifsc: e.target.value.toUpperCase() })
+                  setF({
+                    ...f,
+                    ifsc: e.target.value.toUpperCase().slice(0, 11),
+                  })
                 }
               />
             </Field>
@@ -2871,6 +3254,17 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 Back
               </Button>
             )}
+            {!isEditMode && draftUuid && (
+              <Button
+                variant="ghost"
+                className="text-destructive/70 hover:text-destructive"
+                onClick={handleDiscardDraft}
+                disabled={saving}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                Discard Draft
+              </Button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {tab === "assignments" && !isEditMode && (
@@ -2898,6 +3292,14 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
           </div>
         </DialogFooter>
       </DialogContent>
+
+      {resumePrompt && (
+        <ResumeDraftPrompt
+          name={resumePrompt.record.full_name || "this employee"}
+          onResume={handleResumeDraft}
+          onStartNew={handleStartNewFromPrompt}
+        />
+      )}
     </Dialog>
   );
 }
@@ -2947,5 +3349,39 @@ function ReviewRow({ label, value }) {
         {display}
       </span>
     </div>
+  );
+}
+
+// Resume-draft confirmation, portaled to document.body so it isn't
+// blocked by Radix's outside-click handling on DialogContent (see the
+// onPointerDownOutside/onInteractOutside guards above). Deliberately has
+// no backdrop-click-to-close — the user must make an explicit choice
+// (Resume Draft / Start New) rather than accidentally dismissing it,
+// since either choice has a real side effect (loading a draft vs.
+// abandoning one).
+function ResumeDraftPrompt({ name, onResume, onStartNew }) {
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      style={{ pointerEvents: "auto" }}
+    >
+      <div className="bg-background rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+        <h2 className="text-lg font-semibold">Resume your employee onboarding draft?</h2>
+        <p className="text-sm text-muted-foreground">
+          We found an in-progress onboarding for{" "}
+          <span className="font-semibold text-foreground">{name}</span>. Continue where you
+          left off, or start a fresh onboarding instead.
+        </p>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onStartNew}>
+            Start New
+          </Button>
+          <Button onClick={onResume} className="gradient-primary border-0">
+            Resume Draft
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

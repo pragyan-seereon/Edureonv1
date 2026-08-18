@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable no-unused-vars */
 import { useNavigate } from "react-router-dom";
 import { PageContainer, PageHeader } from "../../../components/page-shell";
@@ -38,7 +39,7 @@ import {
   Trash2,
   Plus,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 // import { institutesApi } from "../../../lib/store";
 import { createInstituteDraft, updateInstituteDraftStep2,updateInstituteDraftStep3,  updateInstituteDraftStep4,uploadInstituteDocuments, getInstituteDraftReview,submitInstituteDraft, getIFSCDetails,} from "../../../api/Institute.js";
@@ -88,6 +89,63 @@ const currentYear = new Date().getFullYear();
 // Institutes table until the institute is actually submitted/created.
 const INSTITUTE_DRAFT_STORAGE_KEY = "createInstituteDraft";
 
+const createInitialForm = () => ({
+  name: "",
+  type: "School",
+  board: "CBSE",
+  customBoardName: "",
+  academicYearStartMonth: "",
+  academicYearStartYear: String(currentYear),
+  academicYearEndMonth: "",
+  academicYearEndYear: String(currentYear + 1),
+  primaryColor: "#1e3a5f",
+  secondaryColor: "#f59e0b",
+  logo: null,
+  logoPreview: "",
+  logoCrop: { zoom: 1, x: 50, y: 50 },
+  address: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  state: "",
+  pin: "",
+  country: "India",
+  phone: "",
+  email: "",
+  website: "",
+  principalName: "",
+  principalPhone: "",
+  principalEmail: "",
+  principalDesignation: "",
+  adminName: "",
+  adminPhone: "",
+  adminEmail: "",
+  adminDesignation: "",
+  gst: "",
+  pan: "",
+  tan: "",
+  bankName: "",
+  accountNumber: "",
+  confirmAccountNumber: "",
+  ifscCode: "",
+  ifscBankName: "",
+  ifscBranch: "",
+  accountHolderName: "",
+  accountType: "",
+  sendCredentials: false,
+  autoGeneratePassword: true,
+  manualPassword: "",
+});
+
+const getSavedInstituteDraft = () => {
+  try {
+    const savedDraft = localStorage.getItem(INSTITUTE_DRAFT_STORAGE_KEY);
+    return savedDraft ? JSON.parse(savedDraft) : null;
+  } catch {
+    return null;
+  }
+};
+
 const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTH_OPTIONS = MONTHS_SHORT.map((m, i) => ({ label: m, value: String(i + 1) }));
 
@@ -119,52 +177,8 @@ export default function CreateInstitute() {
   const [errors, setErrors] = useState({});
   const [draftUuid, setDraftUuid] = useState(null);
   const [isSavingStep, setIsSavingStep] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    type: "School",
-    board: "CBSE",
-    customBoardName: "",
-academicYearStartMonth: "",
-academicYearStartYear: String(currentYear),
-academicYearEndMonth: "",
-academicYearEndYear: String(currentYear + 1),    primaryColor: "#1e3a5f",
-    secondaryColor: "#f59e0b",
-    logo: null,
-    logoPreview: "",
-    logoCrop: { zoom: 1, x: 50, y: 50 },
-    address: "",
-    addressLine1: "",
-    addressLine2: "",
-    city: "",
-    state: "",
-    pin: "",
-    country: "India",
-    phone: "",
-    email: "",
-    website: "",
-    principalName: "",
-    principalPhone: "",
-    principalEmail: "",
-    principalDesignation: "",
-    adminName: "",
-    adminPhone: "",
-    adminEmail: "",
-    adminDesignation: "",
-    gst: "",
-    pan: "",
-    tan: "",
-    bankName: "",
-    accountNumber: "",
-    confirmAccountNumber: "",
-    ifscCode: "",
-    ifscBankName: "",
-    ifscBranch: "",
-    accountHolderName: "",
-    accountType: "",
-    sendCredentials: false,
-    autoGeneratePassword: true,
-    manualPassword: "",
-  });
+  const [form, setForm] = useState(createInitialForm);
+  const hasRestoredDraft = useRef(false);
  // eslint-disable-next-line no-unused-vars
  const [reviewData, setReviewData] = useState(null);
   // eslint-disable-next-line no-unused-vars
@@ -183,6 +197,36 @@ academicYearEndYear: String(currentYear + 1),    primaryColor: "#1e3a5f",
   const [docs, setDocs] = useState(
     Object.fromEntries(DOC_SLOTS.map((d) => [d.id, d.multi ? [] : null]))
   );
+
+  // A backend draft exists after Step 1. Keep the in-progress values and its
+  // UUID in the browser so Cancel can safely return the user to this exact step.
+  useEffect(() => {
+    const savedDraft = getSavedInstituteDraft();
+    if (savedDraft?.draftUuid && savedDraft?.form) {
+      setForm((current) => ({ ...current, ...savedDraft.form, logo: null, logoPreview: "" }));
+      setDraftUuid(savedDraft.draftUuid);
+      setStep(Math.min(6, Math.max(1, Number(savedDraft.step) || 1)));
+      toast.info(`Resumed your institute draft at Step ${savedDraft.step || 1}.`);
+    }
+    hasRestoredDraft.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!hasRestoredDraft.current || !draftUuid) return;
+
+    // Files cannot be reconstructed by a browser after navigation. Uploaded
+    // documents are already on the backend; an unsubmitted file selection must
+    // be selected again when the draft is resumed.
+    const { logo, logoPreview, manualPassword, ...savedForm } = form;
+    try {
+      localStorage.setItem(
+        INSTITUTE_DRAFT_STORAGE_KEY,
+        JSON.stringify({ draftUuid, form: savedForm, step, savedAt: new Date().toISOString() }),
+      );
+    } catch {
+      // Storage can be unavailable in private browsing; the backend draft remains intact.
+    }
+  }, [draftUuid, form, step]);
 
   const [viewingDoc, setViewingDoc] = useState(null);
   const [removeConfirm, setRemoveConfirm] = useState(null); // { slotId, fileIndex?, filename }
@@ -698,6 +742,22 @@ setStep(6);
     // Stay on the current step — no navigation away from this page.
   };
 
+  const handleCancel = () => {
+    if (draftUuid) {
+      const { logo, logoPreview, manualPassword, ...savedForm } = form;
+      try {
+        localStorage.setItem(
+          INSTITUTE_DRAFT_STORAGE_KEY,
+          JSON.stringify({ draftUuid, form: savedForm, step, savedAt: new Date().toISOString() }),
+        );
+      } catch {
+        // The saved backend draft remains available even if browser storage fails.
+      }
+      toast.success(`Draft saved at Step ${step}. You can resume it from the Institutes page.`);
+    }
+    navigate("/super/institutes");
+  };
+
   const submit = () => {
     if (!validateAllSteps()) {
       return;
@@ -730,6 +790,8 @@ const confirmSubmit = async () => {
       response?.institute_id
     );
 
+    localStorage.removeItem(INSTITUTE_DRAFT_STORAGE_KEY);
+
     setShowSubmitModal(false);
     setShowSuccessModal(true);
 
@@ -757,7 +819,7 @@ const confirmSubmit = async () => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate("/super/institutes")}
+              onClick={handleCancel}
             >
               Cancel
             </Button>
@@ -1058,7 +1120,7 @@ const confirmSubmit = async () => {
   <Input
     type="tel"
     value={form.phone}
-    maxLength={10}
+    maxLength={13}
     onChange={(e) => {
       const value = e.target.value.replace(/\D/g, ""); // digits only
       set("phone", value);
@@ -1095,7 +1157,7 @@ const confirmSubmit = async () => {
                     <Field label={<>Principal Mobile <span className="text-red-500">*</span></>} error={errors.principalPhone}>
 <Input
   type="tel"
-  maxLength={10}
+  maxLength={13}
   value={form.principalPhone}
   placeholder="9876543210"
   onChange={(e) =>
@@ -1106,9 +1168,9 @@ const confirmSubmit = async () => {
                     <Field label={<>Principal Email <span className="text-red-500">*</span></>} error={errors.principalEmail}>
                       <Input type="email" value={form.principalEmail} onChange={(e) => set("principalEmail", e.target.value)} placeholder="principal@school.edu" />
                     </Field>
-                    <Field label="Principal Designation">
+                    {/* <Field label="Principal Designation">
                       <Input value={form.principalDesignation} onChange={(e) => set("principalDesignation", e.target.value)} placeholder="Principal" />
-                    </Field>
+                    </Field> */}
                   </div>
                 </div>
                 <div>
@@ -1123,7 +1185,7 @@ const confirmSubmit = async () => {
                     <Field label={<>Admin Mobile <span className="text-red-500">*</span></>} error={errors.adminPhone}>
 <Input
   type="tel"
-  maxLength={10}
+  maxLength={13}
   value={form.adminPhone}
   placeholder="9876543210"
 
@@ -1131,9 +1193,9 @@ const confirmSubmit = async () => {
     set("adminPhone", e.target.value.replace(/\D/g, ""))
   }
 />                    </Field>
-                    <Field label="Admin Designation">
+                    {/* <Field label="Admin Designation">
                       <Input value={form.adminDesignation} onChange={(e) => set("adminDesignation", e.target.value)} placeholder="Institute Admin" />
-                    </Field>
+                    </Field> */}
                   </div>
                 </div>
                 {/* <div>

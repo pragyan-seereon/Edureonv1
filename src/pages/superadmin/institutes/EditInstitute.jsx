@@ -394,6 +394,23 @@ export default function EditInstitute() {
       if (!String(form[key] || "").trim()) nextErrors[key] = `${label} is required`;
     });
 
+    // Phone number length checks (10–13 digits)
+    [
+      ["phone", "Official Phone Number"],
+      ["principalPhone", "Principal Mobile"],
+      ["adminPhone", "Admin Mobile"],
+    ].forEach(([key, label]) => {
+      const v = String(form[key] || "").trim();
+      if (v) {
+        if (!/^\d+$/.test(v)) {
+          nextErrors[key] = `${label} must contain digits only`;
+        } else if (v.length < 10 || v.length > 13) {
+          nextErrors[key] = `${label} must be between 10 and 13 digits`;
+        }
+      }
+    });
+
+
     if (form.board === "Other" && !String(form.customBoardName || "").trim()) {
       nextErrors.customBoardName = "Custom Board Name is required";
     }
@@ -756,9 +773,15 @@ title={`Edit — ${(inst?.name || "").toUpperCase()}`}
                 <option value="India">India</option>
               </select>
             </Field>
-            <Field label="Official Phone Number" required error={errors.phone}>
-              <Input type="tel" value={form.phone || ""} onChange={(e) => set("phone", e.target.value)} placeholder="+91 9876543210" />
-            </Field>
+           <Field label="Official Phone Number" required error={errors.phone}>
+  <Input
+    type="tel"
+    value={form.phone || ""}
+    maxLength={13}
+    onChange={(e) => set("phone", e.target.value.replace(/\D/g, "").slice(0, 13))}
+    placeholder="9876543210"
+  />
+</Field>
             <Field label="Official Email Address" required error={errors.email}>
               <Input type="email" value={form.email || ""} onChange={(e) => set("email", e.target.value)} placeholder="admin@school.edu" />
             </Field>
@@ -789,14 +812,20 @@ title={`Edit — ${(inst?.name || "").toUpperCase()}`}
                   <Input value={form.principalName || ""} onChange={(e) => set("principalName", e.target.value)} placeholder="Enter principal full name" />
                 </Field>
                 <Field label="Mobile" required error={errors.principalPhone}>
-                  <Input type="tel" value={form.principalPhone || ""} onChange={(e) => set("principalPhone", e.target.value)} placeholder="9876543210" />
-                </Field>
+  <Input
+    type="tel"
+    value={form.principalPhone || ""}
+    maxLength={13}
+    onChange={(e) => set("principalPhone", e.target.value.replace(/\D/g, "").slice(0, 13))}
+    placeholder="9876543210"
+  />
+</Field>
                 <Field label="Email" required error={errors.principalEmail}>
                   <Input type="email" value={form.principalEmail || ""} onChange={(e) => set("principalEmail", e.target.value)} placeholder="principal@school.edu" />
                 </Field>
-                <Field label="Designation">
+                {/* <Field label="Designation">
                   <Input value={form.principalDesignation || ""} onChange={(e) => set("principalDesignation", e.target.value)} placeholder="Principal" />
-                </Field>
+                </Field> */}
               </div>
             </div>
             <div>
@@ -808,12 +837,18 @@ title={`Edit — ${(inst?.name || "").toUpperCase()}`}
                 <Field label="Email" required error={errors.adminEmail}>
                   <Input type="email" value={form.adminEmail || ""} onChange={(e) => set("adminEmail", e.target.value)} placeholder="admin@school.edu" />
                 </Field>
-                <Field label="Mobile" required error={errors.adminPhone}>
-                  <Input type="tel" value={form.adminPhone || ""} onChange={(e) => set("adminPhone", e.target.value)} placeholder="9876543210" />
-                </Field>
-                <Field label="Designation">
+               <Field label="Mobile" required error={errors.adminPhone}>
+  <Input
+    type="tel"
+    value={form.adminPhone || ""}
+    maxLength={13}
+    onChange={(e) => set("adminPhone", e.target.value.replace(/\D/g, "").slice(0, 13))}
+    placeholder="9876543210"
+  />
+</Field>
+                {/* <Field label="Designation">
                   <Input value={form.adminDesignation || ""} onChange={(e) => set("adminDesignation", e.target.value)} placeholder="Institute Admin" />
-                </Field>
+                </Field> */}
               </div>
             </div>
           </CardContent>

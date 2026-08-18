@@ -19,7 +19,7 @@ export const GST_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z
 export const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 export const TAN_PATTERN = /^[A-Z]{4}[0-9]{5}[A-Z]{1}$/;
 export const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-export const ACCOUNT_HOLDER_PATTERN = /^[A-Za-z ]+$/;
+export const ACCOUNT_HOLDER_PATTERN = /^[A-Za-z &]+$/;
 export const PIN_PATTERN = /^[1-9][0-9]{5}$/;
 
 export const INSTITUTE_TYPES = [
@@ -247,8 +247,10 @@ export function validateStep4(form) {
     }
   }
 
-  // TAN (Optional)
-  if (form.tan) {
+ // TAN (Required)
+  if (!form.tan?.trim()) {
+    e.tan = "TAN Number is required.";
+  } else {
     const tan = form.tan.toUpperCase();
     if (tan.length !== 10) {
       e.tan = "TAN Number must be 10 characters.";
@@ -304,9 +306,6 @@ export function validateStep4(form) {
 }
 
 // ── Step 5: Documents ───────────────────────────────────────────────────
-// Mirrors the component's getEffectiveBadge/getMissingMandatory logic so
-// the "all mandatory docs uploaded" check can live next to the other
-// validators instead of being defined inline in the component.
 export function getEffectiveDocBadge(slot, gst) {
   if (slot.gstConditional) {
     return gst?.trim() ? "Mandatory" : "Optional";

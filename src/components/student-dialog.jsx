@@ -1,5 +1,3 @@
-/* eslint-disable react-hooks/immutability */
-/* eslint-disable react-hooks/set-state-in-effect */
 
 
 import { useEffect, useRef, useState } from "react";
@@ -67,6 +65,127 @@ const FEE_STATUSES = ["Pending", "Partial", "Paid"];
 const DRAFT_STORAGE_KEY = "studentAdmissionDraftUuid";
 // how long (ms) to wait after the user stops typing before auto-saving
 const AUTOSAVE_DELAY_MS = 1500;
+const CITY_STATE_OPTIONS = [
+  { city: "Delhi", state: "Delhi" },
+  { city: "Mumbai", state: "Maharashtra" },
+  { city: "Pune", state: "Maharashtra" },
+  { city: "Nagpur", state: "Maharashtra" },
+  { city: "Nashik", state: "Maharashtra" },
+  { city: "Aurangabad", state: "Maharashtra" },
+  { city: "Thane", state: "Maharashtra" },
+  { city: "Navi Mumbai", state: "Maharashtra" },
+
+  { city: "Bengaluru", state: "Karnataka" },
+  { city: "Mysuru", state: "Karnataka" },
+  { city: "Mangaluru", state: "Karnataka" },
+  { city: "Hubballi", state: "Karnataka" },
+  { city: "Belagavi", state: "Karnataka" },
+  { city: "Davanagere", state: "Karnataka" },
+  { city: "Ballari", state: "Karnataka" },
+
+  { city: "Chennai", state: "Tamil Nadu" },
+  { city: "Coimbatore", state: "Tamil Nadu" },
+  { city: "Madurai", state: "Tamil Nadu" },
+  { city: "Salem", state: "Tamil Nadu" },
+  { city: "Tiruchirappalli", state: "Tamil Nadu" },
+  { city: "Tiruppur", state: "Tamil Nadu" },
+  { city: "Erode", state: "Tamil Nadu" },
+
+  { city: "Hyderabad", state: "Telangana" },
+  { city: "Warangal", state: "Telangana" },
+  { city: "Nizamabad", state: "Telangana" },
+  { city: "Karimnagar", state: "Telangana" },
+
+  { city: "Kolkata", state: "West Bengal" },
+  { city: "Howrah", state: "West Bengal" },
+  { city: "Durgapur", state: "West Bengal" },
+  { city: "Siliguri", state: "West Bengal" },
+  { city: "Asansol", state: "West Bengal" },
+
+  { city: "Bhubaneswar", state: "Odisha" },
+  { city: "Cuttack", state: "Odisha" },
+  { city: "Rourkela", state: "Odisha" },
+  { city: "Berhampur", state: "Odisha" },
+  { city: "Sambalpur", state: "Odisha" },
+  { city: "Balasore", state: "Odisha" },
+  { city: "Baripada", state: "Odisha" },
+  { city: "Bhadrak", state: "Odisha" },
+  { city: "Puri", state: "Odisha" },
+  { city: "Jharsuguda", state: "Odisha" },
+
+  { city: "Ahmedabad", state: "Gujarat" },
+  { city: "Surat", state: "Gujarat" },
+  { city: "Vadodara", state: "Gujarat" },
+  { city: "Rajkot", state: "Gujarat" },
+  { city: "Bhavnagar", state: "Gujarat" },
+  { city: "Jamnagar", state: "Gujarat" },
+
+  { city: "Jaipur", state: "Rajasthan" },
+  { city: "Jodhpur", state: "Rajasthan" },
+  { city: "Udaipur", state: "Rajasthan" },
+  { city: "Kota", state: "Rajasthan" },
+  { city: "Ajmer", state: "Rajasthan" },
+  { city: "Bikaner", state: "Rajasthan" },
+  { city: "Alwar", state: "Rajasthan" },
+
+  { city: "Lucknow", state: "Uttar Pradesh" },
+  { city: "Kanpur", state: "Uttar Pradesh" },
+  { city: "Agra", state: "Uttar Pradesh" },
+  { city: "Varanasi", state: "Uttar Pradesh" },
+  { city: "Prayagraj", state: "Uttar Pradesh" },
+  { city: "Meerut", state: "Uttar Pradesh" },
+  { city: "Noida", state: "Uttar Pradesh" },
+  { city: "Ghaziabad", state: "Uttar Pradesh" },
+  { city: "Bareilly", state: "Uttar Pradesh" },
+  { city: "Gorakhpur", state: "Uttar Pradesh" },
+
+  { city: "Patna", state: "Bihar" },
+  { city: "Gaya", state: "Bihar" },
+  { city: "Muzaffarpur", state: "Bihar" },
+  { city: "Bhagalpur", state: "Bihar" },
+
+  { city: "Ranchi", state: "Jharkhand" },
+  { city: "Jamshedpur", state: "Jharkhand" },
+  { city: "Dhanbad", state: "Jharkhand" },
+  { city: "Bokaro", state: "Jharkhand" },
+
+  { city: "Bhopal", state: "Madhya Pradesh" },
+  { city: "Indore", state: "Madhya Pradesh" },
+  { city: "Gwalior", state: "Madhya Pradesh" },
+  { city: "Jabalpur", state: "Madhya Pradesh" },
+  { city: "Ujjain", state: "Madhya Pradesh" },
+
+  { city: "Chandigarh", state: "Chandigarh" },
+  { city: "Ludhiana", state: "Punjab" },
+  { city: "Amritsar", state: "Punjab" },
+  { city: "Jalandhar", state: "Punjab" },
+
+  { city: "Dehradun", state: "Uttarakhand" },
+  { city: "Haridwar", state: "Uttarakhand" },
+  { city: "Roorkee", state: "Uttarakhand" },
+
+  { city: "Shimla", state: "Himachal Pradesh" },
+  { city: "Dharamshala", state: "Himachal Pradesh" },
+
+  { city: "Guwahati", state: "Assam" },
+  { city: "Dibrugarh", state: "Assam" },
+  { city: "Jorhat", state: "Assam" },
+
+  { city: "Thiruvananthapuram", state: "Kerala" },
+  { city: "Kochi", state: "Kerala" },
+  { city: "Kozhikode", state: "Kerala" },
+  { city: "Thrissur", state: "Kerala" },
+
+  { city: "Vijayawada", state: "Andhra Pradesh" },
+  { city: "Visakhapatnam", state: "Andhra Pradesh" },
+  { city: "Tirupati", state: "Andhra Pradesh" },
+  { city: "Guntur", state: "Andhra Pradesh" },
+
+  { city: "Srinagar", state: "Jammu and Kashmir" },
+  { city: "Jammu", state: "Jammu and Kashmir" },
+
+  { city: "Panaji", state: "Goa" },
+];
 
 function calcAge(dobStr) {
   const dob = new Date(dobStr);
@@ -111,13 +230,13 @@ function validatePersonal(f) {
   if (!f.category) e.category = "Category is required";
   else if (!CATEGORIES.includes(f.category)) e.category = "Invalid category";
 
-  const today = new Date().toISOString().split("T")[0];
-  if (f.admissionDate && f.admissionDate > today) {
-    e.admissionDate = "Future admission date not allowed";
-  }
-  if (f.joiningDate && f.joiningDate > today) {
-    e.joiningDate = "Future joining date not allowed";
-  }
+  // const today = new Date().toISOString().split("T")[0];
+  // if (f.admissionDate && f.admissionDate > today) {
+  //   e.admissionDate = "Future admission date not allowed";
+  // }
+  // if (f.joiningDate && f.joiningDate > today) {
+  //   e.joiningDate = "Future joining date not allowed";
+  // }
 
   return e;
 }
@@ -387,6 +506,7 @@ const empty = {
   birthCertificateNo: "",
   address: "",
   permanentAddress: "",
+  residentialSameAsPermanent: false,
   city: "",
   state: "",
   pin: "",
@@ -447,7 +567,6 @@ export function StudentDialog({ open, onOpenChange, student }) {
   }, [draftUuid]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/immutability
     loadClasses();
   }, []);
 
@@ -464,7 +583,6 @@ export function StudentDialog({ open, onOpenChange, student }) {
 
   useEffect(() => {
     if (f.class) {
-      // eslint-disable-next-line react-hooks/immutability
       loadSections(f.class);
     } else {
       setSections([]);
@@ -1472,13 +1590,37 @@ export function StudentDialog({ open, onOpenChange, student }) {
                 </SelectContent>
               </Select>
             </F>
-            <F label="Session Year *" error={errors.sessionYear}>
-              <Input
-                value={f.sessionYear}
-                onChange={(e) => set("sessionYear", e.target.value)}
-                placeholder="2026-27"
-              />
-            </F>
+<F label="Session Year *" error={errors.sessionYear}>
+  <Select
+    value={f.sessionYear}
+    onValueChange={(value) =>
+      set("sessionYear", value)
+    }
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="Select Session Year" />
+    </SelectTrigger>
+
+    <SelectContent>
+      {Array.from({ length: 20 }, (_, i) => {
+        const startYear = 2020 + i;
+
+        const session = `${startYear}-${String(
+          (startYear + 1) % 100
+        ).padStart(2, "0")}`;
+
+        return (
+          <SelectItem
+            key={session}
+            value={session}
+          >
+            {session}
+          </SelectItem>
+        );
+      })}
+    </SelectContent>
+  </Select>
+</F>
             {(() => {
               const selectedClass = classes.find((c) => c.class_uuid === f.class);
               const className = selectedClass?.class_name || "";
@@ -1504,14 +1646,18 @@ export function StudentDialog({ open, onOpenChange, student }) {
                 </F>
               ) : null;
             })()}
-            <F label="Roll No *" error={errors.rollNo}>
-              <Input
-                type="number"
-                min={1}
-                value={f.rollNo}
-                onChange={(e) => set("rollNo", parseInt(e.target.value) || 1)}
-              />
-            </F>
+    <F label="Roll No *" error={errors.rollNo}>
+  <Input
+    type="number"
+    min={1}
+    value={f.rollNo ?? ""}
+    onChange={(e) => {
+      const value = e.target.value;
+
+      set("rollNo", value === "" ? "" : Number(value));
+    }}
+  />
+</F>
             <F label="Previous School">
               <Input
                 value={f.previousSchool}
@@ -1519,13 +1665,36 @@ export function StudentDialog({ open, onOpenChange, student }) {
                 placeholder="DAV Public School"
               />
             </F>
-            <F label="Previous Class">
-              <Input
-                value={f.previousClass}
-                onChange={(e) => set("previousClass", e.target.value)}
-                placeholder="Class IX"
-              />
-            </F>
+<F label="Previous Class">
+  <Select
+    value={f.previousClass}
+    onValueChange={(value) =>
+      set("previousClass", value)
+    }
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="Select Previous Class" />
+    </SelectTrigger>
+
+    <SelectContent>
+      <SelectItem value="Nursery">Nursery</SelectItem>
+      <SelectItem value="LKG">LKG</SelectItem>
+      <SelectItem value="UKG">UKG</SelectItem>
+      <SelectItem value="Class I">Class I</SelectItem>
+      <SelectItem value="Class II">Class II</SelectItem>
+      <SelectItem value="Class III">Class III</SelectItem>
+      <SelectItem value="Class IV">Class IV</SelectItem>
+      <SelectItem value="Class V">Class V</SelectItem>
+      <SelectItem value="Class VI">Class VI</SelectItem>
+      <SelectItem value="Class VII">Class VII</SelectItem>
+      <SelectItem value="Class VIII">Class VIII</SelectItem>
+      <SelectItem value="Class IX">Class IX</SelectItem>
+      <SelectItem value="Class X">Class X</SelectItem>
+      <SelectItem value="Class XI">Class XI</SelectItem>
+      <SelectItem value="Class XII">Class XII</SelectItem>
+    </SelectContent>
+  </Select>
+</F>
             <F label="Board">
               <Select value={f.board} onValueChange={(v) => set("board", v)}>
                 <SelectTrigger>
@@ -1550,7 +1719,7 @@ export function StudentDialog({ open, onOpenChange, student }) {
                 placeholder="87"
               />
             </F>
-            <F label="Attendance %" error={errors.attendance}>
+            {/* <F label="Attendance %" error={errors.attendance}>
               <Input
                 type="number"
                 min={0}
@@ -1558,7 +1727,7 @@ export function StudentDialog({ open, onOpenChange, student }) {
                 value={f.attendance}
                 onChange={(e) => set("attendance", parseInt(e.target.value) || 0)}
               />
-            </F>
+            </F> */}
           </TabsContent>
 
           {/* ── GUARDIAN — matches backend StudentDraftStep3Update field-for-field ── */}
@@ -1663,6 +1832,24 @@ export function StudentDialog({ open, onOpenChange, student }) {
               <Input type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="parent@mail.com" />
             </F>
 
+
+            <F label="Alternate Email" error={errors.alternateEmail}>
+              <Input type="email" value={f.alternateEmail} onChange={(e) => set("alternateEmail", e.target.value)} placeholder="parent2@mail.com" />
+            </F>
+
+            <F label="Birth Certificate No.">
+              <Input value={f.birthCertificateNo} onChange={(e) => set("birthCertificateNo", e.target.value)} />
+            </F>
+            <F label="PIN" error={errors.pin}>
+              <Input
+                value={f.pin}
+                onChange={(e) => set("pin", e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="110001"
+                inputMode="numeric"
+              />
+            </F>
+
+            
             {/* ── Password: Manual entry vs Auto-generate toggle ── */}
             <F label="Password *" error={errors.password} wide>
               <div className="space-y-2">
@@ -1715,36 +1902,99 @@ export function StudentDialog({ open, onOpenChange, student }) {
                 )}
               </div>
             </F>
+<F label="Permanent Address" wide>
+  <Textarea
+    rows={2}
+    value={f.permanentAddress || ""}
+    onChange={(e) =>
+      set("permanentAddress", e.target.value)
+    }
+    placeholder="House no, street, locality"
+  />
+</F>
 
-            <F label="Alternate Email" error={errors.alternateEmail}>
-              <Input type="email" value={f.alternateEmail} onChange={(e) => set("alternateEmail", e.target.value)} placeholder="parent2@mail.com" />
-            </F>
+<F label="Residential Address" wide>
+  <div className="space-y-2">
+    <label className="flex items-center gap-2 text-sm cursor-pointer">
+      <input
+        type="checkbox"
+        checked={f.residentialSameAsPermanent || false}
+        onChange={(e) => {
+          const checked = e.target.checked;
 
-            <F label="Birth Certificate No.">
-              <Input value={f.birthCertificateNo} onChange={(e) => set("birthCertificateNo", e.target.value)} />
-            </F>
-            <F label="PIN" error={errors.pin}>
-              <Input
-                value={f.pin}
-                onChange={(e) => set("pin", e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="110001"
-                inputMode="numeric"
-              />
-            </F>
+          set(
+            "residentialSameAsPermanent",
+            checked
+          );
 
-            <F label="Residential Address" wide>
-              <Textarea rows={2} value={f.address} onChange={(e) => set("address", e.target.value)} placeholder="House no, street, locality" />
-            </F>
-            <F label="Permanent Address" wide>
-              <Textarea rows={2} value={f.permanentAddress} onChange={(e) => set("permanentAddress", e.target.value)} placeholder="Leave blank if same as residential" />
-            </F>
+          if (checked) {
+            set(
+              "address",
+              f.permanentAddress || ""
+            );
+          }
+        }}
+      />
 
-            <F label="City">
-              <Input value={f.city} onChange={(e) => set("city", e.target.value)} placeholder="Delhi" />
-            </F>
-            <F label="State">
-              <Input value={f.state} onChange={(e) => set("state", e.target.value)} />
-            </F>
+      <span>
+        Same as Permanent Address
+      </span>
+    </label>
+
+    <Textarea
+      rows={2}
+      value={f.address || ""}
+      onChange={(e) =>
+        set("address", e.target.value)
+      }
+      placeholder="House no, street, locality"
+      disabled={
+        f.residentialSameAsPermanent || false
+      }
+    />
+  </div>
+</F>
+
+<F label="City">
+  <select
+    value={f.city || ""}
+    onChange={(e) => {
+      const selectedCity = CITY_STATE_OPTIONS.find(
+        (item) => item.city === e.target.value
+      );
+
+      set("city", selectedCity?.city || "");
+      set("state", selectedCity?.state || "");
+    }}
+    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+  >
+    <option value="">Select City</option>
+
+    {CITY_STATE_OPTIONS.map((item) => (
+      <option key={item.city} value={item.city}>
+        {item.city}
+      </option>
+    ))}
+  </select>
+</F>
+
+<F label="State">
+  <select
+    value={f.state || ""}
+    onChange={(e) => set("state", e.target.value)}
+    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+  >
+    <option value="">Select State</option>
+
+    {[...new Set(CITY_STATE_OPTIONS.map((item) => item.state))]
+      .sort()
+      .map((state) => (
+        <option key={state} value={state}>
+          {state}
+        </option>
+      ))}
+  </select>
+</F>
           </TabsContent>
 
           {/* ── SERVICES ── */}

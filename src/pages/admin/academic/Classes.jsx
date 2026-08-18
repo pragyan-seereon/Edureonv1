@@ -260,8 +260,8 @@ export default function Classes() {
 
       setTeacherOptions(
         (res.data || []).map((faculty) => ({
-          id: faculty.user_id,
-          name: faculty.name,
+        id: faculty.employee_uuid,      
+       name: faculty.name,
         })),
       );
     } catch (err) {
@@ -2058,12 +2058,12 @@ function ClassesTab({
                             variant="outline"
                             className="w-full justify-start font-normal h-9 truncate"
                           >
-                            {row.faculty_user_ids.length > 0
+                           {row.faculty_user_ids.length > 0
                               ? row.faculty_user_ids
                                   .map(
                                     (id) =>
                                       selectedSubject?.faculty?.find(
-                                        (f) => f.user_id === id,
+                                        (f) => f.employee_id === id,
                                       )?.name,
                                   )
                                   .filter(Boolean)
@@ -2078,23 +2078,23 @@ function ClassesTab({
                                 No faculty for this subject.
                               </div>
                             )}
-                            {selectedSubject?.faculty?.map((faculty) => (
+                           {selectedSubject?.faculty?.map((faculty) => (
                               <label
-                                key={faculty.user_id}
+                                key={faculty.employee_id}
                                 className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1"
                               >
                                 <Checkbox
                                   checked={row.faculty_user_ids.includes(
-                                    faculty.user_id,
+                                    faculty.employee_id,
                                   )}
                                   onCheckedChange={(checked) => {
                                     const next = checked
                                       ? [
                                           ...row.faculty_user_ids,
-                                          faculty.user_id,
+                                          faculty.employee_id,
                                         ]
                                       : row.faculty_user_ids.filter(
-                                          (id) => id !== faculty.user_id,
+                                          (id) => id !== faculty.employee_id,
                                         );
                                     updateSubjectRow(i, {
                                       faculty_user_ids: next,
@@ -2107,11 +2107,11 @@ function ClassesTab({
                           </div>
                         </PopoverContent>
                       </Popover>
-                      {row.faculty_user_ids.length > 0 && (
+                     {row.faculty_user_ids.length > 0 && (
                         <div className="flex flex-wrap gap-1 pt-1">
                           {row.faculty_user_ids.map((id) => {
                             const f = selectedSubject?.faculty?.find(
-                              (x) => x.user_id === id,
+                              (x) => x.employee_id === id,
                             );
                             return (
                               <Badge
@@ -4003,8 +4003,8 @@ function SubjectDialog({
     setName(edit?.subject_name ?? "");
     setDept(edit?.department ?? "");
     setType(edit?.subject_type ?? "Core");
-    setFacultyCount(edit?.faculty_count ?? edit?.faculty_user_ids?.length ?? 1);
-    setFaculties(edit?.faculty_user_ids ?? []);
+    setFacultyCount(edit?.faculty_count ?? edit?.faculty_employee_uuids?.length ?? 1);
+    setFaculties(edit?.faculty_employee_uuids ?? []);
     setErrors({});
   }, [open, edit]);
 
@@ -4020,7 +4020,7 @@ function SubjectDialog({
       department: dept.trim() || "General",
       subject_type: type,
       faculty_count: Math.max(facultyCount, faculties.length),
-      faculty_user_ids: faculties,
+      faculty_employee_uuids: faculties,
     };
 
     // Client-side required + duplicate check

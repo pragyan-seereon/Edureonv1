@@ -336,13 +336,13 @@ function ModulePermissionsSummary({ perms, modules, loading }) {
 export default function RolesPage() {
   // const { user } = useAuth();
   const [query, setQuery] = useState("");
-  const [activeRoleId, setActiveRoleId] = useState("sys-institute-admin");
+  const [activeRoleId, setActiveRoleId] = useState(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
   // const [scopes, setScopes] = useState({});
   const [wizardOpen, setWizardOpen] = useState(false); 
   const [editingRole, setEditingRole] = useState(null); 
-const [activeTab, setActiveTab] = useState("roles"); // "roles" | "temp-access"
+  const [activeTab, setActiveTab] = useState("roles"); // "roles" | "temp-access"
   const [deleteRole, setDeleteRole] = useState(null);
   const [deletingRole, setDeletingRole] = useState(false);
   const [modules, setModules] = useState([]);
@@ -355,19 +355,23 @@ const [activeTab, setActiveTab] = useState("roles"); // "roles" | "temp-access"
   // const activePerms = {};
   useEffect(() => {
     let cancelled = false;
-    const loadRoles = async () => {
-      setLoadingRoles(true);
-      setRolesError(null);
-      try {
-        const list = await getAllRoles({ activeOnly: false, page: 1, limit: 20 });
-        if (!cancelled) setRoles(Array.isArray(list) ? list.map(normalizeRole) : []);
-      } catch (err) {
-        console.error(err);
-        if (!cancelled) setRolesError("Failed to load roles. Please try again.");
-      } finally {
-        if (!cancelled) setLoadingRoles(false);
-      }
-    };
+   const loadRoles = async () => {
+  setLoadingRoles(true);
+  setRolesError(null);
+  try {
+    const list = await getAllRoles({ activeOnly: false, page: 1, limit: 20 });
+    if (!cancelled) {
+      const normalized = Array.isArray(list) ? list.map(normalizeRole) : [];
+      setRoles(normalized);
+      setActiveRoleId((prev) => prev ?? normalized[0]?.id ?? null);
+    }
+  } catch (err) {
+    console.error(err);
+    if (!cancelled) setRolesError("Failed to load roles. Please try again.");
+  } finally {
+    if (!cancelled) setLoadingRoles(false);
+  }
+};
     loadRoles();
     return () => { cancelled = true; };
   }, []);
@@ -376,15 +380,15 @@ const customRoles = useMemo(() => roles.filter((r) => r.type === "CUSTOM"), [rol
   const [rolePerms, setRolePerms] = useState({});
 const [loadingRolePerms, setLoadingRolePerms] = useState(false);
 const [rolePermsError, setRolePermsError] = useState(null);
-
+const activeRole = roles.find((r) => r.id === activeRoleId) ?? roles[0];
 useEffect(() => {
-  if (!activeRoleId) return;
+  if (!activeRole?.id) return;
   let cancelled = false;
   const loadPerms = async () => {
     setLoadingRolePerms(true);
     setRolePermsError(null);
     try {
-      const detail = await getRoleDetails(activeRoleId);
+      const detail = await getRoleDetails(activeRole.id);
       if (!cancelled) setRolePerms(mapPermissionsToWizardPerms(detail.permissions));
     } catch (err) {
       console.error(err);
@@ -398,7 +402,7 @@ useEffect(() => {
   };
   loadPerms();
   return () => { cancelled = true; };
-}, [activeRoleId]);
+}, [activeRole?.id]);
 
 useEffect(() => {
   if (modules.length === 0) return;
@@ -506,7 +510,7 @@ useEffect(() => {
     return filteredRoles.slice(start, start + PAGE_SIZE);
   }, [filteredRoles, page]);
 
-const activeRole = roles.find((r) => r.id === activeRoleId) ?? roles[0];
+// const activeRole = roles.find((r) => r.id === activeRoleId) ?? roles[0];
   const assignedCount = activeRole?.usersCount ?? 0;
 const canEditRole = activeRole?.type === "CUSTOM";
   // const activeScope = scopes[activeRole?.name] ?? "Assigned Branch";

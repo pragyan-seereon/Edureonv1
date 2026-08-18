@@ -1,3 +1,5 @@
+
+
 // import { useEffect, useMemo, useRef, useState } from "react";
 // import { useNavigate } from "react-router-dom";
 
@@ -13,6 +15,8 @@
 //   rejectAdmission,
 //   reinstateAdmission
 // } from "../../../api/admissions";
+// import { getClasses } from "../../../api/class";
+// import useAuthStore from "../../../store/authStore";
 
 // import { PageContainer, PageHeader } from "../../../components/page-shell";
 // import {
@@ -83,6 +87,39 @@
 // import { ExcelUpload } from "../../../components/excel-upload";
 // import { ExcelExport } from "../../../components/excel-export";
 
+// const getApiErrorMessage = (err, fallback = "Something went wrong") => {
+//   const detail = err?.response?.data?.detail;
+//   const message = err?.response?.data?.message || err?.response?.data?.error;
+
+//   const stringify = (value) => {
+//     if (value == null) return "";
+//     if (typeof value === "string" || typeof value === "number") return String(value);
+
+//     if (Array.isArray(value)) {
+//       return value.map(stringify).filter(Boolean).join("\n");
+//     }
+
+//     if (typeof value === "object") {
+//       if (value.msg) {
+//         const loc = Array.isArray(value.loc)
+//           ? value.loc.filter((x) => x !== "body").join(" → ")
+//           : "";
+//         return loc ? `${loc}: ${String(value.msg)}` : String(value.msg);
+//       }
+//       if (value.message) return String(value.message);
+//       try {
+//         return JSON.stringify(value);
+//       } catch {
+//         return fallback;
+//       }
+//     }
+
+//     return String(value);
+//   };
+
+//   return stringify(detail) || stringify(message) || err?.message || fallback;
+// };
+
 // const stageColor = {
 //   Inquiry: "border-l-muted-foreground",
 //   Lead: "border-l-info",
@@ -100,12 +137,11 @@
 // // (rejection has its own dedicated flow via the reject dialog / drag-to-Rejected).
 // const TERMINAL_STAGES = ["Enrolled", "Rejected"];
 
-// const CLASS_OPTIONS = [
-//   "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII",
-// ];
+
 
 // export default function Admissions() {
 //   const navigate = useNavigate();
+//   const instituteUUID = useAuthStore((state) => state.instituteUUID);
 
 //   // ---- server data ----
 //   const [pipelineData, setPipelineData] = useState([]);
@@ -139,7 +175,8 @@
 
 //   // ---- view rejection reason dialog (read-only) ----
 //   const [viewReasonFor, setViewReasonFor] = useState(null);
-
+//   const [classes, setClasses] = useState([]);
+//   const [classesLoading, setClassesLoading] = useState(false);
 //   // ---- public form dialog ----
 //   const [formOpen, setFormOpen] = useState(false);
 //   const [publicForm, setPublicForm] = useState({
@@ -150,14 +187,33 @@
 //     school: "",
 //     parent: "",
 //     occupation: "",
-//     class: "VI",
+//      class_uuid: "",
 //     notes: "",
 //     consent: false,
 //   });
 
-//   useEffect(() => {
-//     loadData();
-//   }, []);
+// const loadClasses = async () => {
+//   try {
+//     setClassesLoading(true);
+
+//     const res = await getClasses();
+
+//     const list = res.data?.data || res.data || res || [];
+
+//     setClasses(Array.isArray(list) ? list : []);
+//   } catch (err) {
+//     console.error("Failed to load classes:", err);
+//     setClasses([]);
+//     toast.error("Failed to load classes");
+//   } finally {
+//     setClassesLoading(false);
+//   }
+// };
+
+// useEffect(() => {
+//   loadData();
+//   loadClasses();
+// }, []);
 
 //   const loadData = async () => {
 //     try {
@@ -184,8 +240,8 @@
 //       setStages(stageRes.data.data);
 //       setAllAdmissions(allRes.data);
 //     } catch (err) {
-//       console.log(err);
-//       toast.error("Failed to load admissions data");
+//       console.error("Failed to load admissions data:", err);
+//       toast.error(getApiErrorMessage(err, "Failed to load admissions data"));
 //     }
 //   };
 
@@ -213,34 +269,100 @@
 //       sensitivity: "base",
 //     });
 
-//   // active (not rejected) pipeline cards, filtered by search / source /
-//   // counselor, sorted alphabetically by name
+//   // ============================================================
+//   // STATUS VISIBILITY RULES
+//   //
+//   // Status        Normal Pipeline   Rejected   Pipeline Count
+//   // ACTIVE              ✅              —             ✅
+//   // TRANSFERRED         ✅              —             ✅
+//   // REJECTED            —              ✅             ✅
+//   // DELETED             ❌              ❌             ❌
+//   //
+//   // i.e. DELETED is hidden everywhere and never counted.
+//   // Everything else (ACTIVE / TRANSFERRED / REJECTED) is counted in the
+//   // Pipeline Count. REJECTED is only ever *displayed* in the Rejected
+//   // column/tab; ACTIVE + TRANSFERRED are only ever displayed in the
+//   // Normal Pipeline columns.
+//   // ============================================================
+
+//   const isDeleted = (admission) =>
+//     String(admission?.status || "").toUpperCase() === "DELETED";
+
+//   const isRejected = (admission) => {
+//     const status = String(admission?.status || "").toUpperCase();
+
+//     return (
+//       status === "REJECTED" ||
+//       Number(admission?.stage_id) === 8 ||
+//       admission?.stage_name === "Rejected"
+//     );
+//   };
+
+//   // Normal pipeline cards:
+//   // ACTIVE + TRANSFERRED are shown here.
+//   // REJECTED is shown in the Rejected column.
+//   // DELETED is hidden everywhere.
 //   const cards = useMemo(() => {
 //     return allAdmissions
 //       .filter((c) => {
-//         if (c.stage_id === 8 || c.status === "REJECTED") return false;
+//         if (isDeleted(c)) return false;
+//         if (isRejected(c)) return false;
+
 //         return matchesFilters(c);
 //       })
 //       .sort(byNameAsc);
 //   }, [allAdmissions, q, src, counselor]);
 
-//   // rejected pipeline cards — now built from allAdmissions (same source as
-//   // `cards`) and passed through the exact same filter predicate + sort, so
-//   // the Rejected column and the Rejected tab always match the active filters.
+//   // Rejected column:
+//   // REJECTED / stage 8 are shown.
+//   // DELETED is always hidden.
 //   const rejectedList = useMemo(() => {
 //     return allAdmissions
-//       .filter((c) => c.stage_id === 8 || c.status === "REJECTED")
+//       .filter((c) => {
+//         if (isDeleted(c)) return false;
+//         return isRejected(c);
+//       })
 //       .filter(matchesFilters)
 //       .sort(byNameAsc);
 //   }, [allAdmissions, q, src, counselor]);
 
-//   // Unfiltered rejected count, used for the tab badge so it always reflects
-//   // the true total regardless of active search/source/counselor filters.
+//   // Rejected badge/count:
+//   // Count rejected records except DELETED.
 //   const rejectedTotal = useMemo(() => {
-//     return allAdmissions.filter(
-//       (c) => c.stage_id === 8 || c.status === "REJECTED"
-//     ).length;
+//     return allAdmissions.filter((c) => {
+//       if (isDeleted(c)) return false;
+//       return isRejected(c);
+//     }).length;
 //   }, [allAdmissions]);
+
+//   // Pipeline counts (Kanban column badges):
+//   // Count ALL statuses except DELETED — i.e. ACTIVE + TRANSFERRED + REJECTED.
+//   //
+//   // ACTIVE       -> COUNT
+//   // TRANSFERRED  -> COUNT
+//   // REJECTED     -> COUNT
+//   // DELETED      -> NOT COUNTED
+//   const pipelineStageCounts = useMemo(() => {
+//     const counts = {};
+
+//     allAdmissions.forEach((admission) => {
+//       if (isDeleted(admission)) return;
+
+//       const stageName =
+//         admission.stage_name ||
+//         stages.find(
+//           (s) =>
+//             String(s.id) === String(admission.stage_id)
+//         )?.stage_name;
+
+//       if (!stageName) return;
+
+//       counts[stageName] =
+//         (counts[stageName] || 0) + 1;
+//     });
+
+//     return counts;
+//   }, [allAdmissions, stages]);
 
 //   // Unique applicant names for the search autosuggest dropdown, filtered
 //   // against the current query (Google-style — only relevant matches show,
@@ -341,7 +463,7 @@
 //       setDragItem(null);
 //       loadData();
 //     } catch (err) {
-//       toast.error(err.response?.data?.detail || "Failed to move stage");
+//       toast.error(getApiErrorMessage(err, "Failed to move stage"));
 //     }
 //   };
 
@@ -387,11 +509,7 @@
 //       await loadData();
 
 //     } catch (err) {
-//       toast.error(
-//         err.response?.data?.detail ||
-//         err.response?.data?.message ||
-//         "Failed to reject admission."
-//       );
+//       toast.error(getApiErrorMessage(err, "Failed to reject admission."));
 //     }
 //   };
 
@@ -409,36 +527,86 @@
 //       await loadData();
 
 //     } catch (err) {
-//       toast.error(
-//         err.response?.data?.detail ||
-//         err.response?.data?.message ||
-//         "Failed to reinstate admission."
-//       );
+//       toast.error(getApiErrorMessage(err, "Failed to reinstate admission."));
 //     }
 //   };
 
 //   const submitPublicForm = async () => {
 //     try {
-//       await createAdmission({
-//         full_name: publicForm.name,
-//         email: publicForm.email || "—",
-//         primary_phone: publicForm.phone,
-//         address: publicForm.location,
-//         prev_school: publicForm.school,
-//         parent_name: publicForm.parent,
-//         class_name: publicForm.class,
+//       const fullName = publicForm.name.trim();
+//       const phone = publicForm.phone.trim();
+
+//       if (!fullName) {
+//         toast.error("Full Name is required");
+//         return;
+//       }
+
+//       if (!phone) {
+//         toast.error("Phone is required");
+//         return;
+//       }
+
+//       if (!publicForm.class_uuid) {
+//         toast.error("Please select a class");
+//         return;
+//       }
+
+//       if (!publicForm.consent) {
+//         toast.error("Please accept the consent");
+//         return;
+//       }
+
+//       if (!instituteUUID) {
+//         toast.error("Institute context missing. Please re-login and try again.");
+//         return;
+//       }
+
+//       const payload = {
+//         institute_uuid: instituteUUID,
+//         full_name: fullName,
+//         email: publicForm.email.trim() || null,
+//         primary_phone: phone,
+//         address: publicForm.location.trim() || null,
+//         prev_school: publicForm.school.trim() || null,
+//         parent_name: publicForm.parent.trim() || null,
+//         class_uuid: publicForm.class_uuid,
 //         source_name: "Website",
-//         notes: `Parent occupation: ${publicForm.occupation}\n${publicForm.notes}`,
-//       });
-//       toast.success("Form submitted");
+//         notes: [
+//           publicForm.occupation.trim()
+//             ? `Parent occupation: ${publicForm.occupation.trim()}`
+//             : "",
+//           publicForm.notes.trim() ? publicForm.notes.trim() : "",
+//         ]
+//           .filter(Boolean)
+//           .join("\n") || null,
+//       };
+
+//       console.log("Creating public admission:", payload);
+
+//       const response = await createAdmission(payload);
+
+//       toast.success(
+//         response?.data?.message || "Admission enquiry submitted successfully"
+//       );
+
 //       setFormOpen(false);
 //       setPublicForm({
-//         name: "", email: "", phone: "", location: "", school: "",
-//         parent: "", occupation: "", class: "VI", notes: "", consent: false,
+//         name: "",
+//         email: "",
+//         phone: "",
+//         location: "",
+//         school: "",
+//         parent: "",
+//         occupation: "",
+//         class_uuid: "",
+//         notes: "",
+//         consent: false,
 //       });
-//       loadData();
+
+//       await loadData();
 //     } catch (err) {
-//       toast.error(err.response?.data?.detail || "Failed to submit form");
+//       console.error("Public admission error:", err);
+//       toast.error(getApiErrorMessage(err, "Failed to submit admission form"));
 //     }
 //   };
 
@@ -452,11 +620,16 @@
 //       const name = r["Name"]?.trim();
 //       if (!name) continue;
 //       try {
+//         if (!instituteUUID) {
+//           throw new Error("Institute context missing");
+//         }
+
 //         await createAdmission({
+//           institute_uuid: instituteUUID,
 //           full_name: name,
-//           class_name: r["Class"] || "VI",
-//           primary_phone: r["Phone"] || "—",
-//           email: r["Email"] || "—",
+//           class_name: r["Class"] || undefined,
+//           primary_phone: r["Phone"] || null,
+//           email: r["Email"] || null,
 //           source_name: r["Source"] || "Walk-in",
 //           counselor_name: r["Counselor"] || undefined,
 //         });
@@ -471,14 +644,74 @@
 //   };
 
 //   // ---- analytics ----
-//   const counts = pipelineData.map((stage) => ({
-//     stage: stage.stage_name,
-//     n: stage.count,
-//   }));
-//   const total = analytics.total || 0;
-//   const enrolled = analytics.enrolled || 0;
-//   const convRate = analytics.conversion_rate || 0;
-//   const bySource = analytics.by_source || [];
+//   // Calculate analytics from ACTIVE admissions only.
+//   const activeAdmissions = useMemo(
+//     () => allAdmissions.filter(
+//       (a) => String(a.status || "").toUpperCase() === "ACTIVE"
+//     ),
+//     [allAdmissions]
+//   );
+
+//   // Stage counts scoped to ACTIVE-only admissions — used by the analytics
+//   // "Stage Funnel" chart below. (Distinct from pipelineStageCounts, which
+//   // intentionally also includes TRANSFERRED + REJECTED for the Kanban
+//   // column badges — see STATUS VISIBILITY RULES above.)
+//   const activeStageCounts = useMemo(() => {
+//     const counts = {};
+
+//     activeAdmissions.forEach((admission) => {
+//       const stageName =
+//         admission.stage_name ||
+//         stages.find(
+//           (s) => String(s.id) === String(admission.stage_id)
+//         )?.stage_name;
+
+//       if (!stageName) return;
+
+//       counts[stageName] = (counts[stageName] || 0) + 1;
+//     });
+
+//     return counts;
+//   }, [activeAdmissions, stages]);
+
+//   const counts = useMemo(
+//     () =>
+//       pipelineData.map((stage) => ({
+//         stage: stage.stage_name,
+//         n: activeStageCounts[stage.stage_name] || 0,
+//       })),
+//     [pipelineData, activeStageCounts]
+//   );
+
+//   const total = activeAdmissions.length;
+
+//   const enrolledStageId = stages.find(
+//     (s) => s.stage_name === "Enrolled"
+//   )?.id;
+
+//   const enrolled = activeAdmissions.filter(
+//     (a) =>
+//       a.stage_name === "Enrolled" ||
+//       a.stage_id === enrolledStageId
+//   ).length;
+
+//   const convRate = total
+//     ? Number(((enrolled / total) * 100).toFixed(2))
+//     : 0;
+
+//   const bySource = useMemo(() => {
+//     const sourceMap = {};
+
+//     activeAdmissions.forEach((admission) => {
+//       const source = admission.source_name || "Unknown";
+//       sourceMap[source] = (sourceMap[source] || 0) + 1;
+//     });
+
+//     return Object.entries(sourceMap).map(([source, count]) => ({
+//       source,
+//       count,
+//     }));
+//   }, [activeAdmissions]);
 
 //   return (
 //     <PageContainer>
@@ -693,9 +926,7 @@
 //                         : ""
 //                     }`}
 //                   >
-//                     {stage.stage_name === "Rejected"
-//                       ? rejectedList.length
-//                       : stage.count}
+//                     {pipelineStageCounts[stage.stage_name] || 0}
 //                   </div>
 //                 </CardContent>
 //               </Card>
@@ -902,8 +1133,7 @@
 //                                       loadData();
 //                                     } catch (err) {
 //                                       toast.error(
-//                                         err.response?.data?.detail ||
-//                                           "Failed to move stage",
+//                                         getApiErrorMessage(err, "Failed to move stage"),
 //                                       );
 //                                     }
 //                                   }}
@@ -964,8 +1194,8 @@
 //                   {allAdmissions
 //                     .filter(
 //                       (i) =>
-//                         i.stage_id !== 8 &&
-//                         i.status !== "REJECTED" &&
+//                         String(i.status || "").toUpperCase() === "ACTIVE" &&
+//                         Number(i.stage_id) !== 8 &&
 //                         (stageFilter === "all" ||
 //                           i.stage_name === stageFilter)
 //                     )
@@ -1143,6 +1373,9 @@
 //                 <TableBody>
 //                   {allAdmissions
 //                     .filter((i) => {
+//                       // Only ACTIVE admissions are shown.
+//                       if (String(i.status || "").toUpperCase() !== "ACTIVE") return false;
+
 //                       // `test_score` is not part of the current admissions
 //                       // API response — add it server-side to populate this tab.
 //                       const s = i.test_score;
@@ -1341,24 +1574,46 @@
 //                 }
 //               />
 //             </div>
-//             <div className="col-span-2">
-//               <Label>Class Applying For</Label>
-//               <Select
-//                 value={publicForm.class}
-//                 onValueChange={(v) => setPublicForm({ ...publicForm, class: v })}
-//               >
-//                 <SelectTrigger>
-//                   <SelectValue />
-//                 </SelectTrigger>
-//                 <SelectContent>
-//                   {CLASS_OPTIONS.map((c) => (
-//                     <SelectItem key={c} value={c}>
-//                       Class {c}
-//                     </SelectItem>
-//                   ))}
-//                 </SelectContent>
-//               </Select>
-//             </div>
+// <div className="col-span-2">
+//   <Label>Class Applying For</Label>
+
+//   <Select
+//     value={publicForm.class_uuid}
+//     onValueChange={(value) =>
+//       setPublicForm((prev) => ({
+//         ...prev,
+//         class_uuid: value,
+//       }))
+//     }
+//   >
+//     <SelectTrigger disabled={classesLoading}>
+//       <SelectValue
+//         placeholder={
+//           classesLoading
+//             ? "Loading classes..."
+//             : "Select class"
+//         }
+//       />
+//     </SelectTrigger>
+
+//     <SelectContent>
+//       {classes.length === 0 ? (
+//         <SelectItem value="no-class" disabled>
+//           No classes available
+//         </SelectItem>
+//       ) : (
+//         classes.map((c) => (
+//           <SelectItem
+//             key={c.class_uuid || c.id}
+//             value={String(c.class_uuid || c.id)}
+//           >
+//             {c.class_name || c.name}
+//           </SelectItem>
+//         ))
+//       )}
+//     </SelectContent>
+//   </Select>
+// </div>
 //             <div className="col-span-2">
 //               <Label>Notes</Label>
 //               <Textarea
@@ -1532,6 +1787,8 @@
 // }
 
 
+
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -1544,6 +1801,7 @@ import {
   getAllAdmissions,
   enrollStudent,
   createAdmission,
+  importAdmissions,
   rejectAdmission,
   reinstateAdmission
 } from "../../../api/admissions";
@@ -2142,39 +2400,102 @@ useEffect(() => {
     }
   };
 
-  // Bulk import rows coming from the Excel upload widget. Expects a header
-  // row of: Name, Class, Phone, Email, Source, Counselor (edit templateHeaders
-  // below to match whatever columns your backend's bulk-import endpoint wants).
-  const bulkImportRows = async (rows) => {
-    let added = 0;
-    let failed = 0;
-    for (const r of rows) {
-      const name = r["Name"]?.trim();
-      if (!name) continue;
-      try {
-        if (!instituteUUID) {
-          throw new Error("Institute context missing");
-        }
-
-        await createAdmission({
-          institute_uuid: instituteUUID,
-          full_name: name,
-          class_name: r["Class"] || undefined,
-          primary_phone: r["Phone"] || null,
-          email: r["Email"] || null,
-          source_name: r["Source"] || "Walk-in",
-          counselor_name: r["Counselor"] || undefined,
-        });
-        added++;
-      } catch (err) {
-        failed++;
-      }
+  // ============================================================
+  // Admissions Excel Import
+  // Sends the original Excel file directly to the backend:
+  // POST /admissions/import
+  // ============================================================
+ const handleAdmissionsImport = async (file) => {
+  try {
+    if (!file) {
+      toast.error("Please select an Excel file");
+      return;
     }
-    if (added) toast.success(`${added} inquiries imported`);
-    if (failed) toast.error(`${failed} rows failed to import`);
-    loadData();
-  };
 
+    if (!instituteUUID) {
+      toast.error(
+        "Institute context missing. Please re-login and try again."
+      );
+      return;
+    }
+
+    console.log("Uploading Excel file:", {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    });
+
+    const response = await importAdmissions(file);
+
+    console.log(
+      "Admission import response:",
+      response.data
+    );
+
+    const result = response?.data || {};
+
+    const imported = Number(
+      result.imported || 0
+    );
+
+    const skipped = Array.isArray(
+      result.skipped
+    )
+      ? result.skipped
+      : [];
+
+    if (imported > 0) {
+      toast.success(
+        `${imported} admissions imported successfully`
+      );
+    } else {
+      toast.info(
+        "No admissions were imported"
+      );
+    }
+
+    if (skipped.length > 0) {
+      console.warn(
+        "Skipped rows:",
+        skipped
+      );
+
+      toast.warning(
+        `${skipped.length} rows skipped`
+      );
+    }
+
+    await loadData();
+
+  } catch (err) {
+    console.error(
+      "Admission Excel import failed:",
+      err
+    );
+
+    const detail =
+      err?.response?.data?.detail;
+
+    if (Array.isArray(detail)) {
+      toast.error(
+        detail
+          .map(
+            (item) =>
+              item?.msg ||
+              "Validation error"
+          )
+          .join(", ")
+      );
+    } else {
+      toast.error(
+        detail ||
+          err?.response?.data?.message ||
+          err?.message ||
+          "Failed to import admissions"
+      );
+    }
+  }
+};
   // ---- analytics ----
   // Calculate analytics from ACTIVE admissions only.
   const activeAdmissions = useMemo(
@@ -2267,12 +2588,22 @@ useEffect(() => {
                 { header: "Counselor", accessor: (r) => r.counselor_name ?? "" },
               ]}
             />
-            <ExcelUpload
-              label="Bulk Upload"
-              templateName="admissions-template.xlsx"
-              templateHeaders={["Name", "Class", "Phone", "Email", "Source", "Counselor"]}
-              onRows={bulkImportRows}
-            />
+<ExcelUpload
+  label="Bulk Upload"
+  templateName="admissions-template.xlsx"
+  templateHeaders={[
+    "Name",
+    "Class",
+    "Parent",
+    "Phone",
+    "Email",
+    "Source",
+    "Counselor",
+    "Test Score",
+    "Session Year",
+  ]}
+  onFile={handleAdmissionsImport}
+/>
             <Button size="sm" variant="outline" onClick={() => setFormOpen(true)}>
               <FileText className="h-4 w-4" />
               Public Form

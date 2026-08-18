@@ -432,3 +432,25 @@ export const getArchivedStudents = (sessionYear = "") => {
     headers: getHeaders(),
   });
 };
+
+
+
+// ==========================
+// Import Students Excel
+// ==========================
+export const importStudentsExcel = (file) => {
+  const formData = new FormData();
+
+  formData.append("file", file);
+
+  return api.post(
+    "/students/import",
+    formData,
+    {
+      headers: {
+        ...getHeaders(),
+        "Content-Type": "multipart/form-data",
+      },
+    }
+  );
+};

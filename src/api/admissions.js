@@ -344,4 +344,23 @@ export const reinstateAdmission = (uuid) => {
   );
 };
 
+// =========================
+// Import Admissions Excel
+// =========================
 
+
+
+
+export const importAdmissions = (file) => {
+  const formData = new FormData();
+
+  formData.append("file", file);
+
+ return api.post("/admissions/import", formData, {
+      headers: {
+        ...getHeaders(),
+        "Content-Type": "multipart/form-data",
+      },
+    }
+  );
+};

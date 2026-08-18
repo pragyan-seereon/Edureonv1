@@ -130,3 +130,20 @@ export const downloadPaymentReceipt = async (
 
   URL.revokeObjectURL(url);
 };
+
+
+// -----------------------------------------------------
+// Get Payments By Student UUID
+// -----------------------------------------------------
+
+export const getStudentPayments = (
+  studentUUID,
+  params = {}
+) =>
+  api.get(`/payments/student/${studentUUID}`, {
+    headers: getHeaders(),
+    params: {
+      limit: 100,
+      ...params,
+    },
+  });

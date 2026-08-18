@@ -1,3 +1,6 @@
+
+
+
 // import * as XLSX from "xlsx";
 // import jsPDF from "jspdf";
 // import autoTable from "jspdf-autotable";
@@ -187,10 +190,92 @@
 
 // function extractList(res) {
 //   const body = res?.data ?? res;
-//   if (Array.isArray(body)) return body;
-//   if (Array.isArray(body?.data)) return body.data;
-//   if (Array.isArray(body?.data?.data)) return body.data.data;
+
+//   // Direct array
+//   if (Array.isArray(body)) {
+//     return body;
+//   }
+
+//   // { data: [...] }
+//   if (Array.isArray(body?.data)) {
+//     return body.data;
+//   }
+
+//   // { data: { data: [...] } }
+//   if (Array.isArray(body?.data?.data)) {
+//     return body.data.data;
+//   }
+
+//   // { data: { items: [...] } }  <-- YOUR DISCOUNT API
+//   if (Array.isArray(body?.data?.items)) {
+//     return body.data.items;
+//   }
+
+//   // { items: [...] }
+//   if (Array.isArray(body?.items)) {
+//     return body.items;
+//   }
+
 //   return [];
+// }
+
+// /* ------------------------------------------------------------------ */
+// /*  ERROR HANDLING — backend `detail` is often a dict                  */
+// /*  ({message, student_uuid, discount_uuid, invalid_components, ...})  */
+// /*  or a list of such dicts, and only sometimes a plain string.        */
+// /*  NEVER hand `err.response.data.detail` straight to toast/JSX —      */
+// /*  always run it through this first, or React will throw:             */
+// /*  "Objects are not valid as a React child".                          */
+// /* ------------------------------------------------------------------ */
+// function describeErrorDetail(d) {
+//   if (typeof d === "string") return d;
+//   if (!d || typeof d !== "object") return String(d ?? "");
+
+//   const parts = [];
+//   if (d.message) parts.push(d.message);
+
+//   if (d.student_uuid) parts.push(`(student ${d.student_uuid})`);
+//   if (d.discount_uuid) parts.push(`(discount ${d.discount_uuid})`);
+//   if (d.assignment_student_discount_uuid) {
+//     parts.push(`(assignment ${d.assignment_student_discount_uuid})`);
+//   }
+//   if (d.employee_uuid) parts.push(`(employee ${d.employee_uuid})`);
+//   if (typeof d.older_sibling_count === "number") {
+//     parts.push(`— found ${d.older_sibling_count} older sibling(s)`);
+//   }
+//   if (d.required_category) parts.push(`— requires ${d.required_category} component`);
+//   if (d.discount_scope) parts.push(`— scope ${d.discount_scope}`);
+//   if (d.employee_status) parts.push(`— employee status: ${d.employee_status}`);
+
+//   if (Array.isArray(d.invalid_components) && d.invalid_components.length) {
+//     const names = d.invalid_components
+//       .map((c) => c?.component_name || c?.component_uuid || c?.reason)
+//       .filter(Boolean)
+//       .join(", ");
+//     if (names) parts.push(`: ${names}`);
+//   }
+
+//   if (Array.isArray(d.allowed_types) && d.allowed_types.length) {
+//     parts.push(`(allowed: ${d.allowed_types.join(", ")})`);
+//   }
+
+//   const joined = parts.filter(Boolean).join(" ");
+//   return joined || JSON.stringify(d);
+// }
+
+// function getErrorMessage(err, fallback = "Something went wrong") {
+//   const detail = err?.response?.data?.detail;
+
+//   if (detail === undefined || detail === null || detail === "") {
+//     return err?.message || fallback;
+//   }
+
+//   if (Array.isArray(detail)) {
+//     const joined = detail.map(describeErrorDetail).filter(Boolean).join("; ");
+//     return joined || fallback;
+//   }
+
+//   return describeErrorDetail(detail) || fallback;
 // }
 
 // /* ------------------------------------------------------------------ */
@@ -238,9 +323,12 @@
 //   "TRANSPORT",
 //   "HOSTEL",
 //   "FOODING",
-//   "ACTIVITY",
 //   "EXAM",
+//   "ACTIVITY",
+//   "LAB",
+//   "SPORTS",
 //   "ADMISSION",
+//   "LIBRARY",
 //   "OTHER",
 // ];
 
@@ -291,25 +379,32 @@
 //   return {
 //     component_uuid: c.component_uuid,
 //     name: c.name,
-//     category: c.category,
+//     category: String(c.category || "OTHER").toUpperCase(),
 //     default_amount: Number(c.default_amount || 0),
-//     recurring: c.type === "RECURRING",
+
+//     // ANNUAL | RECURRING | ONE_TIME
+//     type: String(c.type || "ONE_TIME").toUpperCase(),
+
 //     mandatory: !!c.is_mandatory,
 //     new_admission_only: !!c.new_admission_only,
+//     locked_after_opt_in: !!c.locked_after_opt_in,
 //     status: c.is_active ? "Active" : "Archived",
 //     description: c.description ?? "",
 //   };
 // }
 
-// // UI fee-component form values -> API create/update payload
 // function componentToApi(f) {
 //   return {
 //     name: f.name,
-//     category: f.category,
-//     type: f.recurring ? "RECURRING" : "ONE_TIME",
+//     category: String(f.category || "OTHER").toUpperCase(),
+
+//     // ANNUAL | RECURRING | ONE_TIME
+//     type: String(f.type || "ONE_TIME").toUpperCase(),
+
 //     default_amount: Number(f.default_amount) || 0,
 //     is_mandatory: !!f.mandatory,
 //     new_admission_only: !!f.new_admission_only,
+//     locked_after_opt_in: !!f.locked_after_opt_in,
 //     is_active: f.status === "Active",
 //     description: f.description ?? "",
 //   };
@@ -381,74 +476,93 @@
 //   };
 // }
 
+// /* ------------------------------------------------------------------ */
+// /*  DISCOUNTS — API-backed translator                                  */
+// /*  IMPORTANT: the backend (FeeAssignmentStudentDiscountService) reads */
+// /*  discount_value / max_discount_cap / early_payment_month/day        */
+// /*  DYNAMICALLY from whatever is stored on the FeeDiscount row. It     */
+// /*  only enforces the *type* per scope at assignment time:             */
+// /*    SIBLING          -> discount_type must be FIXED                  */
+// /*    EARLY_FULL_YEAR   -> discount_type must be PERCENT,               */
+// /*                        requires_full_year_payment must be true,      */
+// /*                        early_payment_month/day must be set           */
+// /*    STAFF_STUDENT     -> student must be linked to an ACTIVE employee */
+// /*  It does NOT hardcode ₹5,000 / 5% / April 15 anywhere — those are    */
+// /*  admin-configured values. The old frontend hardcoded them; this     */
+// /*  version does not.                                                   */
+// /* ------------------------------------------------------------------ */
+
 // function discountFromApi(d) {
-//   const componentUuids = (d.components || []).map((c) => c.component_uuid).filter(Boolean);
+//   const componentUuids = (d.components || [])
+//     .map((c) => c.component_uuid)
+//     .filter(Boolean);
 
-//   // Properly map the discount type from API
-//   let type = "Percent"; // default
-//   if (d.discount_type) {
-//     const typeUpper = String(d.discount_type).toUpperCase().trim();
-//     if (typeUpper === "FIXED" || typeUpper === "FLAT" || typeUpper === "FIX") {
-//       type = "Fixed";
-//     } else if (typeUpper === "PERCENT" || typeUpper === "PERCENTAGE" || typeUpper === "%") {
-//       type = "Percent";
-//     } else {
-//       // If it's already "Percent" or "Fixed" in the data, use as is
-//       if (d.discount_type === "Percent" || d.discount_type === "Fixed") {
-//         type = d.discount_type;
-//       }
-//     }
-//   }
+//   const typeUpper = String(d.discount_type || "PERCENT").toUpperCase();
+//   const type = typeUpper === "FIXED" ? "Fixed" : "Percent";
 
-//   // Get class UUIDs from the response
-//   const classUuids = (d.classes || []).map((c) => c.class_uuid).filter(Boolean);
+//   const scope = String(d.discount_scope || "NORMAL").toUpperCase();
 
 //   return {
 //     discount_uuid: d.discount_uuid,
 //     name: d.discount_name,
-//     type: type,
+//     code: d.discount_code || "",
+//     type,
 //     value: Number(d.discount_value || 0),
 //     appliesTo: componentUuids.length ? componentUuids : ["*"],
 //     appliesToLabels: (d.components || []).map((c) => c.component_name).filter(Boolean),
-//     classes: classUuids, // Store UUIDs
+//     classes: (d.classes || []).map((c) => c.class_uuid).filter(Boolean),
 //     studentOverride: !!d.student_override,
-//     maxDiscount: Number(d.max_discount_cap) > 0 ? Number(d.max_discount_cap) : undefined,
+//     maxDiscount: Number(d.max_discount_cap || 0) > 0 ? Number(d.max_discount_cap) : undefined,
 //     status: d.is_active ? "Active" : "Archived",
 //     description: d.description ?? "",
+//     discountScope: scope,
+//     earlyPaymentMonth: d.early_payment_month ?? null,
+//     earlyPaymentDay: d.early_payment_day ?? null,
+//     requiresFullYearPayment: !!d.requires_full_year_payment,
 //   };
 // }
 
-// // UI discount-drawer form values -> API create/update payload.
 // function discountToApi(f) {
-//   // Ensure the discount_type is correctly mapped to match API expectations
-//   let discountType = "PERCENT"; // Default to PERCENT (matches API)
+//   const scope = String(f.discountScope || "NORMAL").toUpperCase();
 
-//   if (f.type === "Fixed" || f.type === "fixed" || f.type === "FIXED") {
-//     discountType = "FIXED";
-//   } else if (f.type === "Percent" || f.type === "percent" || f.type === "PERCENT") {
-//     discountType = "PERCENT"; // API expects "PERCENT", not "PERCENTAGE"
-//   } else {
-//     // If it's a string value, check if it's percentage or fixed
-//     const typeLower = String(f.type).toLowerCase().trim();
-//     if (typeLower === "fixed" || typeLower === "flat") {
-//       discountType = "FIXED";
-//     } else {
-//       discountType = "PERCENT";
-//     }
-//   }
+//   let discountType = String(f.type || "Percent").toUpperCase();
+//   discountType = discountType === "FIXED" || discountType === "FIX" ? "FIXED" : "PERCENT";
+
+//   // The backend only pins down the TYPE per scope — SIBLING must be
+//   // FIXED, EARLY_FULL_YEAR must be PERCENT. It does NOT pin the value,
+//   // the cap, or the early-payment date: those are admin-configured and
+//   // read dynamically by _validate_discount_for_student. Never overwrite
+//   // them with a hardcoded number here.
+//   if (scope === "SIBLING") discountType = "FIXED";
+//   if (scope === "EARLY_FULL_YEAR") discountType = "PERCENT";
+
+//   const value = Number(f.value) || 0;
+//   const appliesTo = Array.isArray(f.appliesTo) ? f.appliesTo.filter(Boolean) : [];
+
+//   const earlyPaymentMonth = scope === "EARLY_FULL_YEAR" ? (Number(f.earlyPaymentMonth) || null) : null;
+//   const earlyPaymentDay = scope === "EARLY_FULL_YEAR" ? (Number(f.earlyPaymentDay) || null) : null;
+
+//   // Backend requires requires_full_year_payment === true for EARLY_FULL_YEAR.
+//   const requiresFullYearPayment =
+//     scope === "EARLY_FULL_YEAR" ? true : !!f.requiresFullYearPayment;
 
 //   return {
 //     discount_name: f.name,
+//     discount_code: f.code || null,
 //     discount_type: discountType,
-//     discount_value: Number(f.value) || 0,
+//     discount_value: value,
 //     max_discount_cap: Number(f.maxDiscount) || 0,
+//     discount_scope: scope,
+//     early_payment_month: earlyPaymentMonth,
+//     early_payment_day: earlyPaymentDay,
+//     requires_full_year_payment: requiresFullYearPayment,
 //     student_override: !!f.studentOverride,
 //     is_active: f.status === "Active",
 //     description: f.description ?? "",
 //     classes: (f.classes || []).map((uuid) => ({ class_uuid: uuid })),
-//     components: f.appliesTo?.includes("*")
+//     components: appliesTo.includes("*")
 //       ? []
-//       : (f.appliesTo || []).map((component_uuid) => ({ component_uuid })),
+//       : appliesTo.map((component_uuid) => ({ component_uuid })),
 //   };
 // }
 
@@ -543,6 +657,10 @@
 //       discount_type: r.discount_type,
 //       discount_value: Number(r.discount_value || 0),
 //       max_discount_cap: Number(r.max_discount_cap || 0),
+//       discount_scope: r.discount_scope || "NORMAL",
+//       requires_full_year_payment: !!r.requires_full_year_payment,
+//       early_payment_month: r.early_payment_month ?? null,
+//       early_payment_day: r.early_payment_day ?? null,
 //     });
 //   }
 
@@ -670,6 +788,7 @@
 //           : "",
 //         dueDate: month.due_date ?? null,
 //         component: component.component_name ?? component.name ?? "Fee",
+//         category: String(component.category ?? month.category ?? "OTHER").toUpperCase(),
 //         monthly,
 //         discount,
 //         payable: Math.max(monthly - discount, 0),
@@ -749,6 +868,7 @@
 //           <TableHeader>
 //             <TableRow>
 //               <TableHead>Name</TableHead>
+//               <TableHead>Rule</TableHead>
 //               <TableHead>Type</TableHead>
 //               <TableHead className="text-right">Value</TableHead>
 //               <TableHead>Applies To</TableHead>
@@ -763,6 +883,9 @@
 //             {discounts.map((d) => (
 //               <TableRow key={d.discount_uuid}>
 //                 <TableCell className="text-sm font-medium">{d.name}</TableCell>
+//                 <TableCell>
+//                   <Badge variant="outline" className="text-xs">{d.discountScope || "NORMAL"}</Badge>
+//                 </TableCell>
 //                 <TableCell>
 //                   <Badge variant={d.type === "Percent" ? "default" : "secondary"} className="text-xs">
 //                     {d.type}
@@ -818,14 +941,14 @@
 //             ))}
 //             {!loading && discounts.length === 0 && (
 //               <TableRow>
-//                 <TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-8">
+//                 <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
 //                   No discount templates yet.
 //                 </TableCell>
 //               </TableRow>
 //             )}
 //             {loading && (
 //               <TableRow>
-//                 <TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-8">
+//                 <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
 //                   Loading discounts…
 //                 </TableCell>
 //               </TableRow>
@@ -846,93 +969,98 @@
 
 // function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
 //   const [f, setF] = useState({
-//     name: "",
-//     type: "Percent",
-//     value: 10,
-//     appliesTo: ["*"],
-//     classes: [],
-//     studentOverride: true,
-//     maxDiscount: undefined,
-//     status: "Active",
-//     description: ""
+//     name: "", code: "", type: "Percent", value: "",
+//     discountScope: "NORMAL", appliesTo: ["*"], classes: [],
+//     studentOverride: false, maxDiscount: undefined, status: "Active",
+//     earlyPaymentMonth: null, earlyPaymentDay: null,
+//     requiresFullYearPayment: false, description: "",
 //   });
 //   const [saving, setSaving] = useState(false);
 //   const [availableClasses, setAvailableClasses] = useState([]);
 //   const [loadingClasses, setLoadingClasses] = useState(false);
 
-//   // Fetch classes dynamically when the drawer opens
 //   useEffect(() => {
 //     if (!open) return;
-
-//     const fetchClasses = async () => {
+//     (async () => {
 //       setLoadingClasses(true);
 //       try {
 //         const response = await getClasses();
-//         const classesData = extractList(response);
-
-//         const classList = classesData.map(c => ({
+//         const classList = extractList(response).map((c) => ({
 //           class_uuid: c.class_uuid || c.id || c.uuid,
-//           class_name: c.class_name || c.name || c.class || String(c)
-//         })).filter(c => c.class_uuid);
-
+//           class_name: c.class_name || c.name || c.class || String(c),
+//         })).filter((c) => c.class_uuid);
 //         setAvailableClasses(classList);
 //       } catch (error) {
-//         console.error("Failed to fetch classes:", error);
-//         toast.error("Could not load classes");
+//         console.error(error);
 //         setAvailableClasses([]);
 //       } finally {
 //         setLoadingClasses(false);
 //       }
-//     };
-
-//     fetchClasses();
+//     })();
 //   }, [open]);
 
 //   useEffect(() => {
 //     if (!open) return;
 //     if (editing) {
-//       const { discount_uuid, appliesToLabels, ...rest } = editing;
-
-//       // Ensure the type is properly set to "Percent" or "Fixed"
-//       let typeValue = "Percent";
-//       if (rest.type) {
-//         const typeLower = String(rest.type).toLowerCase().trim();
-//         if (typeLower === "fixed" || typeLower === "flat" || typeLower === "fix") {
-//           typeValue = "Fixed";
-//         } else if (typeLower === "percent" || typeLower === "percentage" || typeLower === "%") {
-//           typeValue = "Percent";
-//         } else {
-//           // If it's something else, check if it matches "FIXED" or "PERCENT" from API
-//           if (rest.type === "FIXED") typeValue = "Fixed";
-//           else if (rest.type === "PERCENT") typeValue = "Percent";
-//           else typeValue = rest.type;
-//         }
-//       }
-
 //       setF({
-//         ...rest,
-//         type: typeValue,
-//         classes: rest.classes || [],
-//         maxDiscount: rest.maxDiscount || rest.max_discount || undefined,
-//         studentOverride: !!rest.studentOverride,
-//         status: rest.status === "Active" ? "Active" : "Archived"
+//         ...editing,
+//         code: editing.code || "",
+//         discountScope: editing.discountScope || "NORMAL",
+//         earlyPaymentMonth: editing.earlyPaymentMonth ?? null,
+//         earlyPaymentDay: editing.earlyPaymentDay ?? null,
+//         requiresFullYearPayment: !!editing.requiresFullYearPayment,
+//         classes: editing.classes || [],
+//         appliesTo: editing.appliesTo || ["*"],
+//         maxDiscount: editing.maxDiscount,
 //       });
 //     } else {
 //       setF({
-//         name: "",
-//         type: "Percent",
-//         value: 10,
-//         appliesTo: ["*"],
-//         classes: [],
-//         studentOverride: true,
-//         maxDiscount: undefined,
-//         status: "Active",
-//         description: ""
+//         name: "", code: "", type: "Percent", value: 10,
+//         discountScope: "NORMAL", appliesTo: ["*"], classes: [],
+//         studentOverride: false, maxDiscount: undefined, status: "Active",
+//         earlyPaymentMonth: null, earlyPaymentDay: null,
+//         requiresFullYearPayment: false, description: "",
 //       });
 //     }
 //   }, [open, editing]);
 
+//   const scope = f.discountScope;
+//   const special = scope === "SIBLING" || scope === "EARLY_FULL_YEAR";
+
+//   // IMPORTANT: this ONLY sets the TYPE and auto-picks a sensible default
+//   // component (Admission for Sibling, Tuition for Early-Full-Year). It
+//   // never overwrites the admin's value/cap/date — those stay whatever
+//   // the admin types, and are validated dynamically on the backend.
+//   useEffect(() => {
+//     if (scope === "SIBLING") {
+//       const admission = components.find((c) => String(c.category).toUpperCase() === "ADMISSION");
+//       setF((prev) => ({
+//         ...prev,
+//         type: "Fixed",
+//         requiresFullYearPayment: false,
+//         earlyPaymentMonth: null,
+//         earlyPaymentDay: null,
+//         appliesTo: admission && (!prev.appliesTo.length || prev.appliesTo.includes("*"))
+//           ? [admission.component_uuid]
+//           : prev.appliesTo,
+//       }));
+//     } else if (scope === "EARLY_FULL_YEAR") {
+//       const tuition = components.find((c) => String(c.category).toUpperCase() === "TUITION");
+//       setF((prev) => ({
+//         ...prev,
+//         type: "Percent",
+//         requiresFullYearPayment: true,
+//         appliesTo: tuition && (!prev.appliesTo.length || prev.appliesTo.includes("*"))
+//           ? [tuition.component_uuid]
+//           : prev.appliesTo,
+//       }));
+//     } else if (scope === "STAFF_STUDENT") {
+//       setF((prev) => ({ ...prev, requiresFullYearPayment: false, earlyPaymentMonth: null, earlyPaymentDay: null }));
+//     }
+//   }, [scope, components]);
+
 //   const toggleComponent = (uuid) => {
+//     if (special) return;
 //     setF((prev) => {
 //       if (uuid === "*") return { ...prev, appliesTo: ["*"] };
 //       const current = prev.appliesTo.includes("*") ? [] : prev.appliesTo;
@@ -944,192 +1072,174 @@
 //   const toggleClass = (classUuid) => {
 //     setF((prev) => {
 //       const current = prev.classes || [];
-//       const next = current.includes(classUuid)
-//         ? current.filter((x) => x !== classUuid)
-//         : [...current, classUuid];
+//       const next = current.includes(classUuid) ? current.filter((x) => x !== classUuid) : [...current, classUuid];
 //       return { ...prev, classes: next };
 //     });
 //   };
 
 //   const save = async () => {
 //     if (!f.name.trim()) { toast.error("Discount name required"); return; }
+//     if (scope === "SIBLING" && !components.some((c) => f.appliesTo.includes(c.component_uuid) && String(c.category).toUpperCase() === "ADMISSION")) {
+//       toast.error("Sibling discount must apply to an Admission component"); return;
+//     }
+//     if (scope === "EARLY_FULL_YEAR" && !components.some((c) => f.appliesTo.includes(c.component_uuid) && String(c.category).toUpperCase() === "TUITION")) {
+//       toast.error("Early full-year discount must apply to Tuition"); return;
+//     }
+//     if (scope === "EARLY_FULL_YEAR" && (!f.earlyPaymentMonth || !f.earlyPaymentDay)) {
+//       toast.error("Early full-year discount needs a deadline month and day"); return;
+//     }
+//     if (Number(f.value) <= 0) {
+//       toast.error("Discount value must be greater than zero"); return;
+//     }
 //     setSaving(true);
 //     try {
 //       await onSave(f, editing);
 //       onOpenChange(false);
+//     } catch (err) {
+//       // onSave (saveDiscount) already toasts on failure via getErrorMessage —
+//       // this catch just stops the drawer from closing on a failed save.
+//       console.error(err);
 //     } finally {
 //       setSaving(false);
 //     }
 //   };
 
-//   const getClassName = (uuid) => {
-//     const found = availableClasses.find(c => c.class_uuid === uuid);
-//     return found ? found.class_name : uuid;
-//   };
-
 //   return (
 //     <Dialog open={open} onOpenChange={onOpenChange}>
-//       <DialogContent className="max-w-lg">
+//       <DialogContent className="max-w-2xl">
 //         <DialogHeader>
 //           <DialogTitle>{editing ? "Edit Discount" : "New Discount"}</DialogTitle>
-//           <DialogDescription>Define who qualifies, how much it's worth, and any cap.</DialogDescription>
+//           <DialogDescription>Configure normal, sibling, staff or early full-year rules — all values are saved to the backend, nothing here is hardcoded.</DialogDescription>
 //         </DialogHeader>
-//         <div className="rounded-lg border border-border/60 p-4 space-y-4 max-h-[60vh] overflow-y-auto">
-//           <FF label="Name">
-//             <Input
-//               value={f.name}
-//               onChange={(e) => setF({ ...f, name: e.target.value })}
-//               placeholder="Sibling Discount"
-//             />
+
+//         <div className="rounded-lg border border-border/60 p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+//           <Row>
+//             <FF label="Discount Name"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Sibling Admission Discount" /></FF>
+//             <FF label="Discount Code"><Input value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} placeholder="SIBLING_ADMISSION" /></FF>
+//           </Row>
+
+//           <FF label="Discount Rule (Scope)">
+//             <Select value={scope} onValueChange={(v) => setF((prev) => ({ ...prev, discountScope: v }))}>
+//               <SelectTrigger><SelectValue /></SelectTrigger>
+//               <SelectContent>
+//                 <SelectItem value="NORMAL">Normal Discount</SelectItem>
+//                 <SelectItem value="SIBLING">Sibling — Fixed, Admission only, 2nd child</SelectItem>
+//                 <SelectItem value="STAFF_STUDENT">Staff Student — requires active employee link</SelectItem>
+//                 <SelectItem value="EARLY_FULL_YEAR">Early Full Year — Percent, Tuition only</SelectItem>
+//               </SelectContent>
+//             </Select>
 //           </FF>
+
+//           {scope === "SIBLING" && (
+//             <div className="rounded-lg border p-3 bg-muted/20 text-sm space-y-1">
+//               <div className="font-medium">Sibling discount</div>
+//               <div>Type is locked to <b>Fixed (₹)</b> and must apply only to an <b>ADMISSION</b> component.</div>
+//               <div>Only eligible for a student's <b>second child</b> (exactly one older sibling on record).</div>
+//               <div>Amount and cap below are set by you — the backend does not override them.</div>
+//             </div>
+//           )}
+
+//           {scope === "STAFF_STUDENT" && (
+//             <div className="rounded-lg border p-3 bg-muted/20 text-sm space-y-1">
+//               <div className="font-medium">Staff student discount</div>
+//               <div>Applies only to a student linked to an <b>active</b> employee record.</div>
+//               <div>Can be Fixed or Percent — no component restriction; pick components below.</div>
+//             </div>
+//           )}
+
+//           {scope === "EARLY_FULL_YEAR" && (
+//             <div className="rounded-lg border p-3 bg-muted/20 text-sm space-y-1">
+//               <div className="font-medium">Early full-year discount</div>
+//               <div>Type is locked to <b>Percent</b> and must apply only to a <b>TUITION</b> component.</div>
+//               <div>Requires the parent to pay the full academic year up front, by the deadline below.</div>
+//             </div>
+//           )}
 
 //           <Row>
 //             <FF label="Type">
-//               <Select value={f.type} onValueChange={(v) => setF({ ...f, type: v })}>
+//               <Select
+//                 value={f.type}
+//                 onValueChange={(v) => setF({ ...f, type: v })}
+//                 disabled={scope === "SIBLING" || scope === "EARLY_FULL_YEAR"}
+//               >
 //                 <SelectTrigger><SelectValue /></SelectTrigger>
-//                 <SelectContent>
-//                   <SelectItem value="Percent">Percent</SelectItem>
-//                   <SelectItem value="Fixed">Fixed (₹)</SelectItem>
-//                 </SelectContent>
+//                 <SelectContent><SelectItem value="Percent">Percent</SelectItem><SelectItem value="Fixed">Fixed (₹)</SelectItem></SelectContent>
 //               </Select>
 //             </FF>
-//             <FF label="Value">
-//               <Input
-//                 type="number"
-//                 min={0}
-//                 value={f.value}
-//                 onChange={(e) => setF({ ...f, value: parseInt(e.target.value) || 0 })}
-//               />
+//             <FF label={f.type === "Percent" ? "Value (%)" : "Value (₹)"}>
+//               <Input type="number" min={0} step={0.01} value={f.value} onChange={(e) => setF({ ...f, value: Number(e.target.value) || 0 })} />
 //             </FF>
 //           </Row>
 
 //           <div>
 //             <Label className="text-xs text-muted-foreground">Applies To</Label>
 //             <div className="flex flex-wrap gap-2 pt-2">
-//               <Badge
-//                 variant={f.appliesTo.includes("*") ? "default" : "outline"}
-//                 className="cursor-pointer"
-//                 onClick={() => toggleComponent("*")}
-//               >
-//                 All components
-//               </Badge>
-//               {components.map((c) => (
-//                 <Badge
-//                   key={c.component_uuid}
-//                   variant={!f.appliesTo.includes("*") && f.appliesTo.includes(c.component_uuid) ? "default" : "outline"}
-//                   className="cursor-pointer"
-//                   onClick={() => toggleComponent(c.component_uuid)}
-//                 >
-//                   {c.name}
-//                 </Badge>
-//               ))}
-//               {components.length === 0 && (
-//                 <span className="text-xs text-muted-foreground">No fee components yet — add some in Structures → Components Library.</span>
+//               {scope === "NORMAL" && (
+//                 <Badge variant={f.appliesTo.includes("*") ? "default" : "outline"} className="cursor-pointer" onClick={() => toggleComponent("*")}>All components</Badge>
 //               )}
+//               {components.map((c) => {
+//                 const category = String(c.category || "").toUpperCase();
+//                 const required = scope === "SIBLING" ? category === "ADMISSION" : scope === "EARLY_FULL_YEAR" ? category === "TUITION" : true;
+//                 if (special && !required) return null;
+//                 return (
+//                   <Badge key={c.component_uuid} variant={f.appliesTo.includes(c.component_uuid) ? "default" : "outline"} className="cursor-pointer" onClick={() => toggleComponent(c.component_uuid)}>
+//                     {c.name}
+//                   </Badge>
+//                 );
+//               })}
+//               {components.length === 0 && <span className="text-xs text-muted-foreground">No fee components available.</span>}
 //             </div>
 //           </div>
 
-//           <FF label="Applicable Classes (blank = all)">
-//             <div className="space-y-2">
-//               {loadingClasses ? (
-//                 <div className="text-sm text-muted-foreground py-2">Loading classes...</div>
-//               ) : (
-//                 <>
-//                   <Select
-//                     value={f.classes?.length === 0 ? "all" : "selected"}
-//                     onValueChange={(value) => {
-//                       if (value === "all") {
-//                         setF({ ...f, classes: [] });
-//                       }
-//                     }}
-//                   >
-//                     <SelectTrigger className="w-full">
-//                       <SelectValue>
-//                         {f.classes?.length === 0
-//                           ? "All classes"
-//                           : `${f.classes.length} class${f.classes.length > 1 ? 'es' : ''} selected`}
-//                       </SelectValue>
-//                     </SelectTrigger>
-//                     <SelectContent>
-//                       <SelectItem value="all">All classes</SelectItem>
-//                     </SelectContent>
-//                   </Select>
+//           {scope === "EARLY_FULL_YEAR" && (
+//             <Row>
+//               <FF label="Deadline Month (1–12)">
+//                 <Input
+//                   type="number" min={1} max={12}
+//                   value={f.earlyPaymentMonth ?? ""}
+//                   onChange={(e) => setF({ ...f, earlyPaymentMonth: e.target.value === "" ? null : Number(e.target.value) })}
+//                   placeholder="e.g. 4 for April"
+//                 />
+//               </FF>
+//               <FF label="Deadline Day (1–31)">
+//                 <Input
+//                   type="number" min={1} max={31}
+//                   value={f.earlyPaymentDay ?? ""}
+//                   onChange={(e) => setF({ ...f, earlyPaymentDay: e.target.value === "" ? null : Number(e.target.value) })}
+//                   placeholder="e.g. 15"
+//                 />
+//               </FF>
+//             </Row>
+//           )}
 
-//                   <div className="flex flex-wrap gap-1.5 pt-1">
-//                     {availableClasses.map((cls) => (
-//                       <Badge
-//                         key={cls.class_uuid}
-//                         variant={f.classes?.includes(cls.class_uuid) ? "default" : "outline"}
-//                         className="cursor-pointer text-xs"
-//                         onClick={() => toggleClass(cls.class_uuid)}
-//                       >
-//                         {cls.class_name}
-//                         {f.classes?.includes(cls.class_uuid) && (
-//                           <X
-//                             className="h-3 w-3 ml-1"
-//                             onClick={(e) => {
-//                               e.stopPropagation();
-//                               toggleClass(cls.class_uuid);
-//                             }}
-//                           />
-//                         )}
-//                       </Badge>
-//                     ))}
-//                     {availableClasses.length === 0 && (
-//                       <span className="text-xs text-muted-foreground">No classes available</span>
-//                     )}
-//                     {f.classes?.length > 0 && (
-//                       <Badge
-//                         variant="outline"
-//                         className="cursor-pointer text-xs text-muted-foreground hover:text-destructive"
-//                         onClick={() => setF({ ...f, classes: [] })}
-//                       >
-//                         Clear all
-//                       </Badge>
-//                     )}
-//                   </div>
-//                 </>
-//               )}
-//             </div>
+//           <FF label="Applicable Classes (blank = all)">
+//             {loadingClasses ? <div className="text-sm text-muted-foreground">Loading classes...</div> : (
+//               <div className="flex flex-wrap gap-1.5">
+//                 {availableClasses.map((cls) => (
+//                   <Badge key={cls.class_uuid} variant={f.classes?.includes(cls.class_uuid) ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleClass(cls.class_uuid)}>
+//                     {cls.class_name}
+//                   </Badge>
+//                 ))}
+//                 {f.classes?.length > 0 && <Badge variant="outline" className="cursor-pointer text-xs" onClick={() => setF({ ...f, classes: [] })}>Clear all</Badge>}
+//               </div>
+//             )}
 //           </FF>
 
 //           <FF label="Max Discount Cap (₹, optional)">
-//             <Input
-//               type="number"
-//               min={0}
-//               value={f.maxDiscount ?? 0}
-//               onChange={(e) => setF({ ...f, maxDiscount: parseInt(e.target.value) || undefined })}
-//             />
+//             <Input type="number" min={0} value={f.maxDiscount ?? 0} onChange={(e) => setF({ ...f, maxDiscount: Number(e.target.value) || undefined })} />
 //           </FF>
 
 //           <Row>
-//             <SW
-//               label="Student Override"
-//               checked={f.studentOverride}
-//               onChange={(v) => setF({ ...f, studentOverride: v })}
-//             />
-//             <SW
-//               label="Active"
-//               checked={f.status === "Active"}
-//               onChange={(v) => setF({ ...f, status: v ? "Active" : "Archived" })}
-//             />
+//             <SW label="Student Override" checked={f.studentOverride} onChange={(v) => setF({ ...f, studentOverride: v })} />
+//             <SW label="Active" checked={f.status === "Active"} onChange={(v) => setF({ ...f, status: v ? "Active" : "Archived" })} />
 //           </Row>
 
-//           <FF label="Description">
-//             <Textarea
-//               rows={3}
-//               value={f.description ?? ""}
-//               onChange={(e) => setF({ ...f, description: e.target.value })}
-//             />
-//           </FF>
+//           <FF label="Description"><Textarea rows={3} value={f.description ?? ""} onChange={(e) => setF({ ...f, description: e.target.value })} /></FF>
 //         </div>
+
 //         <DialogFooter>
-//           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-//             Cancel
-//           </Button>
-//           <Button onClick={save} className="gradient-primary border-0" disabled={saving}>
-//             {saving ? "Saving…" : editing ? "Save changes" : "Create discount"}
-//           </Button>
+//           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+//           <Button onClick={save} className="gradient-primary border-0" disabled={saving}>{saving ? "Saving…" : editing ? "Save changes" : "Create discount"}</Button>
 //         </DialogFooter>
 //       </DialogContent>
 //     </Dialog>
@@ -1167,46 +1277,28 @@
 //     return m;
 //   }, [studentDiscounts]);
 
-//   // Every student, annotated with their current discounts (empty array if none) —
-//   // so the table also surfaces students with zero discounts as an easy "Add" target.
-// //   const rows = useMemo(() => {
-// //     return students
-// //       .filter((s) => (!cls || s.class_name === cls) && (!sec || s.section_name === sec) && (!q || s.full_name?.toLowerCase().includes(q.toLowerCase()) || s.student_no?.toLowerCase().includes(q.toLowerCase())))
-// //       .map((s) => {
-// //         const match = byStudentUuid.get(s.student_uuid);
-// //         return {
-// //           student_uuid: s.student_uuid,
-// //           student_name: s.full_name,
-// //           student_no: s.student_no,
-// //           class_name: s.class_name,
-// //           section_name: s.section_name,
-// //           discounts: match?.discounts ?? [],
-// //         };
-// //       })
-// //       .sort((a, b) => b.discounts.length - a.discounts.length);
-// //   }, [students, byStudentUuid, cls, sec, q]);
-
-
-// const rows = useMemo(() => {
-//   return studentDiscounts
-//     .filter(
-//       (s) =>
-//         (!cls || s.class_name === cls) &&
-//         (!sec || s.section_name === sec) &&
-//         (!q ||
-//           s.student_name
-//             ?.toLowerCase()
-//             .includes(q.toLowerCase()) ||
-//           s.student_no
-//             ?.toLowerCase()
-//             .includes(q.toLowerCase()))
-//     )
-//     .filter(
-//       (s) =>
-//         Array.isArray(s.discounts) &&
-//         s.discounts.length > 0
-//     );
-// }, [studentDiscounts, cls, sec, q]);
+//   const rows = useMemo(() => {
+//     return students
+//       .filter(
+//         (s) =>
+//           (!cls || s.class_name === cls) &&
+//           (!sec || s.section_name === sec) &&
+//           (!q ||
+//             s.full_name?.toLowerCase().includes(q.toLowerCase()) ||
+//             s.student_no?.toLowerCase().includes(q.toLowerCase()))
+//       )
+//       .map((s) => {
+//         const match = byStudentUuid.get(s.student_uuid);
+//         return {
+//           student_uuid: s.student_uuid,
+//           student_name: s.full_name,
+//           student_no: s.student_no,
+//           class_name: s.class_name,
+//           section_name: s.section_name,
+//           discounts: match?.discounts || [],
+//         };
+//       });
+//   }, [students, studentDiscounts, byStudentUuid, cls, sec, q]);
 
 //   return (
 //     <Card className="border-border/60">
@@ -1362,6 +1454,7 @@
 //           <DialogTitle>{isEditingOne ? `Edit Discounts — ${editingStudent.student_name}` : "Assign Discount to Students"}</DialogTitle>
 //           <DialogDescription>
 //             {isEditingOne ? "This replaces the student's full discount set." : "Pick students, then pick one or more discount templates to attach."}
+//             {" "}Scope rules (sibling eligibility, active employee link, full-year deadline) are checked by the server per student.
 //           </DialogDescription>
 //         </DialogHeader>
 
@@ -1407,6 +1500,9 @@
 //                 <label key={d.discount_uuid} className="flex items-center gap-2 text-sm rounded-md px-2 py-1.5 hover:bg-muted/50 cursor-pointer">
 //                   <Checkbox checked={pickedDiscounts.has(d.discount_uuid)} onCheckedChange={() => toggleDiscount(d.discount_uuid)} />
 //                   <span className="flex-1">{d.name}</span>
+//                   {d.discountScope && d.discountScope !== "NORMAL" && (
+//                     <Badge variant="outline" className="text-[10px]">{d.discountScope}</Badge>
+//                   )}
 //                   <Badge variant="outline" className="text-xs">{d.type === "Percent" ? `${d.value}%` : inr(d.value)}</Badge>
 //                 </label>
 //               ))}
@@ -1699,6 +1795,7 @@
 //       setComponents(list.map(componentFromApi));
 //     } catch (err) {
 //       console.error(err);
+//       toast.error(getErrorMessage(err, "Failed to load fee components"));
 //     } finally {
 //       setLoadingComponents(false);
 //     }
@@ -1745,10 +1842,7 @@
 //   } catch (err) {
 //     console.error("Failed to load payment dashboard:", err);
 
-//     toast.error(
-//       err?.response?.data?.detail ||
-//       "Failed to load finance dashboard"
-//     );
+//     toast.error(getErrorMessage(err, "Failed to load finance dashboard"));
 
 //     setDashboardData({
 //       summary: {
@@ -1778,7 +1872,8 @@
 //       }
 //       await fetchFeeComponents();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Failed to save component");
+//       toast.error(getErrorMessage(err, "Failed to save component"));
+//       throw err;
 //     }
 //   };
 
@@ -1788,7 +1883,7 @@
 //       toast.success("Deleted");
 //       await fetchFeeComponents();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Delete failed");
+//       toast.error(getErrorMessage(err, "Delete failed"));
 //     }
 //   };
 
@@ -1798,7 +1893,7 @@
 //       toast.success("Archived");
 //       await fetchFeeComponents();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Archive failed");
+//       toast.error(getErrorMessage(err, "Archive failed"));
 //     }
 //   };
 
@@ -1808,7 +1903,7 @@
 //       toast.success("Activated");
 //       await fetchFeeComponents();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Activation failed");
+//       toast.error(getErrorMessage(err, "Activation failed"));
 //     }
 //   };
 
@@ -1818,7 +1913,7 @@
 //       toast.success("Cloned");
 //       await fetchFeeComponents();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Clone failed");
+//       toast.error(getErrorMessage(err, "Clone failed"));
 //     }
 //   };
 
@@ -1837,7 +1932,7 @@
 //       setStructures(list.map(structureFromApi));
 //     } catch (err) {
 //       console.error(err);
-//       toast.error(err?.response?.data?.detail || "Failed to load fee structures");
+//       toast.error(getErrorMessage(err, "Failed to load fee structures"));
 //     } finally {
 //       setLoadingStructures(false);
 //     }
@@ -1855,7 +1950,8 @@
 //       }
 //       await fetchFeeStructures();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Save failed");
+//       toast.error(getErrorMessage(err, "Save failed"));
+//       throw err;
 //     }
 //   };
 
@@ -1865,7 +1961,7 @@
 //       toast.success("Deleted");
 //       await fetchFeeStructures();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Delete failed");
+//       toast.error(getErrorMessage(err, "Delete failed"));
 //     }
 //   };
 
@@ -1875,7 +1971,7 @@
 //       toast.success("Archived");
 //       await fetchFeeStructures();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Archive failed");
+//       toast.error(getErrorMessage(err, "Archive failed"));
 //     }
 //   };
 
@@ -1885,7 +1981,7 @@
 //       toast.success("Activated");
 //       await fetchFeeStructures();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Activation failed");
+//       toast.error(getErrorMessage(err, "Activation failed"));
 //     }
 //   };
 
@@ -1895,7 +1991,7 @@
 //       toast.success("Structure cloned");
 //       await fetchFeeStructures();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Clone failed");
+//       toast.error(getErrorMessage(err, "Clone failed"));
 //     }
 //   };
 
@@ -1912,7 +2008,7 @@
 //     setStructOpen(true);
 //   } catch (err) {
 //     console.error(err);
-//     toast.error("Failed to load fee structure");
+//     toast.error(getErrorMessage(err, "Failed to load fee structure"));
 //   } finally {
 //     setLoadingStructures(false);
 //   }
@@ -1931,7 +2027,7 @@
 //     setStudents(list);
 
 //   } catch (e) {
-//     toast.error("Failed to load students");
+//     toast.error(getErrorMessage(e, "Failed to load students"));
 //   } finally {
 //     setLoadingStudents(false);
 //   }
@@ -1987,7 +2083,7 @@
 
 //   } catch (e) {
 
-//     toast.error("Failed to load assignments");
+//     toast.error(getErrorMessage(e, "Failed to load assignments"));
 
 //   } finally {
 
@@ -2000,22 +2096,25 @@
 //   /*  Fee Discounts — API integration                                  */
 //   /* ---------------------------------------------------------------- */
 
-//   const fetchFeeDiscounts = async () => {
-//     setLoadingDiscounts(true);
+// const fetchFeeDiscounts = async () => {
+//   setLoadingDiscounts(true);
 
-//     try {
-//       const res = await getFeeDiscounts();
+//   try {
+//     const res = await getFeeDiscounts();
 
-//       const list = extractList(res);
+//     const list = extractList(res);
 
-//       setDiscounts(list.map(discountFromApi));
-//     } catch (err) {
-//       console.error(err);
-//       toast.error(err?.response?.data?.detail || "Failed to load discounts");
-//     } finally {
-//       setLoadingDiscounts(false);
-//     }
-//   };
+//     console.log("Discount API response:", res);
+//     console.log("Discount list:", list);
+
+//     setDiscounts(list.map(discountFromApi));
+//   } catch (err) {
+//     console.error(err);
+//     toast.error(getErrorMessage(err, "Failed to load discounts"));
+//   } finally {
+//     setLoadingDiscounts(false);
+//   }
+// };
 
 //   const saveDiscount = async (formValues, editing) => {
 //     try {
@@ -2029,7 +2128,8 @@
 //       }
 //       await fetchFeeDiscounts();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Failed to save discount");
+//       toast.error(getErrorMessage(err, "Failed to save discount"));
+//       throw err;
 //     }
 //   };
 
@@ -2039,7 +2139,7 @@
 //       toast.success("Removed");
 //       await fetchFeeDiscounts();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Delete failed");
+//       toast.error(getErrorMessage(err, "Delete failed"));
 //     }
 //   };
 
@@ -2049,7 +2149,7 @@
 //       toast.success("Archived");
 //       await fetchFeeDiscounts();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Archive failed");
+//       toast.error(getErrorMessage(err, "Archive failed"));
 //     }
 //   };
 
@@ -2059,12 +2159,16 @@
 //       toast.success("Activated");
 //       await fetchFeeDiscounts();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Activation failed");
+//       toast.error(getErrorMessage(err, "Activation failed"));
 //     }
 //   };
 
 //   /* ---------------------------------------------------------------- */
 //   /*  Student Discounts — API integration                              */
+//   /*  NOTE: this is where the backend's dynamic, student-specific rules */
+//   /*  (sibling eligibility, active-employee check, full-year deadline) */
+//   /*  actually get enforced — so this is the most likely place to see  */
+//   /*  a structured {message, student_uuid, ...} error come back.       */
 //   /* ---------------------------------------------------------------- */
 
 //   const fetchStudentDiscounts = async () => {
@@ -2075,7 +2179,7 @@
 //       setStudentDiscounts(groupStudentDiscountsFromApi(list));
 //     } catch (err) {
 //       console.error(err);
-//       toast.error(err?.response?.data?.detail || "Failed to load student discounts");
+//       toast.error(getErrorMessage(err, "Failed to load student discounts"));
 //     } finally {
 //       setLoadingStudentDiscounts(false);
 //     }
@@ -2089,7 +2193,8 @@
 //       toast.success("Discounts assigned");
 //       await fetchStudentDiscounts();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Failed to assign discounts");
+//       toast.error(getErrorMessage(err, "Failed to assign discounts"));
+//       throw err;
 //     }
 //   };
 
@@ -2100,7 +2205,8 @@
 //       toast.success("Discounts updated");
 //       await fetchStudentDiscounts();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Failed to update discounts");
+//       toast.error(getErrorMessage(err, "Failed to update discounts"));
+//       throw err;
 //     }
 //   };
 
@@ -2111,7 +2217,7 @@
 //       toast.success("Removed");
 //       await fetchStudentDiscounts();
 //     } catch (err) {
-//       toast.error(err?.response?.data?.detail || "Failed to remove discount");
+//       toast.error(getErrorMessage(err, "Failed to remove discount"));
 //     }
 //   };
 // useEffect(() => {
@@ -2214,7 +2320,7 @@
 //     fetchAssignments();
 //   } catch (e) {
 //     console.error(e.response?.data);
-//     toast.error(e?.response?.data?.detail || "Failed");
+//     toast.error(getErrorMessage(e, "Failed to create assignment"));
 //   }
 // };
 
@@ -2233,23 +2339,25 @@
 //     toast.success("Deleted");
 //     fetchAssignments();
 //   } catch (e) {
-//     toast.error("Delete Failed");
+//     toast.error(getErrorMessage(e, "Delete Failed"));
 //   }
 // };
 
 // const archiveAssignment = async (uuid) => {
-
+//   try {
 //     await archiveFeeAssignment(uuid);
-
 //     fetchAssignments();
-
+//   } catch (e) {
+//     toast.error(getErrorMessage(e, "Archive failed"));
+//   }
 // };
 // const activateAssignment = async (uuid) => {
-
+//   try {
 //     await activateFeeAssignment(uuid);
-
 //     fetchAssignments();
-
+//   } catch (e) {
+//     toast.error(getErrorMessage(e, "Activation failed"));
+//   }
 // };
 
 //   const cancelLedgerEntry = (id) => {
@@ -2445,7 +2553,7 @@
 //         <TabsContent value="reports">
 //           <ReportsPanel ledger={ledger} students={students} structures={enrichedStructures} paidMonths={paidMonths} />
 //         </TabsContent>
-// \
+
 //       </Tabs>
 
 //       <FeeStructureDialog
@@ -2700,9 +2808,15 @@
 //                 <TableCell className="text-sm font-medium">{c.name}</TableCell>
 //                 <TableCell><Badge variant="outline" className="text-xs">{c.category}</Badge></TableCell>
 //                 <TableCell className="text-right font-semibold">{inr(c.default_amount)}</TableCell>
-//                 <TableCell className="text-xs">{c.recurring ? "Recurring" : "One-time"}</TableCell>
+//                 <TableCell className="text-xs">
+//   {c.type === "RECURRING"
+//     ? "Recurring"
+//     : c.type === "ANNUAL"
+//       ? "Annual"
+//       : "One Time"}
+// </TableCell>
 //                 <TableCell className="text-xs text-muted-foreground">
-//                   {c.mandatory ? "Mandatory · " : "Optional · "}{c.new_admission_only ? "New Adm." : "All"}
+//                   {c.mandatory ? "Mandatory · " : "Optional · "}{c.new_admission_only ? "New Adm." : "All"}{c.locked_after_opt_in ? " · Locked after opt-in" : ""}
 //                 </TableCell>
 //                 <TableCell><Badge variant={c.status === "Active" ? "default" : "secondary"} className="text-xs">{c.status}</Badge></TableCell>
 //                 <TableCell>
@@ -2735,7 +2849,16 @@
 
 // function ComponentDrawer({ open, onOpenChange, editing, onSave }) {
 //   const [f, setF] = useState({
-//     name: "", category: "Tuition", default_amount: 0, recurring: true, mandatory: true, new_admission_only: false, status: "Active", description: "",
+//     name: "",
+//     category: "TUITION",
+//     default_amount: 0,
+//     // recurring: true,
+//     type: "RECURRING",
+//     mandatory: true,
+//     new_admission_only: false,
+//     locked_after_opt_in: false,
+//     status: "Active",
+//     description: "",
 //   });
 //   const [saving, setSaving] = useState(false);
 
@@ -2743,11 +2866,21 @@
 //     if (!open) return;
 //     if (editing) {
 //       const { component_uuid, ...rest } = editing;
-//       setF(rest);
+//       setF({ ...rest, category: String(rest.category || "OTHER").toUpperCase() });
 //     } else {
-//       setF({ name: "", category: "Tuition", default_amount: 0, recurring: true, mandatory: true, new_admission_only: false, status: "Active", description: "" });
+//       setF({
+//         name: "", category: "TUITION", default_amount: 0, recurring: true,
+//         mandatory: true, new_admission_only: false, locked_after_opt_in: false,
+//         status: "Active", description: "",
+//       });
 //     }
 //   }, [open, editing]);
+
+//   useEffect(() => {
+//     if (f.category === "FOODING" || f.category === "TRANSPORT") {
+//       setF((prev) => ({ ...prev, locked_after_opt_in: true }));
+//     }
+//   }, [f.category]);
 
 //   const save = async () => {
 //     if (!f.name.trim()) { toast.error("Component name required"); return; }
@@ -2755,6 +2888,8 @@
 //     try {
 //       await onSave(f, editing);
 //       onOpenChange(false);
+//     } catch (err) {
+//       console.error(err);
 //     } finally {
 //       setSaving(false);
 //     }
@@ -2765,54 +2900,101 @@
 //       <DialogContent className="max-w-lg">
 //         <DialogHeader>
 //           <DialogTitle>{editing ? "Edit Component" : "Add Component"}</DialogTitle>
-//           <DialogDescription>Define a reusable fee head.</DialogDescription>
+//           <DialogDescription>Define a reusable fee head and its academic-year rules.</DialogDescription>
 //         </DialogHeader>
+
 //         <div className="rounded-lg border border-border/60 p-4 space-y-4">
-//           <FF label="Component Name"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Tuition Fee" /></FF>
+//           <FF label="Component Name">
+//             <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Tuition Fee" />
+//           </FF>
+
 //           <Row>
 //             <FF label="Category">
 //               <Select value={f.category} onValueChange={(v) => setF({ ...f, category: v })}>
 //                 <SelectTrigger><SelectValue /></SelectTrigger>
-//                 <SelectContent>{COMPONENT_CATEGORY_OPTIONS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+//                 <SelectContent>
+//                   {COMPONENT_CATEGORY_OPTIONS.map((c) => (
+//                     <SelectItem key={c} value={c}>{c}</SelectItem>
+//                   ))}
+//                 </SelectContent>
 //               </Select>
 //             </FF>
-//             {/* <FF label="Default Amount (₹)"><Input type="number" min={0} value={f.default_amount} onChange={(e) => setF({ ...f, default_amount: parseInt(e.target.value) || 0 })} /></FF> */}
-//             <FF label="Default Amount (₹)">
-//   <Input
-//     type="number"
-//     min={0}
-//     step={1}
-//     value={f.default_amount}
-//     onChange={(e) => {
-//       const value = e.target.value;
 
+//             <FF label="Default Amount (₹)">
+//               <Input
+//                 type="number" min={0} step={0.01}
+//                 value={f.default_amount}
+//                 onChange={(e) => setF((prev) => ({ ...prev, default_amount: e.target.value === "" ? "" : Number(e.target.value) }))}
+//               />
+//             </FF>
+//           </Row>
+
+//           <Row>
+//             {/* <SW label="Recurring" checked={f.recurring} onChange={(v) => setF({ ...f, recurring: v })} /> */}
+//             <FF label="Type">
+//   <Select
+//     value={f.type}
+//     onValueChange={(v) =>
 //       setF((prev) => ({
 //         ...prev,
-//         default_amount: value === "" ? "" : Number(value),
-//       }));
-//     }}
-//   />
+//         type: v,
+//       }))
+//     }
+//   >
+//     <SelectTrigger>
+//       <SelectValue placeholder="Select type" />
+//     </SelectTrigger>
+
+//     <SelectContent>
+//       <SelectItem value="RECURRING">
+//         Recurring
+//       </SelectItem>
+
+//       <SelectItem value="ANNUAL">
+//         Annual
+//       </SelectItem>
+
+//       <SelectItem value="ONE_TIME">
+//         One Time
+//       </SelectItem>
+//     </SelectContent>
+//   </Select>
 // </FF>
-//           </Row>
-//           <Row>
-//             <SW label="Recurring" checked={f.recurring} onChange={(v) => setF({ ...f, recurring: v })} />
 //             <SW label="Mandatory" checked={f.mandatory} onChange={(v) => setF({ ...f, mandatory: v })} />
 //           </Row>
+
 //           <Row>
 //             <SW label="New Admission Only" checked={f.new_admission_only} onChange={(v) => setF({ ...f, new_admission_only: v })} />
-//             <SW label="Active" checked={f.status === "Active"} onChange={(v) => setF({ ...f, status: v ? "Active" : "Archived" })} />
+//             <SW
+//               label="Lock After Opt-In"
+//               checked={f.locked_after_opt_in}
+//               onChange={(v) => setF({ ...f, locked_after_opt_in: v })}
+//             />
 //           </Row>
-//           <FF label="Description"><Textarea rows={3} value={f.description ?? ""} onChange={(e) => setF({ ...f, description: e.target.value })} /></FF>
+
+//           {(f.category === "FOODING" || f.category === "TRANSPORT") && (
+//             <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+//               {f.category === "FOODING" ? "Fooding" : "Transportation"} once opted cannot be discontinued until the end of the academic year.
+//             </div>
+//           )}
+
+//           <SW label="Active" checked={f.status === "Active"} onChange={(v) => setF({ ...f, status: v ? "Active" : "Archived" })} />
+
+//           <FF label="Description">
+//             <Textarea rows={3} value={f.description ?? ""} onChange={(e) => setF({ ...f, description: e.target.value })} />
+//           </FF>
 //         </div>
+
 //         <DialogFooter>
 //           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-//           <Button onClick={save} className="gradient-primary border-0" disabled={saving}>{saving ? "Saving…" : editing ? "Save changes" : "Add component"}</Button>
+//           <Button onClick={save} className="gradient-primary border-0" disabled={saving}>
+//             {saving ? "Saving…" : editing ? "Save changes" : "Add component"}
+//           </Button>
 //         </DialogFooter>
 //       </DialogContent>
 //     </Dialog>
 //   );
 // }
-
 
 // /**
 //  * NOTE ON THE FIX: previously this panel derived `classes`/`sections`
@@ -3275,7 +3457,7 @@
 //       .catch((err) => {
 //         console.error(err);
 //         if (!cancelled) {
-//           toast.error(err?.response?.data?.detail || "Failed to load dues");
+//           toast.error(getErrorMessage(err, "Failed to load dues"));
 //           setDues({ lines: [], totalDue: 0, totalLate: 0, structure: undefined, assignmentUuid: undefined });
 //         }
 //       })
@@ -3410,7 +3592,7 @@
 //               finishSuccess(data, "UPI");
 //             } catch (err) {
 //               console.error(err);
-//               toast.error(err?.response?.data?.detail || "Payment verification failed");
+//               toast.error(getErrorMessage(err, "Payment verification failed"));
 //             } finally {
 //               setSubmitting(false);
 //             }
@@ -3428,7 +3610,7 @@
 //         rzp.open();
 //       } catch (err) {
 //         console.error(err);
-//         toast.error(err?.response?.data?.detail || "Could not start payment");
+//         toast.error(getErrorMessage(err, "Could not start payment"));
 //         setSubmitting(false);
 //       }
 //       return;
@@ -3454,7 +3636,7 @@
 //       finishSuccess(data, selectedMode);
 //     } catch (err) {
 //       console.error(err);
-//       toast.error(err?.response?.data?.detail || "Payment failed");
+//       toast.error(getErrorMessage(err, "Payment failed"));
 //     } finally {
 //       setSubmitting(false);
 //     }
@@ -3787,24 +3969,6 @@
 //   const [componentData, setComponentData] = useState([]);
 //   const [summary, setSummary] = useState(null);
 
-// //   const fetchDues = () => {
-// //     setLoadingDues(true);
-// //     getStudentDues({ academic_year: ACADEMIC_YEAR })
-// //       .then((res) => {
-// //         const body = res?.data ?? res ?? {};
-// //         const componentRows = Array.isArray(body.data) ? body.data : [];
-        
-// //         // Store raw component data
-// //         setComponentData(componentRows);
-        
-// //         // Store summary
-// //         setSummary(body.summary || null);
-        
-// //         // Extract unique months from all data
-// //         const months = [...new Set(componentRows.map(item => item.fee_month))].sort();
-// //         setAllMonths(months);
-
-// // 1) building the month dropdown options
 // const fetchDues = () => {
 //   setLoadingDues(true);
 //   getStudentDues({ academic_year: ACADEMIC_YEAR })
@@ -3887,13 +4051,13 @@
 //       })
 //       .catch((err) => {
 //         console.error(err);
-//         toast.error(err?.response?.data?.detail || "Failed to load dues");
+//         toast.error(getErrorMessage(err, "Failed to load dues"));
 //         setDueRows([]);
 //         setComponentData([]);
 //         setAllMonths([]);
 //         setSummary(null);
 //       })
-//       .finally(() => setLoadingDues(false));
+//       .finally(() => { setLoadingDues(false); });
 //   };
 
 //   useEffect(fetchDues, []);
@@ -4382,7 +4546,7 @@
 //       setTotalCount(response?.data?.count || transformed.length);
 //     } catch (err) {
 //       console.error(err);
-//       toast.error(err?.response?.data?.detail || "Failed to load transactions");
+//       toast.error(getErrorMessage(err, "Failed to load transactions"));
 //       setLedger([]);
 //     } finally {
 //       setLoading(false);
@@ -4597,7 +4761,7 @@
 //             await openPaymentReceipt(r.transaction_uuid);
 //           } catch (err) {
 //             console.error(err);
-//             toast.error(err?.response?.data?.detail || "Failed to open receipt");
+//             toast.error(getErrorMessage(err, "Failed to open receipt"));
 //           }
 //         }}
 //       >
@@ -4612,7 +4776,7 @@
 //             toast.success("Receipt downloaded");
 //           } catch (err) {
 //             console.error(err);
-//             toast.error(err?.response?.data?.detail || "Failed to download receipt");
+//             toast.error(getErrorMessage(err, "Failed to download receipt"));
 //           }
 //         }}
 //       >
@@ -4742,7 +4906,7 @@
 //       setPaymentSummary(summary);
 //     } catch (err) {
 //       console.error(err);
-//       toast.error(err?.response?.data?.detail || "Failed to load student transactions");
+//       toast.error(getErrorMessage(err, "Failed to load student transactions"));
 //       setStudentTransactions([]);
 //     } finally {
 //       setLoading(false);
@@ -5112,167 +5276,6 @@
 // /*  8. REPORTS — API-integrated report grid + custom report builder    */
 // /* ================================================================== */
 
-// /* ------------------------------------------------------------------ */
-// /*  Report catalogue                                                    */
-// /*  filter: "dateRange" | "reportDate" | "student" | "none"             */
-// /* ------------------------------------------------------------------ */
-// const REPORT_DEFS = [
-//   { key: "daily", title: "Daily Collection", desc: "All receipts issued today.", filter: "reportDate" },
-//   { key: "summary", title: "Collection Summary", desc: "Aggregated by mode and class.", filter: "dateRange" },
-//  {key: "student-fees",
-//     title: "Student Fee Report",
-//     desc: "Student-wise fee, payment and outstanding details.",
-//     filter: "student",
-//   },
-//   { key: "ledger", title: "Student Ledger", desc: "Per-student invoices and payments.", filter: "student" },
-//   { key: "outstanding", title: "Outstanding Report", desc: "All students with dues.", filter: "none" },
-//   { key: "component", title: "Component-wise", desc: "Split by fee heads.", filter: "dateRange" },
-//   { key: "class", title: "Class-wise", desc: "Collected vs expected by class.", filter: "dateRange" },
-//   { key: "discount", title: "Discount Report", desc: "Discounts granted by template.", filter: "dateRange" },
-//   { key: "late", title: "Late Fee Report", desc: "Late fees accrued and collected.", filter: "dateRange" },
-//   { key: "future", title: "Future Collection", desc: "Projection for coming months.", filter: "none" },
-//   { key: "cancelled", title: "Cancelled Invoices", desc: "Voided receipts.", filter: "none" },
-//   { key: "mode", title: "Payment Mode Summary", desc: "Cash/UPI/Card breakdown.", filter: "dateRange" },
-//   { key: "cashbook", title: "Cash Book", desc: "Cash-only ledger for the day.", filter: "dateRange" },
-  
-// ];
-
-// function callReportApi(key, { fromDate, toDate, reportDate, studentUuid } = {}) {
-//   switch (key) {
-//     case "daily":
-//       return getDailyCollection(reportDate || undefined);
-//     case "summary":
-//       return getCollectionSummary({ fromDate, toDate });
-//     case "student-fees":
-//   return getStudentFeeReport({
-//     academic_year: ACADEMIC_YEAR,
-//     student_uuid: studentUuid || undefined,
-//     from_date: fromDate || undefined,
-//     to_date: toDate || undefined,
-//   });
-//     case "ledger":
-//       if (!studentUuid) return Promise.resolve(null);
-//       return getStudentLedger(studentUuid);
-//     case "outstanding":
-//       return getOutstandingReport();
-//     case "component":
-//       return getComponentWiseReport({ fromDate, toDate });
-//     case "class":
-//       return getClassWiseReport({ fromDate, toDate });
-//     case "discount":
-//       return getDiscountReport({ fromDate, toDate });
-//     case "late":
-//       return getLateFeeReport({ fromDate, toDate });
-//     case "future":
-//       return getFutureCollection();
-//     case "cancelled":
-//       return getCancelledReport();
-//     case "mode":
-//       return getPaymentModeSummary({ fromDate, toDate });
-//     case "cashbook":
-//       return getCashBook({ fromDate, toDate });
-//     default:
-//       return Promise.resolve(null);
-//   }
-// }
-
-
-
-// function projectTransactionRow(t) {
-//   return {
-//     receipt_no: t.receipt_no,
-//     student: t.student_name,
-//     mode: t.payment_mode,
-//     type: t.payment_type,
-//     status: t.transaction_status,
-//     total: t.total_amount,
-//     discount: t.discount_amount,
-//     late_fee: t.late_fee,
-//     paid: t.paid_amount,
-//     balance: t.balance_amount,
-//     reference: t.transaction_reference,
-//     remarks: t.remarks,
-//     date: t.created_at,
-//   };
-// }
-
-// function studentNameByUuid(students, uuid) {
-//   return (students || []).find((s) => s.student_uuid === uuid)?.full_name ?? uuid;
-// }
-
-// function projectOutstandingDueRow(d, students) {
-//   return {
-//     student: studentNameByUuid(students, d.student_uuid),
-//     fee_month: d.fee_month,
-//     amount: d.amount,
-//     paid_amount: d.paid_amount,
-//     outstanding: d.outstanding,
-//     status: d.status,
-//   };
-// }
-
-// function projectFutureDueRow(d, students) {
-//   return {
-//     student: studentNameByUuid(students, d.student_uuid),
-//     fee_month: d.fee_month,
-//     amount: d.amount,
-//     status: d.status,
-//   };
-// }
-
-// // Extracts { rows, totals } from a raw axios response for a given report key.
-// function extractReport(key, res, ctx) {
-//   // feeReports.js already returns response.data.
-//   // So normally `res` itself is the API response body.
-//   const body =
-//     res?.success !== undefined
-//       ? res
-//       : (res?.data ?? res ?? {});
-
-//   switch (key) {
-//     case "daily":
-//     case "cashbook": {
-//       const list = Array.isArray(body.data) ? body.data : [];
-
-//       return {
-//         rows: list.map(projectTransactionRow),
-
-//         totals: body.summary
-//           ? [
-//               {
-//                 label: "Transactions",
-//                 value: body.summary.transactions,
-//               },
-//               {
-//                 label: "Paid Amount",
-//                 value: inr(body.summary.paid_amount),
-//               },
-//               {
-//                 label: "Discount",
-//                 value: inr(body.summary.discount),
-//               },
-//               {
-//                 label: "Late Fee",
-//                 value: inr(body.summary.late_fee),
-//               },
-//             ]
-//           : [],
-//       };
-//     }
-
-//   case "student-fees": {
-//   const list = Array.isArray(body.data)
-//     ? body.data
-//     : [];
-
-//   return {
-//     rows: list,
-//     totals: [],
-//   };
-// }
-//   }
-// }
-
 // const isMoneyKey = (k) => /amount|due|late|discount|fee|total|paid|balance|outstanding/i.test(k);
 
 // function formatCell(key, value) {
@@ -5283,6 +5286,7 @@
 //   if (typeof value === "object") return JSON.stringify(value);
 //   return String(value);
 // }
+
 // function exportRowsExcel(rows, filename) {
 //   if (!rows?.length) return;
 
@@ -5403,8 +5407,1803 @@
 // }
 
 
+// // function ReportsPanel({ students }) {
+// //   const [loading, setLoading] = useState(false);
+// //   const [reportData, setReportData] = useState([]);
+// //   const [totals, setTotals] = useState([]);
+// //   const [components, setComponents] = useState([]);
+// //   const [error, setError] = useState("");
+
+// //   // =====================================================
+// //   // REPORT TYPE
+// //   // IMPORTANT:
+// //   // value = key used everywhere (API param + filter logic)
+// //   // label = shown in dropdown
+// //   // =====================================================
+
+// //   const REPORT_TYPES = [
+// //     {
+// //       value: "MASTER_FEES",
+// //       label: "Master Student Fees Report (Paid / Unpaid)",
+// //       description: "Paid vs unpaid breakdown across all students",
+// //     },
+// //     {
+// //       value: "DAILY_COLLECTION",
+// //       label: "Daily Collections Report",
+// //       description: "Payments collected on a specific day",
+// //     },
+// //     {
+// //       value: "FEE_PENDING",
+// //       label: "Fee Pending Report",
+// //       description: "Students with pending / overdue fees",
+// //     },
+// //     {
+// //       value: "STUDENT_FEE_NEW",
+// //       label: "Student Fee Report (New)",
+// //       description: "Detailed fee report with student-wise breakdown",
+// //     },
+// //     {
+// //       value: "RETRACTED_INVOICE",
+// //       label: "Retracted Invoice Report",
+// //       description: "Invoices that were retracted / cancelled",
+// //     },
+// //   ];
+
+// //   const [reportType, setReportType] =
+// //     useState("STUDENT_FEE_NEW");
+
+// //   const activeReport = useMemo(
+// //     () =>
+// //       REPORT_TYPES.find(
+// //         (r) => r.value === reportType
+// //       ) || REPORT_TYPES[3],
+// //     [reportType]
+// //   );
+
+// //   // =====================================================
+// //   // FILTER STATES
+// //   // =====================================================
+
+// //   const [academicYear, setAcademicYear] =
+// //     useState(ACADEMIC_YEAR);
+
+// //   const [studentUuid, setStudentUuid] =
+// //     useState("");
+
+// //   const [studentQuery, setStudentQuery] =
+// //     useState("");
+
+// //   const [fromDate, setFromDate] =
+// //     useState("");
+
+// //   const [toDate, setToDate] =
+// //     useState("");
+
+// //   // Used only by Daily Collections Report
+// //   const [collectionDate, setCollectionDate] =
+// //     useState(
+// //       new Date().toISOString().split("T")[0]
+// //     );
+
+// //   const [classUuid, setClassUuid] =
+// //     useState("all");
+
+// //   const [sectionUuid, setSectionUuid] =
+// //     useState("all");
+
+// //   const [paymentStatus, setPaymentStatus] =
+// //     useState("all");
+
+// //   const [showFilters, setShowFilters] =
+// //     useState(true);
+
+// //   // =====================================================
+// //   // PER-REPORT FILTER VISIBILITY
+// //   // =====================================================
+
+// //   const visibleFilters = useMemo(() => {
+// //     switch (reportType) {
+// //       case "MASTER_FEES":
+// //         return {
+// //           academicYear: true,
+// //           student: true,
+// //           class: true,
+// //           section: true,
+// //           dateRange: false,
+// //           collectionDate: false,
+// //           paymentStatus: true,
+// //         };
+
+// //       case "DAILY_COLLECTION":
+// //         return {
+// //           academicYear: false,
+// //           student: false,
+// //           class: true,
+// //           section: true,
+// //           dateRange: false,
+// //           collectionDate: true,
+// //           paymentStatus: false,
+// //         };
+
+// //       case "FEE_PENDING":
+// //         return {
+// //           academicYear: true,
+// //           student: true,
+// //           class: true,
+// //           section: true,
+// //           dateRange: false,
+// //           collectionDate: false,
+// //           paymentStatus: false, // locked to PENDING/OVERDUE
+// //         };
+
+// //       case "RETRACTED_INVOICE":
+// //         return {
+// //           academicYear: true,
+// //           student: false,
+// //           class: true,
+// //           section: true,
+// //           dateRange: true,
+// //           collectionDate: false,
+// //           paymentStatus: false,
+// //         };
+
+// //       case "STUDENT_FEE_NEW":
+// //       default:
+// //         return {
+// //           academicYear: true,
+// //           student: true,
+// //           class: true,
+// //           section: true,
+// //           dateRange: true,
+// //           collectionDate: false,
+// //           paymentStatus: true,
+// //         };
+// //     }
+// //   }, [reportType]);
+
+// //   const statusOptionsForReport = useMemo(() => {
+// //     if (reportType === "MASTER_FEES") {
+// //       return [
+// //         { value: "all", label: "All Status" },
+// //         { value: "PAID", label: "Paid" },
+// //         { value: "PENDING", label: "Unpaid" },
+// //       ];
+// //     }
+
+// //     return [
+// //       { value: "all", label: "All Status" },
+// //       { value: "PAID", label: "Paid" },
+// //       { value: "PARTIAL", label: "Partial" },
+// //       { value: "PENDING", label: "Pending" },
+// //       { value: "OVERDUE", label: "Overdue" },
+// //       { value: "ADVANCE", label: "Advance" },
+// //     ];
+// //   }, [reportType]);
+
+// //   const handleReportTypeChange = (value) => {
+// //     setReportType(value);
+// //     setError("");
+
+// //     if (value === "DAILY_COLLECTION") {
+// //       setFromDate("");
+// //       setToDate("");
+// //       setStudentUuid("");
+// //       setStudentQuery("");
+// //       setPaymentStatus("all");
+// //     }
+
+// //     if (value === "FEE_PENDING") {
+// //       setPaymentStatus("PENDING");
+// //     }
+
+// //     if (value === "MASTER_FEES") {
+// //       setFromDate("");
+// //       setToDate("");
+// //     }
+
+// //     if (value === "RETRACTED_INVOICE") {
+// //       setStudentUuid("");
+// //       setStudentQuery("");
+// //       setPaymentStatus("all");
+// //     }
+// //   };
+
+// //   const academicYears = useMemo(() => {
+// //     const years = [];
+
+// //     const currentYear =
+// //       new Date().getFullYear();
+
+// //     for (let i = 0; i < 5; i++) {
+// //       const year = currentYear - i;
+
+// //       years.push(
+// //         `${year}-${String(year + 1).slice(-2)}`
+// //       );
+// //     }
+
+// //     return years;
+// //   }, []);
+
+// //   const classes = useMemo(() => {
+// //     const classMap = new Map();
+
+// //     (students || []).forEach((student) => {
+// //       if (
+// //         student.class_uuid &&
+// //         student.class_name
+// //       ) {
+// //         classMap.set(
+// //           student.class_uuid,
+// //           {
+// //             uuid: student.class_uuid,
+// //             name: student.class_name,
+// //           }
+// //         );
+// //       }
+// //     });
+
+// //     return Array.from(
+// //       classMap.values()
+// //     ).sort((a, b) =>
+// //       a.name.localeCompare(b.name)
+// //     );
+// //   }, [students]);
+
+// //   const sections = useMemo(() => {
+// //     const sectionMap = new Map();
+
+// //     (students || []).forEach((student) => {
+// //       if (
+// //         student.section_uuid &&
+// //         student.section_name
+// //       ) {
+// //         sectionMap.set(
+// //           student.section_uuid,
+// //           {
+// //             uuid: student.section_uuid,
+// //             name: student.section_name,
+// //           }
+// //         );
+// //       }
+// //     });
+
+// //     return Array.from(
+// //       sectionMap.values()
+// //     ).sort((a, b) =>
+// //       a.name.localeCompare(b.name)
+// //     );
+// //   }, [students]);
+
+// //   const matchingStudents = useMemo(() => {
+// //     if (!studentQuery.trim()) {
+// //       return [];
+// //     }
+
+// //     const q =
+// //       studentQuery
+// //         .toLowerCase()
+// //         .trim();
+
+// //     return (students || [])
+// //       .filter((student) => {
+// //         const name =
+// //           student.full_name
+// //             ?.toLowerCase()
+// //             || "";
+
+// //         const studentNo =
+// //           student.student_no
+// //             ?.toLowerCase()
+// //             || "";
+
+// //         const admissionNo =
+// //           student.admission_no
+// //             ?.toLowerCase()
+// //             || "";
+
+// //         return (
+// //           name.includes(q) ||
+// //           studentNo.includes(q) ||
+// //           admissionNo.includes(q)
+// //         );
+// //       })
+// //       .slice(0, 8);
+// //   }, [
+// //     studentQuery,
+// //     students,
+// //   ]);
+
+// //   // =====================================================
+// //   // FETCH REPORT
+// //   // =====================================================
+
+// //   // const fetchReport = async () => {
+// //   //   setLoading(true);
+// //   //   setError("");
+
+// //   //   try {
+// //   //     const params = {
+// //   //       report_type: reportType,
+
+// //   //       academic_year:
+// //   //         visibleFilters.academicYear
+// //   //           ? academicYear || undefined
+// //   //           : undefined,
+
+// //   //       student_uuid:
+// //   //         visibleFilters.student
+// //   //           ? studentUuid || undefined
+// //   //           : undefined,
+
+// //   //       from_date:
+// //   //         visibleFilters.dateRange
+// //   //           ? fromDate || undefined
+// //   //           : undefined,
+
+// //   //       to_date:
+// //   //         visibleFilters.dateRange
+// //   //           ? toDate || undefined
+// //   //           : undefined,
+
+// //   //       collection_date:
+// //   //         visibleFilters.collectionDate
+// //   //           ? collectionDate || undefined
+// //   //           : undefined,
+
+// //   //       class_uuid:
+// //   //         classUuid === "all"
+// //   //           ? undefined
+// //   //           : classUuid,
+
+// //   //       section_uuid:
+// //   //         sectionUuid === "all"
+// //   //           ? undefined
+// //   //           : sectionUuid,
+
+// //   //       payment_status:
+// //   //         paymentStatus === "all"
+// //   //           ? undefined
+// //   //           : paymentStatus,
+// //   //     };
+
+// //   //     const response =
+// //   //       await getStudentFeeReport(
+// //   //         params
+// //   //       );
+
+// //   //     const body =
+// //   //       response?.data ??
+// //   //       response ??
+// //   //       {};
+
+// //   //     if (!body.success) {
+// //   //       // body.message can itself be a dict/list in some backends —
+// //   //       // reuse the same describe helper for consistency.
+// //   //       throw new Error(
+// //   //         typeof body.message === "string"
+// //   //           ? body.message
+// //   //           : describeErrorDetail(body.message) || "Failed to fetch report"
+// //   //       );
+// //   //     }
+
+// //   //     const data =
+// //   //       Array.isArray(body.data)
+// //   //         ? body.data
+// //   //         : [];
+
+// //   //     const componentsList =
+// //   //       Array.isArray(body.components)
+// //   //         ? body.components
+// //   //         : [];
+
+// //   //     setComponents(
+// //   //       componentsList
+// //   //     );
+
+// //   //     const formattedRows =
+// //   //       data.map((row) => {
+// //   //         const formattedRow = {
+// //   //           "Sr No":
+// //   //             row.sr_no,
+
+// //   //           "Student":
+// //   //             row.student_name ||
+// //   //             "—",
+
+// //   //           "Class":
+// //   //             row.class_name ||
+// //   //             "—",
+
+// //   //           "Section":
+// //   //             row.section_name ||
+// //   //             "—",
+
+// //   //           "Admission No":
+// //   //             row.admission_number ||
+// //   //             "—",
+
+// //   //           "Invoice":
+// //   //             row.invoice_number ||
+// //   //             "—",
+
+// //   //           "Receipt":
+// //   //             row.receipt_number ||
+// //   //             "—",
+// //   //         };
+
+// //   //         componentsList.forEach(
+// //   //           (component) => {
+// //   //             const value =
+// //   //               row.components?.[
+// //   //                 component
+// //   //               ];
+
+// //   //             formattedRow[
+// //   //               component
+// //   //             ] =
+// //   //               value === null ||
+// //   //               value === undefined
+// //   //                 ? null
+// //   //                 : Number(value);
+// //   //           }
+// //   //         );
+
+// //   //         formattedRow["Gross (₹)"] =
+// //   //           Number(row.gross_amount || 0);
+
+// //   //         formattedRow["Discount (₹)"] =
+// //   //           Number(row.concession_amount || 0);
+
+// //   //         formattedRow["Late Fee (₹)"] =
+// //   //           Number(row.late_fee || 0);
+
+// //   //         formattedRow["Net (₹)"] =
+// //   //           Number(row.net_amount || 0);
+
+// //   //         formattedRow["Paid (₹)"] =
+// //   //           Number(row.paid_amount || 0);
+
+// //   //         formattedRow["Pending (₹)"] =
+// //   //           Number(row.pending_amount || 0);
+
+// //   //         formattedRow["Payment Mode"] =
+// //   //           row.payment_mode || "—";
+
+// //   //         formattedRow["Reference"] =
+// //   //           row.reference_number || "—";
+
+// //   //         formattedRow["Payment Date"] =
+// //   //           row.payment_date
+// //   //             ? new Date(row.payment_date).toLocaleDateString()
+// //   //             : "—";
+
+// //   //         formattedRow["Due Date"] =
+// //   //           row.due_date
+// //   //             ? new Date(row.due_date).toLocaleDateString()
+// //   //             : "—";
+
+// //   //         formattedRow["Invoice Date"] =
+// //   //           row.invoice_date
+// //   //             ? new Date(row.invoice_date).toLocaleDateString()
+// //   //             : "—";
+
+// //   //         if (reportType === "RETRACTED_INVOICE") {
+// //   //           formattedRow["Retracted On"] =
+// //   //             row.retracted_at
+// //   //               ? new Date(row.retracted_at).toLocaleDateString()
+// //   //               : "—";
+
+// //   //           formattedRow["Retracted By"] =
+// //   //             row.retracted_by || "—";
+
+// //   //           formattedRow["Reason"] =
+// //   //             row.retraction_reason || "—";
+// //   //         }
+
+// //   //         return formattedRow;
+// //   //       });
+
+// //   //     setReportData(
+// //   //       formattedRows
+// //   //     );
+
+// //   //     const totalGross =
+// //   //       data.reduce((sum, row) => sum + Number(row.gross_amount || 0), 0);
+
+// //   //     const totalDiscount =
+// //   //       data.reduce((sum, row) => sum + Number(row.concession_amount || 0), 0);
+
+// //   //     const totalLateFee =
+// //   //       data.reduce((sum, row) => sum + Number(row.late_fee || 0), 0);
+
+// //   //     const totalNet =
+// //   //       data.reduce((sum, row) => sum + Number(row.net_amount || 0), 0);
+
+// //   //     const totalPaid =
+// //   //       data.reduce((sum, row) => sum + Number(row.paid_amount || 0), 0);
+
+// //   //     const totalPending =
+// //   //       data.reduce((sum, row) => sum + Number(row.pending_amount || 0), 0);
+
+// //   //     const componentTotals = {};
+
+// //   //     componentsList.forEach((component) => {
+// //   //       componentTotals[component] = data.reduce(
+// //   //         (sum, row) =>
+// //   //           sum + Number(row.components?.[component] || 0),
+// //   //         0
+// //   //       );
+// //   //     });
+
+// //   //     const totalCards = [
+// //   //       { label: "Students", value: data.length },
+// //   //       { label: "Total Gross", value: inr(totalGross) },
+// //   //       { label: "Total Discount", value: inr(totalDiscount) },
+// //   //       { label: "Total Late Fee", value: inr(totalLateFee) },
+// //   //       { label: "Total Net", value: inr(totalNet) },
+// //   //       { label: "Total Paid", value: inr(totalPaid) },
+// //   //       { label: "Total Pending", value: inr(totalPending) },
+// //   //     ];
+
+// //   //     componentsList.forEach((component) => {
+// //   //       totalCards.push({
+// //   //         label: component,
+// //   //         value: inr(componentTotals[component] || 0),
+// //   //       });
+// //   //     });
+
+// //   //     setTotals(totalCards);
+// //   //   } catch (err) {
+// //   //     console.error(
+// //   //       "Report Error:",
+// //   //       err
+// //   //     );
+
+// //   //     // IMPORTANT: `err?.response?.data?.detail` can be a dict/array
+// //   //     // ({message, student_uuid, ...} or a list of such dicts) — never
+// //   //     // put that straight into state that gets rendered as {error} in
+// //   //     // JSX. getErrorMessage always returns a plain string.
+// //   //     setError(
+// //   //       getErrorMessage(err, "Failed to load report")
+// //   //     );
+
+// //   //     setReportData([]);
+// //   //     setTotals([]);
+// //   //     setComponents([]);
+// //   //   } finally {
+// //   //     setLoading(false);
+// //   //   }
+// //   // };
 
 
+// //   const fetchReport = async () => {
+// //   setLoading(true);
+// //   setError("");
+
+// //   try {
+// //     // =====================================================
+// //     // DAILY COLLECTION REPORT
+// //     // ONLY SUCCESSFUL PAYMENTS MADE ON SELECTED DATE
+// //     // =====================================================
+// //     if (reportType === "DAILY_COLLECTION") {
+// //       const response = await getPayments({
+// //         limit: 500,
+// //       });
+
+// //       const payments =
+// //         response?.data?.data ??
+// //         response?.data ??
+// //         [];
+
+// //       const selectedDate =
+// //         collectionDate ||
+// //         new Date().toLocaleDateString("en-CA");
+
+// //       // ---------------------------------------------------
+// //       // ONLY SUCCESSFUL TRANSACTIONS OF SELECTED DATE
+// //       // ---------------------------------------------------
+// //       const dailyPayments = payments.filter((txn) => {
+// //         if (txn.transaction_status !== "SUCCESS") {
+// //           return false;
+// //         }
+
+// //         if (!txn.created_at) {
+// //           return false;
+// //         }
+
+// //         const paymentDate =
+// //           new Date(txn.created_at).toLocaleDateString("en-CA");
+
+// //         return paymentDate === selectedDate;
+// //       });
+
+// //       // ---------------------------------------------------
+// //       // CLASS / SECTION FILTER
+// //       // ---------------------------------------------------
+// //       const filteredPayments = dailyPayments.filter((txn) => {
+// //         const student = (students || []).find(
+// //           (s) => s.student_uuid === txn.student_uuid
+// //         );
+
+// //         if (!student) {
+// //           return false;
+// //         }
+
+// //         if (
+// //           classUuid !== "all" &&
+// //           classUuid &&
+// //           student.class_uuid !== classUuid
+// //         ) {
+// //           return false;
+// //         }
+
+// //         if (
+// //           sectionUuid !== "all" &&
+// //           sectionUuid &&
+// //           student.section_uuid !== sectionUuid
+// //         ) {
+// //           return false;
+// //         }
+
+// //         return true;
+// //       });
+
+// //       // ---------------------------------------------------
+// //       // FORMAT DAILY COLLECTION ROWS
+// //       // ---------------------------------------------------
+// //       const formattedRows = filteredPayments.map(
+// //         (txn, index) => {
+// //           const student =
+// //             (students || []).find(
+// //               (s) =>
+// //                 s.student_uuid === txn.student_uuid
+// //             ) || {};
+
+// //           const grossAmount =
+// //             Number(
+// //               txn.details?.reduce(
+// //                 (sum, detail) =>
+// //                   sum + Number(detail.amount || 0),
+// //                 0
+// //               ) ||
+// //                 txn.total_amount ||
+// //                 0
+// //             );
+
+// //           const discountAmount =
+// //             Number(txn.discount_amount || 0);
+
+// //           const lateFee =
+// //             Number(txn.late_fee || 0);
+
+// //           const paidAmount =
+// //             Number(txn.total_amount || 0);
+
+// //           const netAmount =
+// //             paidAmount;
+
+// //           return {
+// //             "Sr No": index + 1,
+
+// //             "Student":
+// //               txn.student_name ||
+// //               student.full_name ||
+// //               "—",
+
+// //             "Class":
+// //               student.class_name ||
+// //               "—",
+
+// //             "Section":
+// //               student.section_name ||
+// //               "—",
+
+// //             "Admission No":
+// //               student.admission_no ||
+// //               txn.admission_number ||
+// //               "—",
+
+// //             "Invoice":
+// //               txn.invoice_number ||
+// //               txn.invoice_no ||
+// //               "—",
+
+// //             "Receipt":
+// //               txn.receipt_no ||
+// //               "—",
+
+// //             "Gross (₹)":
+// //               grossAmount,
+
+// //             "Discount (₹)":
+// //               discountAmount,
+
+// //             "Late Fee (₹)":
+// //               lateFee,
+
+// //             "Net (₹)":
+// //               netAmount,
+
+// //             "Paid (₹)":
+// //               paidAmount,
+
+// //             "Pending (₹)":
+// //               0,
+
+// //             "Payment Mode":
+// //               txn.payment_mode ||
+// //               "—",
+
+// //             "Reference":
+// //               txn.reference_number ||
+// //               txn.razorpay_payment_id ||
+// //               "—",
+
+// //             "Payment Date":
+// //               txn.created_at
+// //                 ? new Date(
+// //                     txn.created_at
+// //                   ).toLocaleString()
+// //                 : "—",
+// //           };
+// //         }
+// //       );
+
+// //       setComponents([]);
+
+// //       setReportData(
+// //         formattedRows
+// //       );
+
+// //       // ---------------------------------------------------
+// //       // DAILY COLLECTION TOTALS
+// //       // ---------------------------------------------------
+// //       const totalGross =
+// //         filteredPayments.reduce(
+// //           (sum, txn) =>
+// //             sum +
+// //             Number(
+// //               txn.details?.reduce(
+// //                 (detailSum, detail) =>
+// //                   detailSum +
+// //                   Number(detail.amount || 0),
+// //                 0
+// //               ) ||
+// //                 txn.total_amount ||
+// //                 0
+// //             ),
+// //           0
+// //         );
+
+// //       const totalDiscount =
+// //         filteredPayments.reduce(
+// //           (sum, txn) =>
+// //             sum +
+// //             Number(
+// //               txn.discount_amount || 0
+// //             ),
+// //           0
+// //         );
+
+// //       const totalLateFee =
+// //         filteredPayments.reduce(
+// //           (sum, txn) =>
+// //             sum +
+// //             Number(txn.late_fee || 0),
+// //           0
+// //         );
+
+// //       const totalPaid =
+// //         filteredPayments.reduce(
+// //           (sum, txn) =>
+// //             sum +
+// //             Number(txn.total_amount || 0),
+// //           0
+// //         );
+
+// //       const totalCards = [
+// //         {
+// //           label: "Payments",
+// //           value: filteredPayments.length,
+// //         },
+// //         {
+// //           label: "Total Gross",
+// //           value: inr(totalGross),
+// //         },
+// //         {
+// //           label: "Total Discount",
+// //           value: inr(totalDiscount),
+// //         },
+// //         {
+// //           label: "Total Late Fee",
+// //           value: inr(totalLateFee),
+// //         },
+// //         {
+// //           label: "Total Collection",
+// //           value: inr(totalPaid),
+// //         },
+// //       ];
+
+// //       setTotals(totalCards);
+
+// //       return;
+// //     }
+
+// //     // =====================================================
+// //     // ALL OTHER REPORTS
+// //     // =====================================================
+
+// //     const params = {
+// //       report_type: reportType,
+
+// //       academic_year:
+// //         visibleFilters.academicYear
+// //           ? academicYear || undefined
+// //           : undefined,
+
+// //       student_uuid:
+// //         visibleFilters.student
+// //           ? studentUuid || undefined
+// //           : undefined,
+
+// //       from_date:
+// //         visibleFilters.dateRange
+// //           ? fromDate || undefined
+// //           : undefined,
+
+// //       to_date:
+// //         visibleFilters.dateRange
+// //           ? toDate || undefined
+// //           : undefined,
+
+// //       collection_date:
+// //         visibleFilters.collectionDate
+// //           ? collectionDate || undefined
+// //           : undefined,
+
+// //       class_uuid:
+// //         classUuid === "all"
+// //           ? undefined
+// //           : classUuid,
+
+// //       section_uuid:
+// //         sectionUuid === "all"
+// //           ? undefined
+// //           : sectionUuid,
+
+// //       payment_status:
+// //         paymentStatus === "all"
+// //           ? undefined
+// //           : paymentStatus,
+// //     };
+
+// //     const response =
+// //       await getStudentFeeReport(params);
+
+// //     const body =
+// //       response?.data ??
+// //       response ??
+// //       {};
+
+// //     if (!body.success) {
+// //       throw new Error(
+// //         typeof body.message === "string"
+// //           ? body.message
+// //           : describeErrorDetail(
+// //               body.message
+// //             ) ||
+// //             "Failed to fetch report"
+// //       );
+// //     }
+
+// //     const data =
+// //       Array.isArray(body.data)
+// //         ? body.data
+// //         : [];
+
+// //     const componentsList =
+// //       Array.isArray(body.components)
+// //         ? body.components
+// //         : [];
+
+// //     setComponents(
+// //       componentsList
+// //     );
+
+// //     const formattedRows =
+// //       data.map((row) => {
+// //         const formattedRow = {
+// //           "Sr No":
+// //             row.sr_no,
+
+// //           "Student":
+// //             row.student_name ||
+// //             "—",
+
+// //           "Class":
+// //             row.class_name ||
+// //             "—",
+
+// //           "Section":
+// //             row.section_name ||
+// //             "—",
+
+// //           "Admission No":
+// //             row.admission_number ||
+// //             "—",
+
+// //           "Invoice":
+// //             row.invoice_number ||
+// //             "—",
+
+// //           "Receipt":
+// //             row.receipt_number ||
+// //             "—",
+// //         };
+
+// //         componentsList.forEach(
+// //           (component) => {
+// //             const value =
+// //               row.components?.[
+// //                 component
+// //               ];
+
+// //             formattedRow[
+// //               component
+// //             ] =
+// //               value === null ||
+// //               value === undefined
+// //                 ? null
+// //                 : Number(value);
+// //           }
+// //         );
+
+// //         formattedRow["Gross (₹)"] =
+// //           Number(
+// //             row.gross_amount || 0
+// //           );
+
+// //         formattedRow["Discount (₹)"] =
+// //           Number(
+// //             row.concession_amount || 0
+// //           );
+
+// //         formattedRow["Late Fee (₹)"] =
+// //           Number(
+// //             row.late_fee || 0
+// //           );
+
+// //         formattedRow["Net (₹)"] =
+// //           Number(
+// //             row.net_amount || 0
+// //           );
+
+// //         formattedRow["Paid (₹)"] =
+// //           Number(
+// //             row.paid_amount || 0
+// //           );
+
+// //         formattedRow["Pending (₹)"] =
+// //           Number(
+// //             row.pending_amount || 0
+// //           );
+
+// //         formattedRow["Payment Mode"] =
+// //           row.payment_mode || "—";
+
+// //         formattedRow["Reference"] =
+// //           row.reference_number || "—";
+
+// //         formattedRow["Payment Date"] =
+// //           row.payment_date
+// //             ? new Date(
+// //                 row.payment_date
+// //               ).toLocaleDateString()
+// //             : "—";
+
+// //         formattedRow["Due Date"] =
+// //           row.due_date
+// //             ? new Date(
+// //                 row.due_date
+// //               ).toLocaleDateString()
+// //             : "—";
+
+// //         formattedRow["Invoice Date"] =
+// //           row.invoice_date
+// //             ? new Date(
+// //                 row.invoice_date
+// //               ).toLocaleDateString()
+// //             : "—";
+
+// //         if (
+// //           reportType ===
+// //           "RETRACTED_INVOICE"
+// //         ) {
+// //           formattedRow[
+// //             "Retracted On"
+// //           ] =
+// //             row.retracted_at
+// //               ? new Date(
+// //                   row.retracted_at
+// //                 ).toLocaleDateString()
+// //               : "—";
+
+// //           formattedRow[
+// //             "Retracted By"
+// //           ] =
+// //             row.retracted_by ||
+// //             "—";
+
+// //           formattedRow[
+// //             "Reason"
+// //           ] =
+// //             row.retraction_reason ||
+// //             "—";
+// //         }
+
+// //         return formattedRow;
+// //       });
+
+// //     setReportData(
+// //       formattedRows
+// //     );
+
+// //     // =====================================================
+// //     // OTHER REPORT TOTALS
+// //     // =====================================================
+
+// //     const totalGross =
+// //       data.reduce(
+// //         (sum, row) =>
+// //           sum +
+// //           Number(
+// //             row.gross_amount || 0
+// //           ),
+// //         0
+// //       );
+
+// //     const totalDiscount =
+// //       data.reduce(
+// //         (sum, row) =>
+// //           sum +
+// //           Number(
+// //             row.concession_amount ||
+// //               0
+// //           ),
+// //         0
+// //       );
+
+// //     const totalLateFee =
+// //       data.reduce(
+// //         (sum, row) =>
+// //           sum +
+// //           Number(
+// //             row.late_fee || 0
+// //           ),
+// //         0
+// //       );
+
+// //     const totalNet =
+// //       data.reduce(
+// //         (sum, row) =>
+// //           sum +
+// //           Number(
+// //             row.net_amount || 0
+// //           ),
+// //         0
+// //       );
+
+// //     const totalPaid =
+// //       data.reduce(
+// //         (sum, row) =>
+// //           sum +
+// //           Number(
+// //             row.paid_amount || 0
+// //           ),
+// //         0
+// //       );
+
+// //     const totalPending =
+// //       data.reduce(
+// //         (sum, row) =>
+// //           sum +
+// //           Number(
+// //             row.pending_amount || 0
+// //           ),
+// //         0
+// //       );
+
+// //     const componentTotals = {};
+
+// //     componentsList.forEach(
+// //       (component) => {
+// //         componentTotals[
+// //           component
+// //         ] = data.reduce(
+// //           (sum, row) =>
+// //             sum +
+// //             Number(
+// //               row.components?.[
+// //                 component
+// //               ] || 0
+// //             ),
+// //           0
+// //         );
+// //       }
+// //     );
+
+// //     const totalCards = [
+// //       {
+// //         label: "Students",
+// //         value: data.length,
+// //       },
+// //       {
+// //         label: "Total Gross",
+// //         value: inr(totalGross),
+// //       },
+// //       {
+// //         label: "Total Discount",
+// //         value: inr(totalDiscount),
+// //       },
+// //       {
+// //         label: "Total Late Fee",
+// //         value: inr(totalLateFee),
+// //       },
+// //       {
+// //         label: "Total Net",
+// //         value: inr(totalNet),
+// //       },
+// //       {
+// //         label: "Total Paid",
+// //         value: inr(totalPaid),
+// //       },
+// //       {
+// //         label: "Total Pending",
+// //         value: inr(totalPending),
+// //       },
+// //     ];
+
+// //     componentsList.forEach(
+// //       (component) => {
+// //         totalCards.push({
+// //           label: component,
+// //           value: inr(
+// //             componentTotals[
+// //               component
+// //             ] || 0
+// //           ),
+// //         });
+// //       }
+// //     );
+
+// //     setTotals(
+// //       totalCards
+// //     );
+// //   } catch (err) {
+// //     console.error(
+// //       "Report Error:",
+// //       err
+// //     );
+
+// //     setError(
+// //       getErrorMessage(
+// //         err,
+// //         "Failed to load report"
+// //       )
+// //     );
+
+// //     setReportData([]);
+// //     setTotals([]);
+// //     setComponents([]);
+// //   } finally {
+// //     setLoading(false);
+// //   }
+// // };
+// //   // =====================================================
+// //   // INITIAL LOAD
+// //   // =====================================================
+
+// //   useEffect(() => {
+// //     fetchReport();
+// //     // eslint-disable-next-line react-hooks/exhaustive-deps
+// //   }, []);
+
+// //   useEffect(() => {
+// //     fetchReport();
+// //     // eslint-disable-next-line react-hooks/exhaustive-deps
+// //   }, [reportType]);
+
+// //   useEffect(() => {
+// //     if (reportType === "DAILY_COLLECTION") {
+// //       fetchReport();
+// //     }
+// //     // eslint-disable-next-line react-hooks/exhaustive-deps
+// //   }, [collectionDate]);
+
+// //   const handleStudentSelect = (student) => {
+// //     setStudentUuid(student.student_uuid);
+// //     setStudentQuery(student.full_name);
+
+// //     if (student.class_uuid) {
+// //       setClassUuid(student.class_uuid);
+// //     }
+
+// //     if (student.section_uuid) {
+// //       setSectionUuid(student.section_uuid);
+// //     }
+// //   };
+
+// //   const clearFilters = () => {
+// //     setStudentUuid("");
+// //     setStudentQuery("");
+// //     setFromDate("");
+// //     setToDate("");
+// //     setClassUuid("all");
+// //     setSectionUuid("all");
+// //     setPaymentStatus(
+// //       reportType === "FEE_PENDING" ? "PENDING" : "all"
+// //     );
+// //     setCollectionDate(
+// //       new Date().toISOString().split("T")[0]
+// //     );
+
+// //     fetchReport();
+// //   };
+
+// //   const columns = useMemo(() => {
+// //     if (!reportData.length) {
+// //       return [];
+// //     }
+
+// //     return Object.keys(reportData[0]);
+// //   }, [reportData]);
+
+// //   const exportExcel = () => {
+// //     if (!reportData.length) {
+// //       toast.error("No data to export");
+// //       return;
+// //     }
+
+// //     const exportRows = reportData.map((row) => {
+// //       const exportRow = { ...row };
+
+// //       components.forEach((component) => {
+// //         if (
+// //           exportRow[component] !== null &&
+// //           exportRow[component] !== undefined
+// //         ) {
+// //           exportRow[component] = Number(exportRow[component]);
+// //         }
+// //       });
+
+// //       return exportRow;
+// //     });
+
+// //     const worksheet = XLSX.utils.json_to_sheet(exportRows);
+// //     const workbook = XLSX.utils.book_new();
+
+// //     XLSX.utils.book_append_sheet(
+// //       workbook,
+// //       worksheet,
+// //       activeReport.label.slice(0, 31)
+// //     );
+
+// //     XLSX.writeFile(
+// //       workbook,
+// //       `${reportType.toLowerCase()}-${new Date().toISOString().split("T")[0]}.xlsx`
+// //     );
+
+// //     toast.success("Report exported successfully");
+// //   };
+
+// //   const exportPDF = () => {
+// //     if (!reportData.length) {
+// //       toast.error("No data to export");
+// //       return;
+// //     }
+
+// //     const doc = new jsPDF({
+// //       orientation: "landscape",
+// //       unit: "mm",
+// //       format: "a4",
+// //     });
+
+// //     doc.setFontSize(16);
+// //     doc.text(activeReport.label, 14, 15);
+
+// //     doc.setFontSize(9);
+// //     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22);
+
+// //     if (visibleFilters.academicYear) {
+// //       doc.text(`Academic Year: ${academicYear}`, 14, 28);
+// //     }
+
+// //     const pdfColumns = columns;
+
+// //     const pdfData = reportData.map((row) =>
+// //       pdfColumns.map((column) => {
+// //         const value = row[column];
+// //         const isMoney =
+// //           components.includes(column) || column.includes("₹");
+
+// //         if (value === null || value === undefined) {
+// //           return "—";
+// //         }
+
+// //         return isMoney && typeof value === "number"
+// //           ? Number(value).toFixed(2)
+// //           : value;
+// //       })
+// //     );
+
+// //     autoTable(doc, {
+// //       head: [pdfColumns],
+// //       body: pdfData,
+// //       startY: 32,
+// //       styles: { fontSize: 6, cellPadding: 1.2 },
+// //       headStyles: { fontSize: 6, fillColor: [99, 102, 241] },
+// //       margin: { left: 5, right: 5 },
+// //       horizontalPageBreak: true,
+// //       horizontalPageBreakRepeat: 1,
+// //     });
+
+// //     doc.save(
+// //       `${reportType.toLowerCase()}-${new Date().toISOString().split("T")[0]}.pdf`
+// //     );
+
+// //     toast.success("PDF exported successfully");
+// //   };
+
+// //   // =====================================================
+// //   // RENDER
+// //   // =====================================================
+
+// //   return (
+// //     <div className="space-y-4">
+
+// //       <Card className="border-border/60">
+
+// //         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
+
+// //           <div>
+// //             <CardTitle className="font-display text-base flex items-center gap-2">
+// //               <FileBarChart2 className="h-4 w-4 text-primary" />
+// //               {activeReport.label}
+// //             </CardTitle>
+
+// //             <CardDescription>
+// //               {activeReport.description}
+// //               {components.length > 0 && (
+// //                 <span className="ml-2 text-xs text-muted-foreground">
+// //                   · {components.length} fee components
+// //                 </span>
+// //               )}
+// //             </CardDescription>
+// //           </div>
+
+// //           <Button
+// //             variant="ghost"
+// //             size="sm"
+// //             onClick={() => setShowFilters(!showFilters)}
+// //           >
+// //             {showFilters ? "Hide Filters" : "Show Filters"}
+// //           </Button>
+
+// //         </CardHeader>
+
+// //         {showFilters && (
+// //           <CardContent className="pt-0 space-y-3">
+
+// //             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
+
+// //               <FF label="Report Type">
+// //                 <Select
+// //                   value={reportType}
+// //                   onValueChange={handleReportTypeChange}
+// //                 >
+// //                   <SelectTrigger className="h-9">
+// //                     <SelectValue placeholder="Select report" />
+// //                   </SelectTrigger>
+
+// //                   <SelectContent>
+// //                     {REPORT_TYPES.map((rt) => (
+// //                       <SelectItem key={rt.value} value={rt.value}>
+// //                         {rt.label}
+// //                       </SelectItem>
+// //                     ))}
+// //                   </SelectContent>
+// //                 </Select>
+// //               </FF>
+
+// //               {visibleFilters.academicYear && (
+// //                 <FF label="Academic Year">
+// //                   <Select
+// //                     value={academicYear}
+// //                     onValueChange={setAcademicYear}
+// //                   >
+// //                     <SelectTrigger className="h-9">
+// //                       <SelectValue placeholder="Select year" />
+// //                     </SelectTrigger>
+
+// //                     <SelectContent>
+// //                       {academicYears.map((year) => (
+// //                         <SelectItem key={year} value={year}>
+// //                           {year}
+// //                         </SelectItem>
+// //                       ))}
+// //                     </SelectContent>
+// //                   </Select>
+// //                 </FF>
+// //               )}
+
+// //               {visibleFilters.student && (
+// //                 <div className="space-y-1.5 relative">
+// //                   <Label className="text-xs text-muted-foreground">
+// //                     Student
+// //                   </Label>
+
+// //                   <Input
+// //                     placeholder="Search by name, student no or admission no..."
+// //                     value={studentQuery}
+// //                     onChange={(e) => {
+// //                       const value = e.target.value;
+// //                       setStudentQuery(value);
+// //                       if (!value) setStudentUuid("");
+// //                     }}
+// //                     className="h-9"
+// //                   />
+
+// //                   {studentQuery &&
+// //                     !studentUuid &&
+// //                     matchingStudents.length > 0 && (
+// //                       <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+// //                         {matchingStudents.map((student) => (
+// //                           <button
+// //                             key={student.student_uuid}
+// //                             type="button"
+// //                             className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center justify-between"
+// //                             onClick={() => handleStudentSelect(student)}
+// //                           >
+// //                             <span>{student.full_name}</span>
+// //                             <span className="text-xs text-muted-foreground">
+// //                               {student.class_name}
+// //                               {student.section_name
+// //                                 ? `-${student.section_name}`
+// //                                 : ""}
+// //                             </span>
+// //                           </button>
+// //                         ))}
+// //                       </div>
+// //                     )}
+
+// //                   {studentUuid && (
+// //                     <div className="text-xs text-primary flex items-center gap-1.5 bg-primary/5 rounded-md px-2 py-1 w-fit">
+// //                       <Check className="h-3 w-3" />
+// //                       <span className="font-medium">{studentQuery}</span>
+// //                       <button
+// //                         type="button"
+// //                         className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
+// //                         onClick={() => {
+// //                           setStudentUuid("");
+// //                           setStudentQuery("");
+// //                           setClassUuid("all");
+// //                           setSectionUuid("all");
+// //                         }}
+// //                       >
+// //                         <X className="h-3 w-3" />
+// //                       </button>
+// //                     </div>
+// //                   )}
+// //                 </div>
+// //               )}
+
+// //               {visibleFilters.class && (
+// //                 <FF label="Class">
+// //                   <Select
+// //                     value={classUuid}
+// //                     onValueChange={(value) => {
+// //                       setClassUuid(value);
+// //                       setSectionUuid("all");
+// //                     }}
+// //                   >
+// //                     <SelectTrigger className="h-9">
+// //                       <SelectValue placeholder="All Classes" />
+// //                     </SelectTrigger>
+
+// //                     <SelectContent>
+// //                       <SelectItem value="all">All Classes</SelectItem>
+// //                       {classes.map((item) => (
+// //                         <SelectItem key={item.uuid} value={item.uuid}>
+// //                           {item.name}
+// //                         </SelectItem>
+// //                       ))}
+// //                     </SelectContent>
+// //                   </Select>
+// //                 </FF>
+// //               )}
+
+// //               {visibleFilters.section && (
+// //                 <FF label="Section">
+// //                   <Select
+// //                     value={sectionUuid}
+// //                     onValueChange={setSectionUuid}
+// //                   >
+// //                     <SelectTrigger className="h-9">
+// //                       <SelectValue placeholder="All Sections" />
+// //                     </SelectTrigger>
+
+// //                     <SelectContent>
+// //                       <SelectItem value="all">All Sections</SelectItem>
+// //                       {sections.map((item) => (
+// //                         <SelectItem key={item.uuid} value={item.uuid}>
+// //                           {item.name}
+// //                         </SelectItem>
+// //                       ))}
+// //                     </SelectContent>
+// //                   </Select>
+// //                 </FF>
+// //               )}
+
+// //               {visibleFilters.dateRange && (
+// //                 <>
+// //                   <FF label="From Date">
+// //                     <Input
+// //                       type="date"
+// //                       value={fromDate}
+// //                       onChange={(e) => setFromDate(e.target.value)}
+// //                       className="h-9"
+// //                     />
+// //                   </FF>
+
+// //                   <FF label="To Date">
+// //                     <Input
+// //                       type="date"
+// //                       value={toDate}
+// //                       onChange={(e) => setToDate(e.target.value)}
+// //                       className="h-9"
+// //                     />
+// //                   </FF>
+// //                 </>
+// //               )}
+
+// //               {visibleFilters.collectionDate && (
+// //                 <FF label="Collection Date">
+// //                   <Input
+// //                     type="date"
+// //                     value={collectionDate}
+// //                     onChange={(e) => setCollectionDate(e.target.value)}
+// //                     className="h-9"
+// //                   />
+// //                 </FF>
+// //               )}
+
+// //               {visibleFilters.paymentStatus && (
+// //                 <FF label="Payment Status">
+// //                   <Select
+// //                     value={paymentStatus}
+// //                     onValueChange={setPaymentStatus}
+// //                   >
+// //                     <SelectTrigger className="h-9">
+// //                       <SelectValue placeholder="All Status" />
+// //                     </SelectTrigger>
+
+// //                     <SelectContent>
+// //                       {statusOptionsForReport.map((status) => (
+// //                         <SelectItem key={status.value} value={status.value}>
+// //                           {status.label}
+// //                         </SelectItem>
+// //                       ))}
+// //                     </SelectContent>
+// //                   </Select>
+// //                 </FF>
+// //               )}
+
+// //               <div className="flex items-end gap-2">
+// //                 <Button
+// //                   size="sm"
+// //                   className="gradient-primary border-0 flex-1"
+// //                   onClick={fetchReport}
+// //                   disabled={loading}
+// //                 >
+// //                   <RefreshCcw
+// //                     className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+// //                   />
+// //                   {loading ? "Loading..." : "Generate"}
+// //                 </Button>
+
+// //                 <Button
+// //                   size="sm"
+// //                   variant="outline"
+// //                   onClick={clearFilters}
+// //                   disabled={loading}
+// //                 >
+// //                   Clear
+// //                 </Button>
+// //               </div>
+
+// //             </div>
+
+// //           </CardContent>
+// //         )}
+
+// //       </Card>
+
+// //       {totals.length > 0 && (
+// //         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+// //           {totals.slice(0, 7).map((total) => (
+// //             <div
+// //               key={total.label}
+// //               className="rounded-lg border border-border/60 bg-card px-3 py-2 text-center"
+// //             >
+// //               <div className="text-xs text-muted-foreground">
+// //                 {total.label}
+// //               </div>
+// //               <div className="text-sm font-semibold">{total.value}</div>
+// //             </div>
+// //           ))}
+// //         </div>
+// //       )}
+
+// //       {error && (
+// //         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+// //           <AlertCircle className="h-4 w-4 inline mr-2" />
+// //           {error}
+// //         </div>
+// //       )}
+
+// //       <Card className="border-border/60">
+// //         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-2 flex-wrap">
+// //           <div>
+// //             <CardTitle className="font-display text-base">
+// //               Report Data
+// //               <span className="ml-2 text-sm font-normal text-muted-foreground">
+// //                 {reportData.length} records
+// //               </span>
+// //             </CardTitle>
+// //           </div>
+
+// //           <div className="flex gap-2">
+// //             <Button
+// //               size="sm"
+// //               variant="outline"
+// //               onClick={exportExcel}
+// //               disabled={!reportData.length || loading}
+// //             >
+// //               <Download className="h-4 w-4" />
+// //               Excel
+// //             </Button>
+
+// //             <Button
+// //               size="sm"
+// //               variant="outline"
+// //               onClick={exportPDF}
+// //               disabled={!reportData.length || loading}
+// //             >
+// //               <FileText className="h-4 w-4" />
+// //               PDF
+// //             </Button>
+
+// //             <Button
+// //               size="sm"
+// //               variant="outline"
+// //               onClick={fetchReport}
+// //               disabled={loading}
+// //             >
+// //               <RefreshCcw
+// //                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+// //               />
+// //             </Button>
+// //           </div>
+// //         </CardHeader>
+
+// //         <CardContent className="p-0 overflow-x-auto">
+// //           <div className="max-h-[500px] overflow-y-auto">
+// //             <Table>
+// //               <TableHeader>
+// //                 <TableRow className="sticky top-0 bg-background z-10">
+// //                   {columns.map((column) => (
+// //                     <TableHead
+// //                       key={column}
+// //                       className="whitespace-nowrap text-xs font-semibold"
+// //                     >
+// //                       {column}
+// //                     </TableHead>
+// //                   ))}
+// //                 </TableRow>
+// //               </TableHeader>
+
+// //               <TableBody>
+// //                 {loading ? (
+// //                   <TableRow>
+// //                     <TableCell
+// //                       colSpan={columns.length || 1}
+// //                       className="text-center py-8"
+// //                     >
+// //                       <div className="flex items-center justify-center gap-2 text-muted-foreground">
+// //                         <RefreshCcw className="h-4 w-4 animate-spin" />
+// //                         Loading report...
+// //                       </div>
+// //                     </TableCell>
+// //                   </TableRow>
+// //                 ) : reportData.length === 0 ? (
+// //                   <TableRow>
+// //                     <TableCell
+// //                       colSpan={columns.length || 1}
+// //                       className="text-center py-8 text-muted-foreground"
+// //                     >
+// //                       No data found. Adjust your filters and click "Generate".
+// //                     </TableCell>
+// //                   </TableRow>
+// //                 ) : (
+// //                   reportData.map((row, index) => (
+// //                     <TableRow key={index} className="hover:bg-muted/30">
+// //                       {columns.map((column) => {
+// //                         const value = row[column];
+// //                         const isComponent = components.includes(column);
+// //                         const isMoney =
+// //                           isComponent ||
+// //                           column.includes("₹") ||
+// //                           column.includes("Gross") ||
+// //                           column.includes("Discount") ||
+// //                           column.includes("Late") ||
+// //                           column.includes("Net") ||
+// //                           column.includes("Paid") ||
+// //                           column.includes("Pending");
+// //                         const isPending = column === "Pending (₹)";
+
+// //                         return (
+// //                           <TableCell
+// //                             key={column}
+// //                             className={`
+// //                               whitespace-nowrap text-sm
+// //                               ${isMoney && typeof value === "number" ? "font-mono" : ""}
+// //                               ${isPending && typeof value === "number" && value > 0 ? "text-warning font-semibold" : ""}
+// //                             `}
+// //                           >
+// //                             {value === null || value === undefined || value === ""
+// //                               ? "—"
+// //                               : typeof value === "number" && isMoney
+// //                               ? inr(value)
+// //                               : value}
+// //                           </TableCell>
+// //                         );
+// //                       })}
+// //                     </TableRow>
+// //                   ))
+// //                 )}
+// //               </TableBody>
+// //             </Table>
+// //           </div>
+// //         </CardContent>
+// //       </Card>
+
+// //       {components.length > 0 && reportData.length > 0 && (
+// //         <Card className="border-border/60">
+// //           <CardHeader className="pb-3">
+// //             <CardTitle className="font-display text-base">
+// //               Fee Components
+// //             </CardTitle>
+// //             <CardDescription>
+// //               Components tracked in this report
+// //             </CardDescription>
+// //           </CardHeader>
+
+// //           <CardContent>
+// //             <div className="flex flex-wrap gap-2">
+// //               {components.map((component) => (
+// //                 <Badge key={component} variant="secondary" className="text-xs">
+// //                   {component}
+// //                 </Badge>
+// //               ))}
+// //             </div>
+// //           </CardContent>
+// //         </Card>
+// //       )}
+
+// //     </div>
+// //   );
+// // }
 
 // function ReportsPanel({ students }) {
 //   const [loading, setLoading] = useState(false);
@@ -5414,10 +7213,7 @@
 //   const [error, setError] = useState("");
 
 //   // =====================================================
-//   // REPORT TYPE
-//   // IMPORTANT:
-//   // value = key used everywhere (API param + filter logic)
-//   // label = shown in dropdown
+//   // REPORT TYPES
 //   // =====================================================
 
 //   const REPORT_TYPES = [
@@ -5426,25 +7222,41 @@
 //       label: "Master Student Fees Report (Paid / Unpaid)",
 //       description: "Paid vs unpaid breakdown across all students",
 //     },
+
 //     {
 //       value: "DAILY_COLLECTION",
 //       label: "Daily Collections Report",
 //       description: "Payments collected on a specific day",
 //     },
+
+//     // ===================================================
+//     // NEW
+//     // ===================================================
+//     {
+//       value: "DAILY_COLLECTION_HEAD",
+//       label: "Daily Collection Head Report",
+//       description:
+//         "Collection head-wise payment mode collection for the selected day",
+//     },
+
 //     {
 //       value: "FEE_PENDING",
 //       label: "Fee Pending Report",
 //       description: "Students with pending / overdue fees",
 //     },
+
 //     {
 //       value: "STUDENT_FEE_NEW",
 //       label: "Student Fee Report (New)",
-//       description: "Detailed fee report with student-wise breakdown",
+//       description:
+//         "Detailed fee report with student-wise breakdown",
 //     },
+
 //     {
 //       value: "RETRACTED_INVOICE",
 //       label: "Retracted Invoice Report",
-//       description: "Invoices that were retracted / cancelled",
+//       description:
+//         "Invoices that were retracted / cancelled",
 //     },
 //   ];
 
@@ -5478,10 +7290,11 @@
 //   const [toDate, setToDate] =
 //     useState("");
 
-//   // Used only by Daily Collections Report
 //   const [collectionDate, setCollectionDate] =
 //     useState(
-//       new Date().toISOString().split("T")[0]
+//       new Date()
+//         .toISOString()
+//         .split("T")[0]
 //     );
 
 //   const [classUuid, setClassUuid] =
@@ -5497,11 +7310,7 @@
 //     useState(true);
 
 //   // =====================================================
-//   // PER-REPORT FILTER VISIBILITY
-//   // IMPORTANT:
-//   // Toggle which filter fields are relevant for the
-//   // currently selected report type. Pure UI switch —
-//   // no reload needed, changes instantly on selection.
+//   // PER REPORT FILTER VISIBILITY
 //   // =====================================================
 
 //   const visibleFilters = useMemo(() => {
@@ -5528,6 +7337,20 @@
 //           paymentStatus: false,
 //         };
 
+//       // =================================================
+//       // NEW DAILY COLLECTION HEAD
+//       // =================================================
+//       case "DAILY_COLLECTION_HEAD":
+//         return {
+//           academicYear: false,
+//           student: false,
+//           class: true,
+//           section: true,
+//           dateRange: false,
+//           collectionDate: true,
+//           paymentStatus: false,
+//         };
+
 //       case "FEE_PENDING":
 //         return {
 //           academicYear: true,
@@ -5536,7 +7359,7 @@
 //           section: true,
 //           dateRange: false,
 //           collectionDate: false,
-//           paymentStatus: false, // locked to PENDING/OVERDUE
+//           paymentStatus: false,
 //         };
 
 //       case "RETRACTED_INVOICE":
@@ -5564,39 +7387,69 @@
 //     }
 //   }, [reportType]);
 
-//   // Status options change per report (e.g. Master Fees
-//   // is Paid/Unpaid only, Pending report is locked)
+//   // =====================================================
+//   // STATUS OPTIONS
+//   // =====================================================
+
 //   const statusOptionsForReport = useMemo(() => {
 //     if (reportType === "MASTER_FEES") {
 //       return [
-//         { value: "all", label: "All Status" },
-//         { value: "PAID", label: "Paid" },
-//         { value: "PENDING", label: "Unpaid" },
+//         {
+//           value: "all",
+//           label: "All Status",
+//         },
+//         {
+//           value: "PAID",
+//           label: "Paid",
+//         },
+//         {
+//           value: "PENDING",
+//           label: "Unpaid",
+//         },
 //       ];
 //     }
 
 //     return [
-//       { value: "all", label: "All Status" },
-//       { value: "PAID", label: "Paid" },
-//       { value: "PARTIAL", label: "Partial" },
-//       { value: "PENDING", label: "Pending" },
-//       { value: "OVERDUE", label: "Overdue" },
-//       { value: "ADVANCE", label: "Advance" },
+//       {
+//         value: "all",
+//         label: "All Status",
+//       },
+//       {
+//         value: "PAID",
+//         label: "Paid",
+//       },
+//       {
+//         value: "PARTIAL",
+//         label: "Partial",
+//       },
+//       {
+//         value: "PENDING",
+//         label: "Pending",
+//       },
+//       {
+//         value: "OVERDUE",
+//         label: "Overdue",
+//       },
+//       {
+//         value: "ADVANCE",
+//         label: "Advance",
+//       },
 //     ];
 //   }, [reportType]);
 
 //   // =====================================================
 //   // REPORT TYPE CHANGE
-//   // Reset the filters that don't apply to the newly
-//   // selected report so stale values can't leak into
-//   // the next request.
 //   // =====================================================
 
 //   const handleReportTypeChange = (value) => {
 //     setReportType(value);
 //     setError("");
 
-//     if (value === "DAILY_COLLECTION") {
+//     // Daily reports
+//     if (
+//       value === "DAILY_COLLECTION" ||
+//       value === "DAILY_COLLECTION_HEAD"
+//     ) {
 //       setFromDate("");
 //       setToDate("");
 //       setStudentUuid("");
@@ -5643,9 +7496,6 @@
 
 //   // =====================================================
 //   // CLASSES
-//   // IMPORTANT:
-//   // value = class UUID
-//   // label = class name
 //   // =====================================================
 
 //   const classes = useMemo(() => {
@@ -5675,9 +7525,6 @@
 
 //   // =====================================================
 //   // SECTIONS
-//   // IMPORTANT:
-//   // value = section UUID
-//   // label = section name
 //   // =====================================================
 
 //   const sections = useMemo(() => {
@@ -5723,18 +7570,15 @@
 //       .filter((student) => {
 //         const name =
 //           student.full_name
-//             ?.toLowerCase()
-//             || "";
+//             ?.toLowerCase() || "";
 
 //         const studentNo =
 //           student.student_no
-//             ?.toLowerCase()
-//             || "";
+//             ?.toLowerCase() || "";
 
 //         const admissionNo =
 //           student.admission_no
-//             ?.toLowerCase()
-//             || "";
+//             ?.toLowerCase() || "";
 
 //         return (
 //           name.includes(q) ||
@@ -5749,11 +7593,114 @@
 //   ]);
 
 //   // =====================================================
+//   // PAYMENT MODE NORMALIZER
+//   // =====================================================
+
+//   const getPaymentColumn = (mode) => {
+//     const value = String(mode || "")
+//       .trim()
+//       .toUpperCase()
+//       .replace(/[\s-]+/g, "_");
+
+//     switch (value) {
+//       case "CASH":
+//         return "Cash";
+
+//       case "CHEQUE":
+//       case "CHECK":
+//         return "Cheque";
+
+//       case "BANK_TRANSFER":
+//       case "BANKTRANSFER":
+//         return "Bank Transfer";
+
+//       case "CARD":
+//       case "SWIPE":
+//         return "Swipe";
+
+//       case "DD":
+//       case "DEMAND_DRAFT":
+//         return "DD";
+
+//       case "PAYTM":
+//         return "Paytm";
+
+//       case "NEFT":
+//         return "NEFT";
+
+//       case "NSO":
+//         return "NSO";
+
+//       case "ONLINE_MANUAL":
+//         return "Online Manual";
+
+//       case "CREDIT_NOTE":
+//       case "ADJUST_FROM_CREDIT_NOTE":
+//         return "Adjust from Credit Note";
+
+//       case "STUDENT_ACCOUNT":
+//       case "ADJUST_FROM_STUDENT_ACCOUNT":
+//         return "Adjust from Student Account balance";
+
+//       case "UPI":
+//         return "UPI";
+
+//       case "RAZORPAY":
+//       case "NETBANKING":
+//       case "NET_BANKING":
+//       case "ONLINE":
+//         return "Online";
+
+//       case "OTHER_SETTLEMENT":
+//         return "Other Settlement";
+
+//       case "CANCELLED":
+//         return "Cancelled";
+
+//       default:
+//         return "Online";
+//     }
+//   };
+
+//   // =====================================================
+//   // DAILY COLLECTION HEAD PAYMENT COLUMNS
+//   // =====================================================
+
+//   const DAILY_HEAD_COLUMNS = [
+//     "Online",
+//     "Cheque",
+//     "Cash",
+//     "Bank Transfer",
+//     "Other Settlement",
+//     "Cancelled",
+//     "Swipe",
+//     "DD",
+//     "Paytm",
+//     "Adjust from Student Account balance",
+//     "NEFT",
+//     "NSO",
+//     "Online Manual",
+//     "Adjust from Credit Note",
+//     "UPI",
+//   ];
+
+//   // =====================================================
+//   // GET TRANSACTION DETAIL AMOUNT
+//   // =====================================================
+
+//   const getTransactionComponentDetails = (txn) => {
+//     if (
+//       Array.isArray(txn.details) &&
+//       txn.details.length > 0
+//     ) {
+//       return txn.details;
+//     }
+
+//     return [];
+//   };
+
+//   // =====================================================
 //   // FETCH REPORT
-//   // IMPORTANT:
-//   // report_type is now sent to the API so the backend
-//   // can route to the correct query. All existing param
-//   // shape is preserved for backward compatibility.
 //   // =====================================================
 
 //   const fetchReport = async () => {
@@ -5761,43 +7708,827 @@
 //     setError("");
 
 //     try {
+//       // =================================================
+//       // DAILY COLLECTION HEAD REPORT
+//       // =================================================
+
+//       if (
+//         reportType ===
+//         "DAILY_COLLECTION_HEAD"
+//       ) {
+//         const response =
+//           await getPayments({
+//             limit: 500,
+//           });
+
+//         const payments =
+//           response?.data?.data ??
+//           response?.data ??
+//           [];
+
+//         const selectedDate =
+//           collectionDate ||
+//           new Date()
+//             .toISOString()
+//             .split("T")[0];
+
+//         // -----------------------------------------------
+//         // ONLY SUCCESSFUL PAYMENTS
+//         // -----------------------------------------------
+
+//         const dailyPayments =
+//           payments.filter((txn) => {
+//             if (
+//               txn.transaction_status !==
+//               "SUCCESS"
+//             ) {
+//               return false;
+//             }
+
+//             if (!txn.created_at) {
+//               return false;
+//             }
+
+//             const paymentDate =
+//               new Date(
+//                 txn.created_at
+//               )
+//                 .toLocaleDateString(
+//                   "en-CA"
+//                 );
+
+//             return (
+//               paymentDate ===
+//               selectedDate
+//             );
+//           });
+
+//         // -----------------------------------------------
+//         // CLASS / SECTION FILTER
+//         // -----------------------------------------------
+
+//         const filteredPayments =
+//           dailyPayments.filter(
+//             (txn) => {
+//               const student =
+//                 (students || []).find(
+//                   (s) =>
+//                     s.student_uuid ===
+//                     txn.student_uuid
+//                 );
+
+//               // If student is not available
+//               // in frontend list, don't include
+//               // because class/section cannot be verified.
+//               if (!student) {
+//                 return false;
+//               }
+
+//               if (
+//                 classUuid !== "all" &&
+//                 classUuid &&
+//                 student.class_uuid !==
+//                   classUuid
+//               ) {
+//                 return false;
+//               }
+
+//               if (
+//                 sectionUuid !== "all" &&
+//                 sectionUuid &&
+//                 student.section_uuid !==
+//                   sectionUuid
+//               ) {
+//                 return false;
+//               }
+
+//               return true;
+//             }
+//           );
+
+//         // -----------------------------------------------
+//         // GROUP COLLECTION HEAD
+//         // -----------------------------------------------
+
+//         const collectionMap =
+//           new Map();
+
+//         filteredPayments.forEach(
+//           (txn) => {
+//             const paymentColumn =
+//               getPaymentColumn(
+//                 txn.payment_mode
+//               );
+
+//             const details =
+//               getTransactionComponentDetails(
+//                 txn
+//               );
+
+//             // -------------------------------------------
+//             // NORMAL FEE COMPONENTS
+//             // -------------------------------------------
+
+//             if (details.length > 0) {
+//               details.forEach(
+//                 (detail) => {
+//                   const collectionHead =
+//                     detail.component_name ||
+//                     detail.name ||
+//                     "Other Income";
+
+//                   const amount =
+//                     Number(
+//                       detail.amount ??
+//                         detail.paid_amount ??
+//                         0
+//                     );
+
+//                   if (
+//                     !Number.isFinite(
+//                       amount
+//                     ) ||
+//                     amount <= 0
+//                   ) {
+//                     return;
+//                   }
+
+//                   if (
+//                     !collectionMap.has(
+//                       collectionHead
+//                     )
+//                   ) {
+//                     const row = {
+//                       "Collection Head":
+//                         collectionHead,
+
+//                       Date:
+//                         selectedDate,
+//                     };
+
+//                     DAILY_HEAD_COLUMNS.forEach(
+//                       (column) => {
+//                         row[column] = 0;
+//                       }
+//                     );
+
+//                     collectionMap.set(
+//                       collectionHead,
+//                       row
+//                     );
+//                   }
+
+//                   const row =
+//                     collectionMap.get(
+//                       collectionHead
+//                     );
+
+//                   row[paymentColumn] =
+//                     Number(
+//                       row[paymentColumn] || 0
+//                     ) + amount;
+//                 }
+//               );
+//             }
+
+//             // -------------------------------------------
+//             // LATE FEE
+//             //
+//             // Add late fee separately because
+//             // many payment transaction details
+//             // contain only actual fee components.
+//             // Avoid duplicate if a detail already
+//             // contains Late Fee.
+//             // -------------------------------------------
+
+//             const lateFee =
+//               Number(
+//                 txn.late_fee || 0
+//               );
+
+//             if (
+//               lateFee > 0
+//             ) {
+//               const hasLateFeeDetail =
+//                 details.some(
+//                   (detail) =>
+//                     String(
+//                       detail.component_name ||
+//                         detail.name ||
+//                         ""
+//                     )
+//                       .toLowerCase()
+//                       .includes(
+//                         "late"
+//                       )
+//                 );
+
+//               if (!hasLateFeeDetail) {
+//                 const collectionHead =
+//                   "Late Fee";
+
+//                 if (
+//                   !collectionMap.has(
+//                     collectionHead
+//                   )
+//                 ) {
+//                   const row = {
+//                     "Collection Head":
+//                       collectionHead,
+
+//                     Date:
+//                       selectedDate,
+//                   };
+
+//                   DAILY_HEAD_COLUMNS.forEach(
+//                     (column) => {
+//                       row[column] = 0;
+//                     }
+//                   );
+
+//                   collectionMap.set(
+//                     collectionHead,
+//                     row
+//                   );
+//                 }
+
+//                 const row =
+//                   collectionMap.get(
+//                     collectionHead
+//                   );
+
+//                 row[paymentColumn] =
+//                   Number(
+//                     row[paymentColumn] || 0
+//                   ) + lateFee;
+//               }
+//             }
+
+//             // -------------------------------------------
+//             // IF TRANSACTION HAS NO DETAILS
+//             // -------------------------------------------
+
+//             if (
+//               details.length === 0 &&
+//               lateFee <= 0
+//             ) {
+//               const collectionHead =
+//                 "Other Income";
+
+//               const amount =
+//                 Number(
+//                   txn.total_amount || 0
+//                 );
+
+//               if (amount > 0) {
+//                 if (
+//                   !collectionMap.has(
+//                     collectionHead
+//                   )
+//                 ) {
+//                   const row = {
+//                     "Collection Head":
+//                       collectionHead,
+
+//                     Date:
+//                       selectedDate,
+//                   };
+
+//                   DAILY_HEAD_COLUMNS.forEach(
+//                     (column) => {
+//                       row[column] = 0;
+//                     }
+//                   );
+
+//                   collectionMap.set(
+//                     collectionHead,
+//                     row
+//                   );
+//                 }
+
+//                 const row =
+//                   collectionMap.get(
+//                     collectionHead
+//                   );
+
+//                 row[paymentColumn] =
+//                   Number(
+//                     row[paymentColumn] || 0
+//                   ) + amount;
+//               }
+//             }
+//           }
+//         );
+
+//         // -----------------------------------------------
+//         // FORMAT DATE
+//         // -----------------------------------------------
+
+//         const displayDate =
+//           new Date(
+//             `${selectedDate}T00:00:00`
+//           ).toLocaleDateString(
+//             "en-GB"
+//           );
+
+//         // -----------------------------------------------
+//         // CREATE REPORT ROWS
+//         // -----------------------------------------------
+
+//         const collectionRows =
+//           Array.from(
+//             collectionMap.values()
+//           ).map(
+//             (row, index) => {
+//               const formattedRow = {
+//                 "Sr No":
+//                   index + 1,
+
+//                 "Collection Head":
+//                   row[
+//                     "Collection Head"
+//                   ],
+
+//                 Date:
+//                   displayDate,
+//               };
+
+//               let total = 0;
+
+//               DAILY_HEAD_COLUMNS.forEach(
+//                 (column) => {
+//                   const amount =
+//                     Number(
+//                       row[column] || 0
+//                     );
+
+//                   formattedRow[
+//                     column
+//                   ] = amount;
+
+//                   total += amount;
+//                 }
+//               );
+
+//               formattedRow[
+//                 "Total (₹)"
+//               ] = total;
+
+//               return formattedRow;
+//             }
+//           );
+
+//         // -----------------------------------------------
+//         // TOTAL ROW
+//         // -----------------------------------------------
+
+//         if (
+//           collectionRows.length > 0
+//         ) {
+//           const totalRow = {
+//             "Sr No": "",
+//             "Collection Head":
+//               "Total",
+//             Date: "",
+//           };
+
+//           let grandTotal = 0;
+
+//           DAILY_HEAD_COLUMNS.forEach(
+//             (column) => {
+//               const total =
+//                 collectionRows.reduce(
+//                   (sum, row) =>
+//                     sum +
+//                     Number(
+//                       row[column] || 0
+//                     ),
+//                   0
+//                 );
+
+//               totalRow[column] =
+//                 total;
+
+//               grandTotal += total;
+//             }
+//           );
+
+//           totalRow[
+//             "Total (₹)"
+//           ] = grandTotal;
+
+//           collectionRows.push(
+//             totalRow
+//           );
+//         }
+
+//         // -----------------------------------------------
+//         // SET DATA
+//         // -----------------------------------------------
+
+//         setComponents([]);
+
+//         setReportData(
+//           collectionRows
+//         );
+
+//         // -----------------------------------------------
+//         // TOTALS
+//         // -----------------------------------------------
+
+//         const grandCollection =
+//           collectionRows.length > 0
+//             ? Number(
+//                 collectionRows[
+//                   collectionRows.length - 1
+//                 ]["Total (₹)"] || 0
+//               )
+//             : 0;
+
+//         setTotals([
+//           {
+//             label:
+//               "Successful Payments",
+//             value:
+//               filteredPayments.length,
+//           },
+
+//           {
+//             label:
+//               "Collection Heads",
+//             value:
+//               collectionRows.length >
+//               0
+//                 ? collectionRows.length -
+//                   1
+//                 : 0,
+//           },
+
+//           {
+//             label:
+//               "Total Collection",
+//             value:
+//               inr(
+//                 grandCollection
+//               ),
+//           },
+//         ]);
+
+//         return;
+//       }
+
+//       // =================================================
+//       // DAILY COLLECTION REPORT
+//       // =================================================
+
+//       if (
+//         reportType ===
+//         "DAILY_COLLECTION"
+//       ) {
+//         const response =
+//           await getPayments({
+//             limit: 500,
+//           });
+
+//         const payments =
+//           response?.data?.data ??
+//           response?.data ??
+//           [];
+
+//         const selectedDate =
+//           collectionDate ||
+//           new Date()
+//             .toLocaleDateString(
+//               "en-CA"
+//             );
+
+//         // -----------------------------------------------
+//         // ONLY SUCCESSFUL PAYMENTS
+//         // -----------------------------------------------
+
+//         const dailyPayments =
+//           payments.filter(
+//             (txn) => {
+//               if (
+//                 txn.transaction_status !==
+//                 "SUCCESS"
+//               ) {
+//                 return false;
+//               }
+
+//               if (!txn.created_at) {
+//                 return false;
+//               }
+
+//               const paymentDate =
+//                 new Date(
+//                   txn.created_at
+//                 ).toLocaleDateString(
+//                   "en-CA"
+//                 );
+
+//               return (
+//                 paymentDate ===
+//                 selectedDate
+//               );
+//             }
+//           );
+
+//         // -----------------------------------------------
+//         // CLASS / SECTION FILTER
+//         // -----------------------------------------------
+
+//         const filteredPayments =
+//           dailyPayments.filter(
+//             (txn) => {
+//               const student =
+//                 (students || []).find(
+//                   (s) =>
+//                     s.student_uuid ===
+//                     txn.student_uuid
+//                 );
+
+//               if (!student) {
+//                 return false;
+//               }
+
+//               if (
+//                 classUuid !== "all" &&
+//                 classUuid &&
+//                 student.class_uuid !==
+//                   classUuid
+//               ) {
+//                 return false;
+//               }
+
+//               if (
+//                 sectionUuid !== "all" &&
+//                 sectionUuid &&
+//                 student.section_uuid !==
+//                   sectionUuid
+//               ) {
+//                 return false;
+//               }
+
+//               return true;
+//             }
+//           );
+
+//         // -----------------------------------------------
+//         // FORMAT DAILY COLLECTION ROWS
+//         // -----------------------------------------------
+
+//         const formattedRows =
+//           filteredPayments.map(
+//             (txn, index) => {
+//               const student =
+//                 (students || []).find(
+//                   (s) =>
+//                     s.student_uuid ===
+//                     txn.student_uuid
+//                 ) || {};
+
+//               const grossAmount =
+//                 Number(
+//                   txn.details?.reduce(
+//                     (sum, detail) =>
+//                       sum +
+//                       Number(
+//                         detail.amount ||
+//                           0
+//                       ),
+//                     0
+//                   ) ||
+//                     txn.total_amount ||
+//                     0
+//                 );
+
+//               const discountAmount =
+//                 Number(
+//                   txn.discount_amount ||
+//                     0
+//                 );
+
+//               const lateFee =
+//                 Number(
+//                   txn.late_fee || 0
+//                 );
+
+//               const paidAmount =
+//                 Number(
+//                   txn.total_amount || 0
+//                 );
+
+//               return {
+//                 "Sr No":
+//                   index + 1,
+
+//                 Student:
+//                   txn.student_name ||
+//                   student.full_name ||
+//                   "—",
+
+//                 Class:
+//                   student.class_name ||
+//                   "—",
+
+//                 Section:
+//                   student.section_name ||
+//                   "—",
+
+//                 "Admission No":
+//                   student.admission_no ||
+//                   txn.admission_number ||
+//                   "—",
+
+//                 Invoice:
+//                   txn.invoice_number ||
+//                   txn.invoice_no ||
+//                   "—",
+
+//                 Receipt:
+//                   txn.receipt_no ||
+//                   "—",
+
+//                 "Gross (₹)":
+//                   grossAmount,
+
+//                 "Discount (₹)":
+//                   discountAmount,
+
+//                 "Late Fee (₹)":
+//                   lateFee,
+
+//                 "Net (₹)":
+//                   paidAmount,
+
+//                 "Paid (₹)":
+//                   paidAmount,
+
+//                 "Pending (₹)":
+//                   0,
+
+//                 "Payment Mode":
+//                   txn.payment_mode ||
+//                   "—",
+
+//                 Reference:
+//                   txn.reference_number ||
+//                   txn.razorpay_payment_id ||
+//                   "—",
+
+//                 "Payment Date":
+//                   txn.created_at
+//                     ? new Date(
+//                         txn.created_at
+//                       ).toLocaleString()
+//                     : "—",
+//               };
+//             }
+//           );
+
+//         setComponents([]);
+
+//         setReportData(
+//           formattedRows
+//         );
+
+//         // -----------------------------------------------
+//         // TOTALS
+//         // -----------------------------------------------
+
+//         const totalGross =
+//           filteredPayments.reduce(
+//             (sum, txn) =>
+//               sum +
+//               Number(
+//                 txn.details?.reduce(
+//                   (detailSum, detail) =>
+//                     detailSum +
+//                     Number(
+//                       detail.amount ||
+//                         0
+//                     ),
+//                   0
+//                 ) ||
+//                   txn.total_amount ||
+//                   0
+//               ),
+//             0
+//           );
+
+//         const totalDiscount =
+//           filteredPayments.reduce(
+//             (sum, txn) =>
+//               sum +
+//               Number(
+//                 txn.discount_amount ||
+//                   0
+//               ),
+//             0
+//           );
+
+//         const totalLateFee =
+//           filteredPayments.reduce(
+//             (sum, txn) =>
+//               sum +
+//               Number(
+//                 txn.late_fee || 0
+//               ),
+//             0
+//           );
+
+//         const totalPaid =
+//           filteredPayments.reduce(
+//             (sum, txn) =>
+//               sum +
+//               Number(
+//                 txn.total_amount || 0
+//               ),
+//             0
+//           );
+
+//         setTotals([
+//           {
+//             label: "Payments",
+//             value:
+//               filteredPayments.length,
+//           },
+
+//           {
+//             label: "Total Gross",
+//             value:
+//               inr(totalGross),
+//           },
+
+//           {
+//             label:
+//               "Total Discount",
+//             value:
+//               inr(totalDiscount),
+//           },
+
+//           {
+//             label:
+//               "Total Late Fee",
+//             value:
+//               inr(totalLateFee),
+//           },
+
+//           {
+//             label:
+//               "Total Collection",
+//             value:
+//               inr(totalPaid),
+//           },
+//         ]);
+
+//         return;
+//       }
+
+//       // =================================================
+//       // ALL OTHER REPORTS
+//       // =================================================
+
 //       const params = {
-//         report_type: reportType,
+//         report_type:
+//           reportType,
 
 //         academic_year:
 //           visibleFilters.academicYear
-//             ? academicYear || undefined
+//             ? academicYear ||
+//               undefined
 //             : undefined,
 
 //         student_uuid:
 //           visibleFilters.student
-//             ? studentUuid || undefined
+//             ? studentUuid ||
+//               undefined
 //             : undefined,
 
 //         from_date:
 //           visibleFilters.dateRange
-//             ? fromDate || undefined
+//             ? fromDate ||
+//               undefined
 //             : undefined,
 
 //         to_date:
 //           visibleFilters.dateRange
-//             ? toDate || undefined
+//             ? toDate ||
+//               undefined
 //             : undefined,
 
 //         collection_date:
 //           visibleFilters.collectionDate
-//             ? collectionDate || undefined
+//             ? collectionDate ||
+//               undefined
 //             : undefined,
 
-//         // IMPORTANT:
-//         // UUID is sent here
 //         class_uuid:
 //           classUuid === "all"
 //             ? undefined
 //             : classUuid,
 
-//         // IMPORTANT:
-//         // UUID is sent here
 //         section_uuid:
 //           sectionUuid === "all"
 //             ? undefined
@@ -5821,26 +8552,25 @@
 
 //       if (!body.success) {
 //         throw new Error(
-//           body.message ||
-//             "Failed to fetch report"
+//           typeof body.message ===
+//             "string"
+//             ? body.message
+//             : describeErrorDetail(
+//                 body.message
+//               ) ||
+//                 "Failed to fetch report"
 //         );
 //       }
-
-//       // =================================================
-//       // API DATA
-//       // =================================================
 
 //       const data =
 //         Array.isArray(body.data)
 //           ? body.data
 //           : [];
 
-//       // =================================================
-//       // GLOBAL COMPONENT LIST
-//       // =================================================
-
 //       const componentsList =
-//         Array.isArray(body.components)
+//         Array.isArray(
+//           body.components
+//         )
 //           ? body.components
 //           : [];
 
@@ -5848,9 +8578,9 @@
 //         componentsList
 //       );
 
-//       // =================================================
-//       // FORMAT ROWS
-//       // =================================================
+//       // -----------------------------------------------
+//       // FORMAT NORMAL REPORT
+//       // -----------------------------------------------
 
 //       const formattedRows =
 //         data.map((row) => {
@@ -5858,15 +8588,15 @@
 //             "Sr No":
 //               row.sr_no,
 
-//             "Student":
+//             Student:
 //               row.student_name ||
 //               "—",
 
-//             "Class":
+//             Class:
 //               row.class_name ||
 //               "—",
 
-//             "Section":
+//             Section:
 //               row.section_name ||
 //               "—",
 
@@ -5874,11 +8604,11 @@
 //               row.admission_number ||
 //               "—",
 
-//             "Invoice":
+//             Invoice:
 //               row.invoice_number ||
 //               "—",
 
-//             "Receipt":
+//             Receipt:
 //               row.receipt_number ||
 //               "—",
 //           };
@@ -5900,56 +8630,117 @@
 //             }
 //           );
 
-//           formattedRow["Gross (₹)"] =
-//             Number(row.gross_amount || 0);
+//           formattedRow[
+//             "Gross (₹)"
+//           ] =
+//             Number(
+//               row.gross_amount ||
+//                 0
+//             );
 
-//           formattedRow["Discount (₹)"] =
-//             Number(row.concession_amount || 0);
+//           formattedRow[
+//             "Discount (₹)"
+//           ] =
+//             Number(
+//               row.concession_amount ||
+//                 0
+//             );
 
-//           formattedRow["Late Fee (₹)"] =
-//             Number(row.late_fee || 0);
+//           formattedRow[
+//             "Late Fee (₹)"
+//           ] =
+//             Number(
+//               row.late_fee ||
+//                 0
+//             );
 
-//           formattedRow["Net (₹)"] =
-//             Number(row.net_amount || 0);
+//           formattedRow[
+//             "Net (₹)"
+//           ] =
+//             Number(
+//               row.net_amount ||
+//                 0
+//             );
 
-//           formattedRow["Paid (₹)"] =
-//             Number(row.paid_amount || 0);
+//           formattedRow[
+//             "Paid (₹)"
+//           ] =
+//             Number(
+//               row.paid_amount ||
+//                 0
+//             );
 
-//           formattedRow["Pending (₹)"] =
-//             Number(row.pending_amount || 0);
+//           formattedRow[
+//             "Pending (₹)"
+//           ] =
+//             Number(
+//               row.pending_amount ||
+//                 0
+//             );
 
-//           formattedRow["Payment Mode"] =
-//             row.payment_mode || "—";
+//           formattedRow[
+//             "Payment Mode"
+//           ] =
+//             row.payment_mode ||
+//             "—";
 
-//           formattedRow["Reference"] =
-//             row.reference_number || "—";
+//           formattedRow[
+//             "Reference"
+//           ] =
+//             row.reference_number ||
+//             "—";
 
-//           formattedRow["Payment Date"] =
+//           formattedRow[
+//             "Payment Date"
+//           ] =
 //             row.payment_date
-//               ? new Date(row.payment_date).toLocaleDateString()
+//               ? new Date(
+//                   row.payment_date
+//                 ).toLocaleDateString()
 //               : "—";
 
-//           formattedRow["Due Date"] =
+//           formattedRow[
+//             "Due Date"
+//           ] =
 //             row.due_date
-//               ? new Date(row.due_date).toLocaleDateString()
+//               ? new Date(
+//                   row.due_date
+//                 ).toLocaleDateString()
 //               : "—";
 
-//           formattedRow["Invoice Date"] =
+//           formattedRow[
+//             "Invoice Date"
+//           ] =
 //             row.invoice_date
-//               ? new Date(row.invoice_date).toLocaleDateString()
+//               ? new Date(
+//                   row.invoice_date
+//                 ).toLocaleDateString()
 //               : "—";
 
-//           if (reportType === "RETRACTED_INVOICE") {
-//             formattedRow["Retracted On"] =
+//           if (
+//             reportType ===
+//             "RETRACTED_INVOICE"
+//           ) {
+//             formattedRow[
+//               "Retracted On"
+//             ] =
 //               row.retracted_at
-//                 ? new Date(row.retracted_at).toLocaleDateString()
+//                 ? new Date(
+//                     row.retracted_at
+//                   ).toLocaleDateString()
 //                 : "—";
 
-//             formattedRow["Retracted By"] =
-//               row.retracted_by || "—";
+//             formattedRow[
+//               "Retracted By"
+//             ] =
+//               row.retracted_by ||
+//               "—";
 
-//             formattedRow["Reason"] =
-//               row.retraction_reason || "—";
+//             formattedRow[
+//               "Reason"
+//             ] =
+//               row.retraction_reason ||
+//               "—";
 //           }
 
 //           return formattedRow;
@@ -5959,56 +8750,161 @@
 //         formattedRows
 //       );
 
-//       // =================================================
-//       // TOTALS
-//       // =================================================
+//       // -----------------------------------------------
+//       // NORMAL REPORT TOTALS
+//       // -----------------------------------------------
 
 //       const totalGross =
-//         data.reduce((sum, row) => sum + Number(row.gross_amount || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.gross_amount ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const totalDiscount =
-//         data.reduce((sum, row) => sum + Number(row.concession_amount || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.concession_amount ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const totalLateFee =
-//         data.reduce((sum, row) => sum + Number(row.late_fee || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.late_fee ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const totalNet =
-//         data.reduce((sum, row) => sum + Number(row.net_amount || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.net_amount ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const totalPaid =
-//         data.reduce((sum, row) => sum + Number(row.paid_amount || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.paid_amount ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const totalPending =
-//         data.reduce((sum, row) => sum + Number(row.pending_amount || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.pending_amount ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const componentTotals = {};
 
-//       componentsList.forEach((component) => {
-//         componentTotals[component] = data.reduce(
-//           (sum, row) =>
-//             sum + Number(row.components?.[component] || 0),
-//           0
-//         );
-//       });
+//       componentsList.forEach(
+//         (component) => {
+//           componentTotals[
+//             component
+//           ] = data.reduce(
+//             (sum, row) =>
+//               sum +
+//               Number(
+//                 row.components?.[
+//                   component
+//                 ] || 0
+//               ),
+//             0
+//           );
+//         }
+//       );
 
 //       const totalCards = [
-//         { label: "Students", value: data.length },
-//         { label: "Total Gross", value: inr(totalGross) },
-//         { label: "Total Discount", value: inr(totalDiscount) },
-//         { label: "Total Late Fee", value: inr(totalLateFee) },
-//         { label: "Total Net", value: inr(totalNet) },
-//         { label: "Total Paid", value: inr(totalPaid) },
-//         { label: "Total Pending", value: inr(totalPending) },
+//         {
+//           label: "Students",
+//           value:
+//             data.length,
+//         },
+
+//         {
+//           label: "Total Gross",
+//           value:
+//             inr(totalGross),
+//         },
+
+//         {
+//           label:
+//             "Total Discount",
+//           value:
+//             inr(totalDiscount),
+//         },
+
+//         {
+//           label:
+//             "Total Late Fee",
+//           value:
+//             inr(totalLateFee),
+//         },
+
+//         {
+//           label: "Total Net",
+//           value:
+//             inr(totalNet),
+//         },
+
+//         {
+//           label: "Total Paid",
+//           value:
+//             inr(totalPaid),
+//         },
+
+//         {
+//           label:
+//             "Total Pending",
+//           value:
+//             inr(totalPending),
+//         },
 //       ];
 
-//       componentsList.forEach((component) => {
-//         totalCards.push({
-//           label: component,
-//           value: inr(componentTotals[component] || 0),
-//         });
-//       });
+//       componentsList.forEach(
+//         (component) => {
+//           totalCards.push({
+//             label:
+//               component,
 
-//       setTotals(totalCards);
+//             value:
+//               inr(
+//                 componentTotals[
+//                   component
+//                 ] || 0
+//               ),
+//           });
+//         }
+//       );
+
+//       setTotals(
+//         totalCards
+//       );
 //     } catch (err) {
 //       console.error(
 //         "Report Error:",
@@ -6016,9 +8912,10 @@
 //       );
 
 //       setError(
-//         err?.response?.data?.detail ||
-//           err?.message ||
+//         getErrorMessage(
+//           err,
 //           "Failed to load report"
+//         )
 //       );
 
 //       setReportData([]);
@@ -6030,38 +8927,59 @@
 //   };
 
 //   // =====================================================
-//   // INITIAL LOAD
+//   // INITIAL / REPORT TYPE LOAD
 //   // =====================================================
 
 //   useEffect(() => {
 //     fetchReport();
+
 //     // eslint-disable-next-line react-hooks/exhaustive-deps
 //   }, []);
 
-//   // Re-fetch automatically whenever the report type
-//   // itself changes, so switching the dropdown is enough
-//   // — no need to also press Generate.
 //   useEffect(() => {
 //     fetchReport();
+
 //     // eslint-disable-next-line react-hooks/exhaustive-deps
 //   }, [reportType]);
+
+//   useEffect(() => {
+//     if (
+//       reportType ===
+//         "DAILY_COLLECTION" ||
+//       reportType ===
+//         "DAILY_COLLECTION_HEAD"
+//     ) {
+//       fetchReport();
+//     }
+
+//     // eslint-disable-next-line react-hooks/exhaustive-deps
+//   }, [collectionDate]);
 
 //   // =====================================================
 //   // STUDENT SELECT
 //   // =====================================================
 
-//   const handleStudentSelect = (student) => {
-//     setStudentUuid(student.student_uuid);
-//     setStudentQuery(student.full_name);
+//   const handleStudentSelect = (
+//     student
+//   ) => {
+//     setStudentUuid(
+//       student.student_uuid
+//     );
 
-//     // Auto-fill class & section from the selected student
-//     // so the two dropdowns don't need to be set by hand.
+//     setStudentQuery(
+//       student.full_name
+//     );
+
 //     if (student.class_uuid) {
-//       setClassUuid(student.class_uuid);
+//       setClassUuid(
+//         student.class_uuid
+//       );
 //     }
 
 //     if (student.section_uuid) {
-//       setSectionUuid(student.section_uuid);
+//       setSectionUuid(
+//         student.section_uuid
+//       );
 //     }
 //   };
 
@@ -6076,11 +8994,18 @@
 //     setToDate("");
 //     setClassUuid("all");
 //     setSectionUuid("all");
+
 //     setPaymentStatus(
-//       reportType === "FEE_PENDING" ? "PENDING" : "all"
+//       reportType ===
+//         "FEE_PENDING"
+//         ? "PENDING"
+//         : "all"
 //     );
+
 //     setCollectionDate(
-//       new Date().toISOString().split("T")[0]
+//       new Date()
+//         .toISOString()
+//         .split("T")[0]
 //     );
 
 //     fetchReport();
@@ -6095,7 +9020,9 @@
 //       return [];
 //     }
 
-//     return Object.keys(reportData[0]);
+//     return Object.keys(
+//       reportData[0]
+//     );
 //   }, [reportData]);
 
 //   // =====================================================
@@ -6104,40 +9031,71 @@
 
 //   const exportExcel = () => {
 //     if (!reportData.length) {
-//       toast.error("No data to export");
+//       toast.error(
+//         "No data to export"
+//       );
 //       return;
 //     }
 
-//     const exportRows = reportData.map((row) => {
-//       const exportRow = { ...row };
+//     const exportRows =
+//       reportData.map(
+//         (row) => {
+//           const exportRow = {
+//             ...row,
+//           };
 
-//       components.forEach((component) => {
-//         if (
-//           exportRow[component] !== null &&
-//           exportRow[component] !== undefined
-//         ) {
-//           exportRow[component] = Number(exportRow[component]);
+//           components.forEach(
+//             (component) => {
+//               if (
+//                 exportRow[
+//                   component
+//                 ] !== null &&
+//                 exportRow[
+//                   component
+//                 ] !== undefined
+//               ) {
+//                 exportRow[
+//                   component
+//                 ] = Number(
+//                   exportRow[
+//                     component
+//                   ]
+//                 );
+//               }
+//             }
+//           );
+
+//           return exportRow;
 //         }
-//       });
+//       );
 
-//       return exportRow;
-//     });
+//     const worksheet =
+//       XLSX.utils.json_to_sheet(
+//         exportRows
+//       );
 
-//     const worksheet = XLSX.utils.json_to_sheet(exportRows);
-//     const workbook = XLSX.utils.book_new();
+//     const workbook =
+//       XLSX.utils.book_new();
 
 //     XLSX.utils.book_append_sheet(
 //       workbook,
 //       worksheet,
-//       activeReport.label.slice(0, 31)
+//       activeReport.label.slice(
+//         0,
+//         31
+//       )
 //     );
 
 //     XLSX.writeFile(
 //       workbook,
-//       `${reportType.toLowerCase()}-${new Date().toISOString().split("T")[0]}.xlsx`
+//       `${reportType.toLowerCase()}-${new Date()
+//         .toISOString()
+//         .split("T")[0]}.xlsx`
 //     );
 
-//     toast.success("Report exported successfully");
+//     toast.success(
+//       "Report exported successfully"
+//     );
 //   };
 
 //   // =====================================================
@@ -6146,60 +9104,153 @@
 
 //   const exportPDF = () => {
 //     if (!reportData.length) {
-//       toast.error("No data to export");
+//       toast.error(
+//         "No data to export"
+//       );
 //       return;
 //     }
 
 //     const doc = new jsPDF({
-//       orientation: "landscape",
+//       orientation:
+//         "landscape",
 //       unit: "mm",
 //       format: "a4",
 //     });
 
 //     doc.setFontSize(16);
-//     doc.text(activeReport.label, 14, 15);
 
-//     doc.setFontSize(9);
-//     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22);
-
-//     if (visibleFilters.academicYear) {
-//       doc.text(`Academic Year: ${academicYear}`, 14, 28);
-//     }
-
-//     const pdfColumns = columns;
-
-//     const pdfData = reportData.map((row) =>
-//       pdfColumns.map((column) => {
-//         const value = row[column];
-//         const isMoney =
-//           components.includes(column) || column.includes("₹");
-
-//         if (value === null || value === undefined) {
-//           return "—";
-//         }
-
-//         return isMoney && typeof value === "number"
-//           ? Number(value).toFixed(2)
-//           : value;
-//       })
+//     doc.text(
+//       activeReport.label,
+//       14,
+//       15
 //     );
 
+//     doc.setFontSize(9);
+
+//     doc.text(
+//       `Generated: ${new Date().toLocaleString()}`,
+//       14,
+//       22
+//     );
+
+//     if (
+//       visibleFilters.academicYear
+//     ) {
+//       doc.text(
+//         `Academic Year: ${academicYear}`,
+//         14,
+//         28
+//       );
+//     }
+
+//     const pdfColumns =
+//       columns;
+
+//     const pdfData =
+//       reportData.map(
+//         (row) =>
+//           pdfColumns.map(
+//             (column) => {
+//               const value =
+//                 row[column];
+
+//               const isMoney =
+//                 components.includes(
+//                   column
+//                 ) ||
+//                 column.includes(
+//                   "₹"
+//                 ) ||
+//                 column ===
+//                   "Online" ||
+//                 column ===
+//                   "Cheque" ||
+//                 column ===
+//                   "Cash" ||
+//                 column ===
+//                   "Bank Transfer" ||
+//                 column ===
+//                   "Other Settlement" ||
+//                 column ===
+//                   "Cancelled" ||
+//                 column ===
+//                   "Swipe" ||
+//                 column === "DD" ||
+//                 column ===
+//                   "Paytm" ||
+//                 column ===
+//                   "Adjust from Student Account balance" ||
+//                 column ===
+//                   "NEFT" ||
+//                 column === "NSO" ||
+//                 column ===
+//                   "Online Manual" ||
+//                 column ===
+//                   "Adjust from Credit Note" ||
+//                 column === "UPI" ||
+//                 column ===
+//                   "Total (₹)";
+
+//               if (
+//                 value === null ||
+//                 value === undefined
+//               ) {
+//                 return "—";
+//               }
+
+//               return isMoney &&
+//                 typeof value ===
+//                   "number"
+//                 ? Number(
+//                     value
+//                   ).toFixed(2)
+//                 : value;
+//             }
+//           )
+//       );
+
 //     autoTable(doc, {
-//       head: [pdfColumns],
+//       head: [
+//         pdfColumns,
+//       ],
+
 //       body: pdfData,
-//       startY: 32,
-//       styles: { fontSize: 6, cellPadding: 1.2 },
-//       headStyles: { fontSize: 6, fillColor: [99, 102, 241] },
-//       margin: { left: 5, right: 5 },
-//       horizontalPageBreak: true,
-//       horizontalPageBreakRepeat: 1,
+
+//       startY:
+//         visibleFilters.academicYear
+//           ? 32
+//           : 28,
+
+//       styles: {
+//         fontSize: 6,
+//         cellPadding: 1.2,
+//       },
+
+//       headStyles: {
+//         fontSize: 6,
+//       },
+
+//       margin: {
+//         left: 5,
+//         right: 5,
+//       },
+
+//       horizontalPageBreak:
+//         true,
+
+//       horizontalPageBreakRepeat:
+//         1,
 //     });
 
 //     doc.save(
-//       `${reportType.toLowerCase()}-${new Date().toISOString().split("T")[0]}.pdf`
+//       `${reportType.toLowerCase()}-${new Date()
+//         .toISOString()
+//         .split("T")[0]}.pdf`
 //     );
 
-//     toast.success("PDF exported successfully");
+//     toast.success(
+//       "PDF exported successfully"
+//     );
 //   };
 
 //   // =====================================================
@@ -6210,7 +9261,7 @@
 //     <div className="space-y-4">
 
 //       {/* =================================================
-//           FILTER CARD
+//           REPORT FILTER CARD
 //       ================================================= */}
 
 //       <Card className="border-border/60">
@@ -6218,27 +9269,41 @@
 //         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
 
 //           <div>
+
 //             <CardTitle className="font-display text-base flex items-center gap-2">
+
 //               <FileBarChart2 className="h-4 w-4 text-primary" />
+
 //               {activeReport.label}
+
 //             </CardTitle>
 
 //             <CardDescription>
+
 //               {activeReport.description}
+
 //               {components.length > 0 && (
 //                 <span className="ml-2 text-xs text-muted-foreground">
 //                   · {components.length} fee components
 //                 </span>
 //               )}
+
 //             </CardDescription>
+
 //           </div>
 
 //           <Button
 //             variant="ghost"
 //             size="sm"
-//             onClick={() => setShowFilters(!showFilters)}
+//             onClick={() =>
+//               setShowFilters(
+//                 !showFilters
+//               )
+//             }
 //           >
-//             {showFilters ? "Hide Filters" : "Show Filters"}
+//             {showFilters
+//               ? "Hide Filters"
+//               : "Show Filters"}
 //           </Button>
 
 //         </CardHeader>
@@ -6246,268 +9311,457 @@
 //         {showFilters && (
 //           <CardContent className="pt-0 space-y-3">
 
-//             {/* =========================================
-//                 REPORT TYPE — always shown, first field
-//             ========================================= */}
-
 //             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
 
+//               {/* REPORT TYPE */}
+
 //               <FF label="Report Type">
+
 //                 <Select
 //                   value={reportType}
-//                   onValueChange={handleReportTypeChange}
+//                   onValueChange={
+//                     handleReportTypeChange
+//                   }
 //                 >
+
 //                   <SelectTrigger className="h-9">
 //                     <SelectValue placeholder="Select report" />
 //                   </SelectTrigger>
 
 //                   <SelectContent>
-//                     {REPORT_TYPES.map((rt) => (
-//                       <SelectItem key={rt.value} value={rt.value}>
-//                         {rt.label}
-//                       </SelectItem>
-//                     ))}
+
+//                     {REPORT_TYPES.map(
+//                       (rt) => (
+//                         <SelectItem
+//                           key={
+//                             rt.value
+//                           }
+//                           value={
+//                             rt.value
+//                           }
+//                         >
+//                           {rt.label}
+//                         </SelectItem>
+//                       )
+//                     )}
+
 //                   </SelectContent>
+
 //                 </Select>
+
 //               </FF>
 
-//               {/* =========================================
-//                   ACADEMIC YEAR
-//               ========================================= */}
+//               {/* ACADEMIC YEAR */}
 
 //               {visibleFilters.academicYear && (
 //                 <FF label="Academic Year">
+
 //                   <Select
-//                     value={academicYear}
-//                     onValueChange={setAcademicYear}
+//                     value={
+//                       academicYear
+//                     }
+//                     onValueChange={
+//                       setAcademicYear
+//                     }
 //                   >
+
 //                     <SelectTrigger className="h-9">
 //                       <SelectValue placeholder="Select year" />
 //                     </SelectTrigger>
 
 //                     <SelectContent>
-//                       {academicYears.map((year) => (
-//                         <SelectItem key={year} value={year}>
-//                           {year}
-//                         </SelectItem>
-//                       ))}
+
+//                       {academicYears.map(
+//                         (year) => (
+//                           <SelectItem
+//                             key={year}
+//                             value={year}
+//                           >
+//                             {year}
+//                           </SelectItem>
+//                         )
+//                       )}
+
 //                     </SelectContent>
+
 //                   </Select>
+
 //                 </FF>
 //               )}
 
-//               {/* =========================================
-//                   STUDENT
-//               ========================================= */}
+//               {/* STUDENT */}
 
 //               {visibleFilters.student && (
 //                 <div className="space-y-1.5 relative">
+
 //                   <Label className="text-xs text-muted-foreground">
 //                     Student
 //                   </Label>
 
 //                   <Input
 //                     placeholder="Search by name, student no or admission no..."
-//                     value={studentQuery}
+//                     value={
+//                       studentQuery
+//                     }
 //                     onChange={(e) => {
-//                       const value = e.target.value;
-//                       setStudentQuery(value);
-//                       if (!value) setStudentUuid("");
+//                       const value =
+//                         e.target
+//                           .value;
+
+//                       setStudentQuery(
+//                         value
+//                       );
+
+//                       if (!value) {
+//                         setStudentUuid(
+//                           ""
+//                         );
+//                       }
 //                     }}
 //                     className="h-9"
 //                   />
 
 //                   {studentQuery &&
 //                     !studentUuid &&
-//                     matchingStudents.length > 0 && (
+//                     matchingStudents.length >
+//                       0 && (
 //                       <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-//                         {matchingStudents.map((student) => (
-//                           <button
-//                             key={student.student_uuid}
-//                             type="button"
-//                             className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center justify-between"
-//                             onClick={() => handleStudentSelect(student)}
-//                           >
-//                             <span>{student.full_name}</span>
-//                             <span className="text-xs text-muted-foreground">
-//                               {student.class_name}
-//                               {student.section_name
-//                                 ? `-${student.section_name}`
-//                                 : ""}
-//                             </span>
-//                           </button>
-//                         ))}
+
+//                         {matchingStudents.map(
+//                           (student) => (
+//                             <button
+//                               key={
+//                                 student.student_uuid
+//                               }
+//                               type="button"
+//                               className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center justify-between"
+//                               onClick={() =>
+//                                 handleStudentSelect(
+//                                   student
+//                                 )
+//                               }
+//                             >
+
+//                               <span>
+//                                 {
+//                                   student.full_name
+//                                 }
+//                               </span>
+
+//                               <span className="text-xs text-muted-foreground">
+
+//                                 {
+//                                   student.class_name
+//                                 }
+
+//                                 {student.section_name
+//                                   ? `-${student.section_name}`
+//                                   : ""}
+
+//                               </span>
+
+//                             </button>
+//                           )
+//                         )}
+
 //                       </div>
 //                     )}
 
 //                   {studentUuid && (
 //                     <div className="text-xs text-primary flex items-center gap-1.5 bg-primary/5 rounded-md px-2 py-1 w-fit">
+
 //                       <Check className="h-3 w-3" />
-//                       <span className="font-medium">{studentQuery}</span>
+
+//                       <span className="font-medium">
+//                         {
+//                           studentQuery
+//                         }
+//                       </span>
+
 //                       <button
 //                         type="button"
 //                         className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
 //                         onClick={() => {
-//                           setStudentUuid("");
-//                           setStudentQuery("");
-//                           setClassUuid("all");
-//                           setSectionUuid("all");
+//                           setStudentUuid(
+//                             ""
+//                           );
+
+//                           setStudentQuery(
+//                             ""
+//                           );
+
+//                           setClassUuid(
+//                             "all"
+//                           );
+
+//                           setSectionUuid(
+//                             "all"
+//                           );
 //                         }}
 //                       >
 //                         <X className="h-3 w-3" />
 //                       </button>
+
 //                     </div>
 //                   )}
+
 //                 </div>
 //               )}
 
-//               {/* =========================================
-//                   CLASS
-//               ========================================= */}
+//               {/* CLASS */}
 
 //               {visibleFilters.class && (
 //                 <FF label="Class">
+
 //                   <Select
-//                     value={classUuid}
-//                     onValueChange={(value) => {
-//                       setClassUuid(value);
-//                       setSectionUuid("all");
+//                     value={
+//                       classUuid
+//                     }
+//                     onValueChange={(
+//                       value
+//                     ) => {
+//                       setClassUuid(
+//                         value
+//                       );
+
+//                       setSectionUuid(
+//                         "all"
+//                       );
 //                     }}
 //                   >
+
 //                     <SelectTrigger className="h-9">
 //                       <SelectValue placeholder="All Classes" />
 //                     </SelectTrigger>
 
 //                     <SelectContent>
-//                       <SelectItem value="all">All Classes</SelectItem>
-//                       {classes.map((item) => (
-//                         <SelectItem key={item.uuid} value={item.uuid}>
-//                           {item.name}
-//                         </SelectItem>
-//                       ))}
+
+//                       <SelectItem value="all">
+//                         All Classes
+//                       </SelectItem>
+
+//                       {classes.map(
+//                         (item) => (
+//                           <SelectItem
+//                             key={
+//                               item.uuid
+//                             }
+//                             value={
+//                               item.uuid
+//                             }
+//                           >
+//                             {
+//                               item.name
+//                             }
+//                           </SelectItem>
+//                         )
+//                       )}
+
 //                     </SelectContent>
+
 //                   </Select>
+
 //                 </FF>
 //               )}
 
-//               {/* =========================================
-//                   SECTION
-//               ========================================= */}
+//               {/* SECTION */}
 
 //               {visibleFilters.section && (
 //                 <FF label="Section">
+
 //                   <Select
-//                     value={sectionUuid}
-//                     onValueChange={setSectionUuid}
+//                     value={
+//                       sectionUuid
+//                     }
+//                     onValueChange={
+//                       setSectionUuid
+//                     }
 //                   >
+
 //                     <SelectTrigger className="h-9">
 //                       <SelectValue placeholder="All Sections" />
 //                     </SelectTrigger>
 
 //                     <SelectContent>
-//                       <SelectItem value="all">All Sections</SelectItem>
-//                       {sections.map((item) => (
-//                         <SelectItem key={item.uuid} value={item.uuid}>
-//                           {item.name}
-//                         </SelectItem>
-//                       ))}
+
+//                       <SelectItem value="all">
+//                         All Sections
+//                       </SelectItem>
+
+//                       {sections.map(
+//                         (item) => (
+//                           <SelectItem
+//                             key={
+//                               item.uuid
+//                             }
+//                             value={
+//                               item.uuid
+//                             }
+//                           >
+//                             {
+//                               item.name
+//                             }
+//                           </SelectItem>
+//                         )
+//                       )}
+
 //                     </SelectContent>
+
 //                   </Select>
+
 //                 </FF>
 //               )}
 
-//               {/* =========================================
-//                   DATE RANGE (From / To)
-//               ========================================= */}
+//               {/* FROM / TO */}
 
 //               {visibleFilters.dateRange && (
 //                 <>
 //                   <FF label="From Date">
+
 //                     <Input
 //                       type="date"
-//                       value={fromDate}
-//                       onChange={(e) => setFromDate(e.target.value)}
+//                       value={
+//                         fromDate
+//                       }
+//                       onChange={(e) =>
+//                         setFromDate(
+//                           e.target
+//                             .value
+//                         )
+//                       }
 //                       className="h-9"
 //                     />
+
 //                   </FF>
 
 //                   <FF label="To Date">
+
 //                     <Input
 //                       type="date"
-//                       value={toDate}
-//                       onChange={(e) => setToDate(e.target.value)}
+//                       value={
+//                         toDate
+//                       }
+//                       onChange={(e) =>
+//                         setToDate(
+//                           e.target
+//                             .value
+//                         )
+//                       }
 //                       className="h-9"
 //                     />
+
 //                   </FF>
 //                 </>
 //               )}
 
-//               {/* =========================================
-//                   SINGLE COLLECTION DATE
-//                   (Daily Collections Report only)
-//               ========================================= */}
+//               {/* COLLECTION DATE */}
 
 //               {visibleFilters.collectionDate && (
 //                 <FF label="Collection Date">
+
 //                   <Input
 //                     type="date"
-//                     value={collectionDate}
-//                     onChange={(e) => setCollectionDate(e.target.value)}
+//                     value={
+//                       collectionDate
+//                     }
+//                     onChange={(e) =>
+//                       setCollectionDate(
+//                         e.target
+//                           .value
+//                       )
+//                     }
 //                     className="h-9"
 //                   />
+
 //                 </FF>
 //               )}
 
-//               {/* =========================================
-//                   PAYMENT STATUS
-//               ========================================= */}
+//               {/* PAYMENT STATUS */}
 
 //               {visibleFilters.paymentStatus && (
 //                 <FF label="Payment Status">
+
 //                   <Select
-//                     value={paymentStatus}
-//                     onValueChange={setPaymentStatus}
+//                     value={
+//                       paymentStatus
+//                     }
+//                     onValueChange={
+//                       setPaymentStatus
+//                     }
 //                   >
+
 //                     <SelectTrigger className="h-9">
 //                       <SelectValue placeholder="All Status" />
 //                     </SelectTrigger>
 
 //                     <SelectContent>
-//                       {statusOptionsForReport.map((status) => (
-//                         <SelectItem key={status.value} value={status.value}>
-//                           {status.label}
-//                         </SelectItem>
-//                       ))}
+
+//                       {statusOptionsForReport.map(
+//                         (status) => (
+//                           <SelectItem
+//                             key={
+//                               status.value
+//                             }
+//                             value={
+//                               status.value
+//                             }
+//                           >
+//                             {
+//                               status.label
+//                             }
+//                           </SelectItem>
+//                         )
+//                       )}
+
 //                     </SelectContent>
+
 //                   </Select>
+
 //                 </FF>
 //               )}
 
-//               {/* =========================================
-//                   ACTIONS
-//               ========================================= */}
+//               {/* BUTTONS */}
 
 //               <div className="flex items-end gap-2">
+
 //                 <Button
 //                   size="sm"
 //                   className="gradient-primary border-0 flex-1"
-//                   onClick={fetchReport}
-//                   disabled={loading}
+//                   onClick={
+//                     fetchReport
+//                   }
+//                   disabled={
+//                     loading
+//                   }
 //                 >
+
 //                   <RefreshCcw
-//                     className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+//                     className={`h-4 w-4 ${
+//                       loading
+//                         ? "animate-spin"
+//                         : ""
+//                     }`}
 //                   />
-//                   {loading ? "Loading..." : "Generate"}
+
+//                   {loading
+//                     ? "Loading..."
+//                     : "Generate"}
+
 //                 </Button>
 
 //                 <Button
 //                   size="sm"
 //                   variant="outline"
-//                   onClick={clearFilters}
-//                   disabled={loading}
+//                   onClick={
+//                     clearFilters
+//                   }
+//                   disabled={
+//                     loading
+//                   }
 //                 >
 //                   Clear
 //                 </Button>
+
 //               </div>
 
 //             </div>
@@ -6518,22 +9772,39 @@
 //       </Card>
 
 //       {/* =================================================
-//           SUMMARY
+//           TOTAL CARDS
 //       ================================================= */}
 
 //       {totals.length > 0 && (
 //         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
-//           {totals.slice(0, 7).map((total) => (
-//             <div
-//               key={total.label}
-//               className="rounded-lg border border-border/60 bg-card px-3 py-2 text-center"
-//             >
-//               <div className="text-xs text-muted-foreground">
-//                 {total.label}
-//               </div>
-//               <div className="text-sm font-semibold">{total.value}</div>
-//             </div>
-//           ))}
+
+//           {totals
+//             .slice(0, 7)
+//             .map(
+//               (total) => (
+//                 <div
+//                   key={
+//                     total.label
+//                   }
+//                   className="rounded-lg border border-border/60 bg-card px-3 py-2 text-center"
+//                 >
+
+//                   <div className="text-xs text-muted-foreground">
+//                     {
+//                       total.label
+//                     }
+//                   </div>
+
+//                   <div className="text-sm font-semibold">
+//                     {
+//                       total.value
+//                     }
+//                   </div>
+
+//                 </div>
+//               )
+//             )}
+
 //         </div>
 //       )}
 
@@ -6543,8 +9814,11 @@
 
 //       {error && (
 //         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+
 //           <AlertCircle className="h-4 w-4 inline mr-2" />
+
 //           {error}
+
 //         </div>
 //       )}
 
@@ -6553,161 +9827,393 @@
 //       ================================================= */}
 
 //       <Card className="border-border/60">
+
 //         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-2 flex-wrap">
+
 //           <div>
+
 //             <CardTitle className="font-display text-base">
+
 //               Report Data
+
 //               <span className="ml-2 text-sm font-normal text-muted-foreground">
+
 //                 {reportData.length} records
+
 //               </span>
+
 //             </CardTitle>
+
 //           </div>
 
 //           <div className="flex gap-2">
+
+//             {/* EXCEL */}
+
 //             <Button
 //               size="sm"
 //               variant="outline"
-//               onClick={exportExcel}
-//               disabled={!reportData.length || loading}
+//               onClick={
+//                 exportExcel
+//               }
+//               disabled={
+//                 !reportData.length ||
+//                 loading
+//               }
 //             >
+
 //               <Download className="h-4 w-4" />
+
 //               Excel
+
 //             </Button>
+
+//             {/* PDF */}
 
 //             <Button
 //               size="sm"
 //               variant="outline"
-//               onClick={exportPDF}
-//               disabled={!reportData.length || loading}
+//               onClick={
+//                 exportPDF
+//               }
+//               disabled={
+//                 !reportData.length ||
+//                 loading
+//               }
 //             >
+
 //               <FileText className="h-4 w-4" />
+
 //               PDF
+
 //             </Button>
+
+//             {/* REFRESH */}
 
 //             <Button
 //               size="sm"
 //               variant="outline"
-//               onClick={fetchReport}
-//               disabled={loading}
+//               onClick={
+//                 fetchReport
+//               }
+//               disabled={
+//                 loading
+//               }
 //             >
+
 //               <RefreshCcw
-//                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+//                 className={`h-4 w-4 ${
+//                   loading
+//                     ? "animate-spin"
+//                     : ""
+//                 }`}
 //               />
+
 //             </Button>
+
 //           </div>
+
 //         </CardHeader>
 
 //         <CardContent className="p-0 overflow-x-auto">
+
 //           <div className="max-h-[500px] overflow-y-auto">
+
 //             <Table>
+
 //               <TableHeader>
+
 //                 <TableRow className="sticky top-0 bg-background z-10">
-//                   {columns.map((column) => (
-//                     <TableHead
-//                       key={column}
-//                       className="whitespace-nowrap text-xs font-semibold"
-//                     >
-//                       {column}
-//                     </TableHead>
-//                   ))}
+
+//                   {columns.map(
+//                     (column) => (
+//                       <TableHead
+//                         key={
+//                           column
+//                         }
+//                         className="whitespace-nowrap text-xs font-semibold"
+//                       >
+//                         {
+//                           column
+//                         }
+//                       </TableHead>
+//                     )
+//                   )}
+
 //                 </TableRow>
+
 //               </TableHeader>
 
 //               <TableBody>
+
+//                 {/* LOADING */}
+
 //                 {loading ? (
 //                   <TableRow>
+
 //                     <TableCell
-//                       colSpan={columns.length || 1}
+//                       colSpan={
+//                         columns.length ||
+//                         1
+//                       }
 //                       className="text-center py-8"
 //                     >
+
 //                       <div className="flex items-center justify-center gap-2 text-muted-foreground">
+
 //                         <RefreshCcw className="h-4 w-4 animate-spin" />
+
 //                         Loading report...
+
 //                       </div>
+
 //                     </TableCell>
+
 //                   </TableRow>
-//                 ) : reportData.length === 0 ? (
+
+//                 ) : reportData.length ===
+//                   0 ? (
+
+//                   /* EMPTY */
+
 //                   <TableRow>
+
 //                     <TableCell
-//                       colSpan={columns.length || 1}
+//                       colSpan={
+//                         columns.length ||
+//                         1
+//                       }
 //                       className="text-center py-8 text-muted-foreground"
 //                     >
-//                       No data found. Adjust your filters and click "Generate".
+//                       No data found.
+//                       Adjust your
+//                       filters and
+//                       click
+//                       "Generate".
 //                     </TableCell>
-//                   </TableRow>
-//                 ) : (
-//                   reportData.map((row, index) => (
-//                     <TableRow key={index} className="hover:bg-muted/30">
-//                       {columns.map((column) => {
-//                         const value = row[column];
-//                         const isComponent = components.includes(column);
-//                         const isMoney =
-//                           isComponent ||
-//                           column.includes("₹") ||
-//                           column.includes("Gross") ||
-//                           column.includes("Discount") ||
-//                           column.includes("Late") ||
-//                           column.includes("Net") ||
-//                           column.includes("Paid") ||
-//                           column.includes("Pending");
-//                         const isPending = column === "Pending (₹)";
 
-//                         return (
-//                           <TableCell
-//                             key={column}
-//                             className={`
-//                               whitespace-nowrap text-sm
-//                               ${isMoney && typeof value === "number" ? "font-mono" : ""}
-//                               ${isPending && typeof value === "number" && value > 0 ? "text-warning font-semibold" : ""}
-//                             `}
-//                           >
-//                             {value === null || value === undefined || value === ""
-//                               ? "—"
-//                               : typeof value === "number" && isMoney
-//                               ? inr(value)
-//                               : value}
-//                           </TableCell>
-//                         );
-//                       })}
-//                     </TableRow>
-//                   ))
+//                   </TableRow>
+
+//                 ) : (
+
+//                   /* DATA */
+
+//                   reportData.map(
+//                     (row, index) => (
+//                       <TableRow
+//                         key={
+//                           index
+//                         }
+//                         className="hover:bg-muted/30"
+//                       >
+
+//                         {columns.map(
+//                           (
+//                             column
+//                           ) => {
+//                             const value =
+//                               row[
+//                                 column
+//                               ];
+
+//                             const isComponent =
+//                               components.includes(
+//                                 column
+//                               );
+
+//                             // =================================
+//                             // MONEY COLUMNS
+//                             // =================================
+
+//                             const isMoney =
+//                               isComponent ||
+//                               column.includes(
+//                                 "₹"
+//                               ) ||
+//                               column.includes(
+//                                 "Gross"
+//                               ) ||
+//                               column.includes(
+//                                 "Discount"
+//                               ) ||
+//                               column.includes(
+//                                 "Late"
+//                               ) ||
+//                               column.includes(
+//                                 "Net"
+//                               ) ||
+//                               column.includes(
+//                                 "Paid"
+//                               ) ||
+//                               column.includes(
+//                                 "Pending"
+//                               ) ||
+
+//                               // DAILY COLLECTION HEAD
+//                               column ===
+//                                 "Online" ||
+//                               column ===
+//                                 "Cheque" ||
+//                               column ===
+//                                 "Cash" ||
+//                               column ===
+//                                 "Bank Transfer" ||
+//                               column ===
+//                                 "Other Settlement" ||
+//                               column ===
+//                                 "Cancelled" ||
+//                               column ===
+//                                 "Swipe" ||
+//                               column ===
+//                                 "DD" ||
+//                               column ===
+//                                 "Paytm" ||
+//                               column ===
+//                                 "Adjust from Student Account balance" ||
+//                               column ===
+//                                 "NEFT" ||
+//                               column ===
+//                                 "NSO" ||
+//                               column ===
+//                                 "Online Manual" ||
+//                               column ===
+//                                 "Adjust from Credit Note" ||
+//                               column ===
+//                                 "UPI" ||
+//                               column ===
+//                                 "Total (₹)";
+
+//                             const isPending =
+//                               column ===
+//                               "Pending (₹)";
+
+//                             const isTotalRow =
+//                               row[
+//                                 "Collection Head"
+//                               ] ===
+//                               "Total";
+
+//                             return (
+//                               <TableCell
+//                                 key={
+//                                   column
+//                                 }
+//                                 className={`
+//                                   whitespace-nowrap text-sm
+//                                   ${
+//                                     isMoney &&
+//                                     typeof value ===
+//                                       "number"
+//                                       ? "font-mono"
+//                                       : ""
+//                                   }
+
+//                                   ${
+//                                     isPending &&
+//                                     typeof value ===
+//                                       "number" &&
+//                                     value > 0
+//                                       ? "text-warning font-semibold"
+//                                       : ""
+//                                   }
+
+//                                   ${
+//                                     isTotalRow
+//                                       ? "font-bold bg-muted/40"
+//                                       : ""
+//                                   }
+//                                 `}
+//                               >
+
+//                                 {value ===
+//                                   null ||
+//                                 value ===
+//                                   undefined ||
+//                                 value ===
+//                                   ""
+//                                   ? "—"
+//                                   : typeof value ===
+//                                       "number" &&
+//                                     isMoney
+//                                   ? inr(
+//                                       value
+//                                     )
+//                                   : value}
+
+//                               </TableCell>
+//                             );
+//                           }
+//                         )}
+
+//                       </TableRow>
+//                     )
+//                   )
 //                 )}
+
 //               </TableBody>
+
 //             </Table>
+
 //           </div>
+
 //         </CardContent>
+
 //       </Card>
 
 //       {/* =================================================
-//           GLOBAL COMPONENTS
+//           FEE COMPONENTS
 //       ================================================= */}
 
-//       {components.length > 0 && reportData.length > 0 && (
-//         <Card className="border-border/60">
-//           <CardHeader className="pb-3">
-//             <CardTitle className="font-display text-base">
-//               Fee Components
-//             </CardTitle>
-//             <CardDescription>
-//               Components tracked in this report
-//             </CardDescription>
-//           </CardHeader>
+//       {components.length >
+//         0 &&
+//         reportData.length >
+//           0 && (
+//           <Card className="border-border/60">
 
-//           <CardContent>
-//             <div className="flex flex-wrap gap-2">
-//               {components.map((component) => (
-//                 <Badge key={component} variant="secondary" className="text-xs">
-//                   {component}
-//                 </Badge>
-//               ))}
-//             </div>
-//           </CardContent>
-//         </Card>
-//       )}
+//             <CardHeader className="pb-3">
+
+//               <CardTitle className="font-display text-base">
+//                 Fee Components
+//               </CardTitle>
+
+//               <CardDescription>
+//                 Components tracked
+//                 in this report
+//               </CardDescription>
+
+//             </CardHeader>
+
+//             <CardContent>
+
+//               <div className="flex flex-wrap gap-2">
+
+//                 {components.map(
+//                   (component) => (
+//                     <Badge
+//                       key={
+//                         component
+//                       }
+//                       variant="secondary"
+//                       className="text-xs"
+//                     >
+//                       {
+//                         component
+//                       }
+//                     </Badge>
+//                   )
+//                 )}
+
+//               </div>
+
+//             </CardContent>
+
+//           </Card>
+//         )}
 
 //     </div>
 //   );
 // }
+
 
 // const CUSTOM_REPORTS_KEY = "edureon.fee.customReports.v1";
 // const loadCustomReports = () => {
@@ -6983,15 +10489,58 @@
 
 
 // /* ================================================================== */
-// /*  FEE COLLECTION DIALOG — supports Online (Razorpay), Cash & Cheque   */
-// /* ================================================================== */
-
-
-
-// /* ================================================================== */
 // /*  FEE COLLECTION DIALOG — Online (Razorpay: UPI/Card/NetBanking/     */
 // /*  Bank Transfer), Cash & Cheque                                      */
+// /*  IMPORTANT: sibling / early-full-year discount PREVIEW amounts here */
+// /*  are client-side estimates only, for UX. The server (per the        */
+// /*  FeeAssignmentStudentDiscountService rules) is the final authority  */
+// /*  on whether a discount actually applies and for how much — it does  */
+// /*  not read anything hardcoded from the frontend.                     */
 // /* ================================================================== */
+
+// function getSelectedDiscountRule(discountRows = []) {
+//   const rows = Array.isArray(discountRows) ? discountRows : [];
+//   const early = rows.find((d) => String(d.discount_scope || d.discountScope || "").toUpperCase() === "EARLY_FULL_YEAR");
+//   const sibling = rows.find((d) => String(d.discount_scope || d.discountScope || "").toUpperCase() === "SIBLING");
+//   const staff = rows.find((d) => String(d.discount_scope || d.discountScope || "").toUpperCase() === "STAFF_STUDENT");
+//   return { early, sibling, staff };
+// }
+
+// function isFullAcademicYearSelection(lines = [], allLines = []) {
+//   const selectedIds = new Set(lines.map((l) => l.id));
+//   const pending = (allLines || []).filter((l) => !l.paid && !l.advanceReceived);
+//   if (!pending.length || !lines.length) return false;
+
+//   // Full-year means every currently outstanding due line is selected.
+//   // The backend remains the final authority for the actual payment.
+//   return pending.every((l) => selectedIds.has(l.id));
+// }
+
+// function calculateClientDiscountPreview(selectedLines, allLines, assignedDiscounts) {
+//   const { early, sibling } = getSelectedDiscountRule(assignedDiscounts);
+//   let siblingDiscount = 0;
+//   let earlyDiscount = 0;
+
+//   // Preview only — uses the discount's own configured value/cap
+//   // (never a hardcoded number) so it matches what the server will apply.
+//   if (sibling) {
+//     const admissionLines = selectedLines.filter((l) => String(l.category || "").toUpperCase() === "ADMISSION");
+//     const admissionGross = admissionLines.reduce((sum, l) => sum + Math.max(Number(l.balance ?? l.payable ?? l.monthly ?? 0), 0), 0);
+//     const configuredValue = Number(sibling.discount_value ?? sibling.value ?? 0);
+//     const cap = Number(sibling.max_discount_cap ?? sibling.maxDiscount ?? 0);
+//     siblingDiscount = cap > 0 ? Math.min(cap, admissionGross, configuredValue || admissionGross) : Math.min(admissionGross, configuredValue || admissionGross);
+//   }
+
+//   if (early && isFullAcademicYearSelection(selectedLines, allLines)) {
+//     const tuitionGross = selectedLines
+//       .filter((l) => String(l.category || "").toUpperCase() === "TUITION")
+//       .reduce((sum, l) => sum + Math.max(Number(l.balance ?? l.payable ?? l.monthly ?? 0), 0), 0);
+//     const pct = Number(early.discount_value ?? early.value ?? 0);
+//     earlyDiscount = Math.max(0, tuitionGross * (pct / 100));
+//   }
+
+//   return { siblingDiscount, earlyDiscount, total: siblingDiscount + earlyDiscount };
+// }
 
 // function CustomCollectDialog({ open, onOpenChange, students, onCollected }) {
 //   const [query, setQuery] = useState("");
@@ -7005,6 +10554,8 @@
 //   const [remarks, setRemarks] = useState("");
 //   const [pickedLines, setPickedLines] = useState(new Set());
 //   const [studentPickerOpen, setStudentPickerOpen] = useState(false);
+//   const [assignedDiscounts, setAssignedDiscounts] = useState([]);
+//   const [loadingDiscountsForStudent, setLoadingDiscountsForStudent] = useState(false);
 
 //   const filteredStudents = useMemo(() => {
 //     if (!query.trim()) return students.slice(0, 8);
@@ -7019,15 +10570,26 @@
 //     setStudentPickerOpen(false);
 //     setQuery("");
 //     setPickedLines(new Set());
+//     setAssignedDiscounts([]);
 //     setLoadingDues(true);
-//     getStudentFeeDues(s.student_uuid)
-//       .then((res) => setDues(duesFromApi(res)))
+//     setLoadingDiscountsForStudent(true);
+//     Promise.all([
+//       getStudentFeeDues(s.student_uuid),
+//       getStudentDiscounts(s.student_uuid),
+//     ])
+//       .then(([duesRes, discountRes]) => {
+//         setDues(duesFromApi(duesRes));
+//         setAssignedDiscounts(extractList(discountRes));
+//       })
 //       .catch((err) => {
 //         console.error(err);
-//         toast.error(err?.response?.data?.detail || "Failed to load dues");
+//         toast.error(getErrorMessage(err, "Failed to load dues"));
 //         setDues({ lines: [], totalDue: 0, totalLate: 0, assignmentUuid: undefined });
 //       })
-//       .finally(() => setLoadingDues(false));
+//       .finally(() => {
+//         setLoadingDues(false);
+//         setLoadingDiscountsForStudent(false);
+//       });
 //   };
 
 //   useEffect(() => {
@@ -7035,7 +10597,7 @@
 //       setQuery(""); setSelectedStudent(null); setStudentPickerOpen(false);
 //       setDues({ lines: [], totalDue: 0, totalLate: 0, assignmentUuid: undefined });
 //       setMode("ONLINE"); setReceiptRef(""); setBankName(""); setRemarks("");
-//       setPickedLines(new Set()); setSubmitting(false);
+//       setPickedLines(new Set()); setAssignedDiscounts([]); setLoadingDiscountsForStudent(false); setSubmitting(false);
 //     }
 //   }, [open]);
 
@@ -7055,10 +10617,14 @@
 //   };
 
 //   const selectedLines = pendingLines.filter((l) => pickedLines.has(l.id));
-//   const grossAmount = selectedLines.reduce((a, l) => a + l.monthly, 0);
-//   const lateFee = selectedLines.reduce((a, l) => a + l.lateFee, 0);
-//   const discountAmount = selectedLines.reduce((a, l) => a + (l.discount || 0), 0);
+//   const grossAmount = selectedLines.reduce((a, l) => a + Number(l.balance ?? l.payable ?? l.monthly ?? 0), 0);
+//   const lateFee = selectedLines.reduce((a, l) => a + Number(l.lateFee || 0), 0);
+//   const serverDiscountAmount = selectedLines.reduce((a, l) => a + Number(l.discount || 0), 0);
+//   const preview = calculateClientDiscountPreview(selectedLines, dues.lines, assignedDiscounts);
+//   const discountAmount = Math.max(serverDiscountAmount, preview.total);
 //   const finalTotal = Math.max(grossAmount + lateFee - discountAmount, 0);
+//   const fullYearSelected = isFullAcademicYearSelection(selectedLines, dues.lines);
+//   const { early: earlyRule, sibling: siblingRule, staff: staffRule } = getSelectedDiscountRule(assignedDiscounts);
 
 //   const canSubmit = () => {
 //     if (!selectedStudent) { toast.error("Pick a student first"); return false; }
@@ -7146,7 +10712,7 @@
 //               onOpenChange(false);
 //             } catch (err) {
 //               console.error(err);
-//               toast.error(err?.response?.data?.detail || "Payment verification failed");
+//               toast.error(getErrorMessage(err, "Payment verification failed"));
 //             } finally {
 //               setSubmitting(false);
 //             }
@@ -7162,7 +10728,7 @@
 //         rzp.open();
 //       } catch (err) {
 //         console.error(err);
-//         toast.error(err?.response?.data?.detail || "Could not start payment");
+//         toast.error(getErrorMessage(err, "Could not start payment"));
 //         setSubmitting(false);
 //       }
 //       return; // submitting is cleared inside the handler/ondismiss/catch above
@@ -7197,7 +10763,7 @@
 //       onOpenChange(false);
 //     } catch (err) {
 //       console.error(err);
-//       toast.error(err?.response?.data?.detail || "Payment failed");
+//       toast.error(getErrorMessage(err, "Payment failed"));
 //     } finally {
 //       setSubmitting(false);
 //     }
@@ -7275,6 +10841,30 @@
 //           {selectedStudent && (
 //             <div className="space-y-1.5">
 //               <Label className="text-xs text-muted-foreground">Pending Dues</Label>
+//               {selectedStudent && assignedDiscounts.length > 0 && (
+//                 <div className="flex flex-wrap gap-2 mb-2">
+//                   {assignedDiscounts.map((d) => (
+//                     <Badge key={d.discount_uuid} variant="outline" className="text-xs">
+//                       {d.discount_name || d.name} · {String(d.discount_type || "").toUpperCase().startsWith("PERC") ? `${d.discount_value}%` : inr(d.discount_value)}
+//                     </Badge>
+//                   ))}
+//                   {earlyRule && (
+//                     <Badge variant={fullYearSelected ? "default" : "secondary"} className="text-xs">
+//                       {fullYearSelected
+//                         ? `${earlyRule.discount_value ?? earlyRule.value}% full-year rule eligible`
+//                         : "Full-year rule requires full-year selection"}
+//                     </Badge>
+//                   )}
+//                   {siblingRule && (
+//                     <Badge variant="secondary" className="text-xs">
+//                       Sibling: {String(siblingRule.discount_type || "").toUpperCase().startsWith("PERC")
+//                         ? `${siblingRule.discount_value}%`
+//                         : inr(siblingRule.discount_value ?? siblingRule.value)} · Admission only
+//                     </Badge>
+//                   )}
+//                   {staffRule && <Badge variant="secondary" className="text-xs">Staff student discount active</Badge>}
+//                 </div>
+//               )}
 //               <div className="rounded-lg border border-border/60 overflow-hidden">
 //                 <Table>
 //                   <TableHeader>
@@ -7409,7 +10999,6 @@
 //     </Dialog>
 //   );
 // }
-// // Lazily injects Razorpay's checkout.js once and reuses it after that.
 
 // /* ================================================================== */
 // /*  SHARED FIELD HELPERS                                                */
@@ -7434,6 +11023,8 @@
 //     </label>
 //   );
 // }
+
+
 
 
 
@@ -7466,6 +11057,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableFooter,
 } from "../../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import {
@@ -7600,7 +11192,7 @@ import {
   verifyRazorpayPayment,
   getPayments,
   getPaymentDashboard,
-    openPaymentReceipt,
+  openPaymentReceipt,
   downloadPaymentReceipt,
 } from "../../../api/payment";
 
@@ -7627,10 +11219,92 @@ const ACADEMIC_YEAR = (() => {
 
 function extractList(res) {
   const body = res?.data ?? res;
-  if (Array.isArray(body)) return body;
-  if (Array.isArray(body?.data)) return body.data;
-  if (Array.isArray(body?.data?.data)) return body.data.data;
+
+  // Direct array
+  if (Array.isArray(body)) {
+    return body;
+  }
+
+  // { data: [...] }
+  if (Array.isArray(body?.data)) {
+    return body.data;
+  }
+
+  // { data: { data: [...] } }
+  if (Array.isArray(body?.data?.data)) {
+    return body.data.data;
+  }
+
+  // { data: { items: [...] } }  <-- YOUR DISCOUNT API
+  if (Array.isArray(body?.data?.items)) {
+    return body.data.items;
+  }
+
+  // { items: [...] }
+  if (Array.isArray(body?.items)) {
+    return body.items;
+  }
+
   return [];
+}
+
+/* ------------------------------------------------------------------ */
+/*  ERROR HANDLING — backend `detail` is often a dict                  */
+/*  ({message, student_uuid, discount_uuid, invalid_components, ...})  */
+/*  or a list of such dicts, and only sometimes a plain string.        */
+/*  NEVER hand `err.response.data.detail` straight to toast/JSX —      */
+/*  always run it through this first, or React will throw:             */
+/*  "Objects are not valid as a React child".                          */
+/* ------------------------------------------------------------------ */
+function describeErrorDetail(d) {
+  if (typeof d === "string") return d;
+  if (!d || typeof d !== "object") return String(d ?? "");
+
+  const parts = [];
+  if (d.message) parts.push(d.message);
+
+  if (d.student_uuid) parts.push(`(student ${d.student_uuid})`);
+  if (d.discount_uuid) parts.push(`(discount ${d.discount_uuid})`);
+  if (d.assignment_student_discount_uuid) {
+    parts.push(`(assignment ${d.assignment_student_discount_uuid})`);
+  }
+  if (d.employee_uuid) parts.push(`(employee ${d.employee_uuid})`);
+  if (typeof d.older_sibling_count === "number") {
+    parts.push(`— found ${d.older_sibling_count} older sibling(s)`);
+  }
+  if (d.required_category) parts.push(`— requires ${d.required_category} component`);
+  if (d.discount_scope) parts.push(`— scope ${d.discount_scope}`);
+  if (d.employee_status) parts.push(`— employee status: ${d.employee_status}`);
+
+  if (Array.isArray(d.invalid_components) && d.invalid_components.length) {
+    const names = d.invalid_components
+      .map((c) => c?.component_name || c?.component_uuid || c?.reason)
+      .filter(Boolean)
+      .join(", ");
+    if (names) parts.push(`: ${names}`);
+  }
+
+  if (Array.isArray(d.allowed_types) && d.allowed_types.length) {
+    parts.push(`(allowed: ${d.allowed_types.join(", ")})`);
+  }
+
+  const joined = parts.filter(Boolean).join(" ");
+  return joined || JSON.stringify(d);
+}
+
+function getErrorMessage(err, fallback = "Something went wrong") {
+  const detail = err?.response?.data?.detail;
+
+  if (detail === undefined || detail === null || detail === "") {
+    return err?.message || fallback;
+  }
+
+  if (Array.isArray(detail)) {
+    const joined = detail.map(describeErrorDetail).filter(Boolean).join("; ");
+    return joined || fallback;
+  }
+
+  return describeErrorDetail(detail) || fallback;
 }
 
 /* ------------------------------------------------------------------ */
@@ -7736,7 +11410,10 @@ function componentFromApi(c) {
     name: c.name,
     category: String(c.category || "OTHER").toUpperCase(),
     default_amount: Number(c.default_amount || 0),
-    recurring: c.type === "RECURRING",
+
+    // ANNUAL | RECURRING | ONE_TIME
+    type: String(c.type || "ONE_TIME").toUpperCase(),
+
     mandatory: !!c.is_mandatory,
     new_admission_only: !!c.new_admission_only,
     locked_after_opt_in: !!c.locked_after_opt_in,
@@ -7749,7 +11426,10 @@ function componentToApi(f) {
   return {
     name: f.name,
     category: String(f.category || "OTHER").toUpperCase(),
-    type: f.recurring ? "RECURRING" : "ONE_TIME",
+
+    // ANNUAL | RECURRING | ONE_TIME
+    type: String(f.type || "ONE_TIME").toUpperCase(),
+
     default_amount: Number(f.default_amount) || 0,
     is_mandatory: !!f.mandatory,
     new_admission_only: !!f.new_admission_only,
@@ -7825,6 +11505,22 @@ function structureToApi(f) {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/*  DISCOUNTS — API-backed translator                                  */
+/*  IMPORTANT: the backend (FeeAssignmentStudentDiscountService) reads */
+/*  discount_value / max_discount_cap / early_payment_month/day        */
+/*  DYNAMICALLY from whatever is stored on the FeeDiscount row. It     */
+/*  only enforces the *type* per scope at assignment time:             */
+/*    SIBLING          -> discount_type must be FIXED                  */
+/*    EARLY_FULL_YEAR   -> discount_type must be PERCENT,               */
+/*                        requires_full_year_payment must be true,      */
+/*                        early_payment_month/day must be set           */
+/*    STAFF_STUDENT     -> student must be linked to an ACTIVE employee */
+/*  It does NOT hardcode ₹5,000 / 5% / April 15 anywhere — those are    */
+/*  admin-configured values. The old frontend hardcoded them; this     */
+/*  version does not.                                                   */
+/* ------------------------------------------------------------------ */
+
 function discountFromApi(d) {
   const componentUuids = (d.components || [])
     .map((c) => c.component_uuid)
@@ -7857,31 +11553,27 @@ function discountFromApi(d) {
 
 function discountToApi(f) {
   const scope = String(f.discountScope || "NORMAL").toUpperCase();
+
   let discountType = String(f.type || "Percent").toUpperCase();
   discountType = discountType === "FIXED" || discountType === "FIX" ? "FIXED" : "PERCENT";
 
-  let value = Number(f.value) || 0;
-  let appliesTo = Array.isArray(f.appliesTo) ? f.appliesTo.filter(Boolean) : [];
-  let earlyPaymentMonth = f.earlyPaymentMonth ? Number(f.earlyPaymentMonth) : null;
-  let earlyPaymentDay = f.earlyPaymentDay ? Number(f.earlyPaymentDay) : null;
-  let requiresFullYearPayment = !!f.requiresFullYearPayment;
+  // The backend only pins down the TYPE per scope — SIBLING must be
+  // FIXED, EARLY_FULL_YEAR must be PERCENT. It does NOT pin the value,
+  // the cap, or the early-payment date: those are admin-configured and
+  // read dynamically by _validate_discount_for_student. Never overwrite
+  // them with a hardcoded number here.
+  if (scope === "SIBLING") discountType = "FIXED";
+  if (scope === "EARLY_FULL_YEAR") discountType = "PERCENT";
 
-  // Business rules are reflected in the UI, while the backend remains authoritative.
-  if (scope === "SIBLING") {
-    discountType = "FIXED";
-    value = 5000;
-    requiresFullYearPayment = false;
-    earlyPaymentMonth = null;
-    earlyPaymentDay = null;
-  }
+  const value = Number(f.value) || 0;
+  const appliesTo = Array.isArray(f.appliesTo) ? f.appliesTo.filter(Boolean) : [];
 
-  if (scope === "EARLY_FULL_YEAR") {
-    discountType = "PERCENT";
-    value = 5;
-    requiresFullYearPayment = true;
-    earlyPaymentMonth = 4;
-    earlyPaymentDay = 15;
-  }
+  const earlyPaymentMonth = scope === "EARLY_FULL_YEAR" ? (Number(f.earlyPaymentMonth) || null) : null;
+  const earlyPaymentDay = scope === "EARLY_FULL_YEAR" ? (Number(f.earlyPaymentDay) || null) : null;
+
+  // Backend requires requires_full_year_payment === true for EARLY_FULL_YEAR.
+  const requiresFullYearPayment =
+    scope === "EARLY_FULL_YEAR" ? true : !!f.requiresFullYearPayment;
 
   return {
     discount_name: f.name,
@@ -8221,6 +11913,9 @@ function DiscountsPanel({ discounts, components, loading, onSave, onRemove, onAr
               <TableRow key={d.discount_uuid}>
                 <TableCell className="text-sm font-medium">{d.name}</TableCell>
                 <TableCell>
+                  <Badge variant="outline" className="text-xs">{d.discountScope || "NORMAL"}</Badge>
+                </TableCell>
+                <TableCell>
                   <Badge variant={d.type === "Percent" ? "default" : "secondary"} className="text-xs">
                     {d.type}
                   </Badge>
@@ -8303,7 +11998,7 @@ function DiscountsPanel({ discounts, components, loading, onSave, onRemove, onAr
 
 function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
   const [f, setF] = useState({
-    name: "", code: "", type: "Percent", value: 10,
+    name: "", code: "", type: "Percent", value: "",
     discountScope: "NORMAL", appliesTo: ["*"], classes: [],
     studentOverride: false, maxDiscount: undefined, status: "Active",
     earlyPaymentMonth: null, earlyPaymentDay: null,
@@ -8349,9 +12044,9 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
       });
     } else {
       setF({
-        name: "", code: "", type: "Percent", value: 10,
+        name: "", code: "", type: "Percent", value: "",
         discountScope: "NORMAL", appliesTo: ["*"], classes: [],
-        studentOverride: false, maxDiscount: undefined, status: "Active",
+        studentOverride: false, maxDiscount: "", status: "Active",
         earlyPaymentMonth: null, earlyPaymentDay: null,
         requiresFullYearPayment: false, description: "",
       });
@@ -8359,23 +12054,37 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
   }, [open, editing]);
 
   const scope = f.discountScope;
-  const special = scope !== "NORMAL";
+  const special = scope === "SIBLING" || scope === "EARLY_FULL_YEAR";
 
+  // IMPORTANT: this ONLY sets the TYPE and auto-picks a sensible default
+  // component (Admission for Sibling, Tuition for Early-Full-Year). It
+  // never overwrites the admin's value/cap/date — those stay whatever
+  // the admin types, and are validated dynamically on the backend.
   useEffect(() => {
     if (scope === "SIBLING") {
       const admission = components.find((c) => String(c.category).toUpperCase() === "ADMISSION");
       setF((prev) => ({
-        ...prev, type: "Fixed", value: 5000, maxDiscount: 5000,
-        requiresFullYearPayment: false, earlyPaymentMonth: null, earlyPaymentDay: null,
-        appliesTo: admission ? [admission.component_uuid] : prev.appliesTo,
+        ...prev,
+        type: "Fixed",
+        requiresFullYearPayment: false,
+        earlyPaymentMonth: null,
+        earlyPaymentDay: null,
+        appliesTo: admission && (!prev.appliesTo.length || prev.appliesTo.includes("*"))
+          ? [admission.component_uuid]
+          : prev.appliesTo,
       }));
     } else if (scope === "EARLY_FULL_YEAR") {
       const tuition = components.find((c) => String(c.category).toUpperCase() === "TUITION");
       setF((prev) => ({
-        ...prev, type: "Percent", value: 5, maxDiscount: undefined,
-        requiresFullYearPayment: true, earlyPaymentMonth: 4, earlyPaymentDay: 15,
-        appliesTo: tuition ? [tuition.component_uuid] : prev.appliesTo,
+        ...prev,
+        type: "Percent",
+        requiresFullYearPayment: true,
+        appliesTo: tuition && (!prev.appliesTo.length || prev.appliesTo.includes("*"))
+          ? [tuition.component_uuid]
+          : prev.appliesTo,
       }));
+    } else if (scope === "STAFF_STUDENT") {
+      setF((prev) => ({ ...prev, requiresFullYearPayment: false, earlyPaymentMonth: null, earlyPaymentDay: null }));
     }
   }, [scope, components]);
 
@@ -8405,8 +12114,23 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
     if (scope === "EARLY_FULL_YEAR" && !components.some((c) => f.appliesTo.includes(c.component_uuid) && String(c.category).toUpperCase() === "TUITION")) {
       toast.error("Early full-year discount must apply to Tuition"); return;
     }
+    if (scope === "EARLY_FULL_YEAR" && (!f.earlyPaymentMonth || !f.earlyPaymentDay)) {
+      toast.error("Early full-year discount needs a deadline month and day"); return;
+    }
+    if (Number(f.value) <= 0) {
+      toast.error("Discount value must be greater than zero"); return;
+    }
     setSaving(true);
-    try { await onSave(f, editing); onOpenChange(false); } finally { setSaving(false); }
+    try {
+      await onSave(f, editing);
+      onOpenChange(false);
+    } catch (err) {
+      // onSave (saveDiscount) already toasts on failure via getErrorMessage —
+      // this catch just stops the drawer from closing on a failed save.
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -8414,56 +12138,81 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit Discount" : "New Discount"}</DialogTitle>
-          <DialogDescription>Configure normal, sibling, or early full-year rules dynamically.</DialogDescription>
+          <DialogDescription>Configure normal, sibling, staff or early full-year rules — all values are saved to the backend, nothing here is hardcoded.</DialogDescription>
         </DialogHeader>
 
         <div className="rounded-lg border border-border/60 p-4 space-y-4 max-h-[70vh] overflow-y-auto">
           <Row>
             <FF label="Discount Name"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Sibling Admission Discount" /></FF>
-            <FF label="Discount Code"><Input value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} placeholder="SIBLING_ADMISSION_5000" /></FF>
+            <FF label="Discount Code"><Input value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} placeholder="SIBLING_ADMISSION" /></FF>
           </Row>
 
-          <FF label="Discount Rule">
+          <FF label="Discount Rule (Scope)">
             <Select value={scope} onValueChange={(v) => setF((prev) => ({ ...prev, discountScope: v }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="NORMAL">Normal Discount</SelectItem>
-                <SelectItem value="SIBLING">Sibling — ₹5,000 Admission Only</SelectItem>
-                <SelectItem value="EARLY_FULL_YEAR">Early Full Year — 5% Tuition</SelectItem>
+                <SelectItem value="SIBLING">Sibling — Fixed, Admission only, 2nd child</SelectItem>
+                <SelectItem value="STAFF_STUDENT">Staff Student — requires active employee link</SelectItem>
+                <SelectItem value="EARLY_FULL_YEAR">Early Full Year — Percent, Tuition only</SelectItem>
               </SelectContent>
             </Select>
           </FF>
 
-          {scope === "NORMAL" ? (
-            <Row>
-              <FF label="Type">
-                <Select value={f.type} onValueChange={(v) => setF({ ...f, type: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="Percent">Percent</SelectItem><SelectItem value="Fixed">Fixed (₹)</SelectItem></SelectContent>
-                </Select>
-              </FF>
-              <FF label="Value">
-                <Input type="number" min={0} step={0.01} value={f.value} onChange={(e) => setF({ ...f, value: Number(e.target.value) || 0 })} />
-              </FF>
-            </Row>
-          ) : (
+          {scope === "SIBLING" && (
             <div className="rounded-lg border p-3 bg-muted/20 text-sm space-y-1">
-              {scope === "SIBLING" ? (
-                <>
-                  <div className="font-medium">Sibling discount</div>
-                  <div>Fixed amount: <b>₹5,000</b></div>
-                  <div>Applies only to: <b>ADMISSION</b></div>
-                </>
-              ) : (
-                <>
-                  <div className="font-medium">Early full-year discount</div>
-                  <div>Discount: <b>5% of TUITION</b></div>
-                  <div>Full-year payment required</div>
-                  <div>Deadline: <b>15 April</b></div>
-                </>
-              )}
+              <div className="font-medium">Sibling discount</div>
+              <div>Type is locked to <b>Fixed (₹)</b> and must apply only to an <b>ADMISSION</b> component.</div>
+              <div>Only eligible for a student's <b>second child</b> (exactly one older sibling on record).</div>
+              <div>Amount and cap below are set by you — the backend does not override them.</div>
             </div>
           )}
+
+          {scope === "STAFF_STUDENT" && (
+            <div className="rounded-lg border p-3 bg-muted/20 text-sm space-y-1">
+              <div className="font-medium">Staff student discount</div>
+              <div>Applies only to a student linked to an <b>active</b> employee record.</div>
+              <div>Can be Fixed or Percent — no component restriction; pick components below.</div>
+            </div>
+          )}
+
+          {scope === "EARLY_FULL_YEAR" && (
+            <div className="rounded-lg border p-3 bg-muted/20 text-sm space-y-1">
+              <div className="font-medium">Early full-year discount</div>
+              <div>Type is locked to <b>Percent</b> and must apply only to a <b>TUITION</b> component.</div>
+              <div>Requires the parent to pay the full academic year up front, by the deadline below.</div>
+            </div>
+          )}
+
+          <Row>
+            <FF label="Type">
+              <Select
+                value={f.type}
+                onValueChange={(v) => setF({ ...f, type: v })}
+                disabled={scope === "SIBLING" || scope === "EARLY_FULL_YEAR"}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="Percent">Percent</SelectItem><SelectItem value="Fixed">Fixed (₹)</SelectItem></SelectContent>
+              </Select>
+            </FF>
+            <FF label={f.type === "Percent" ? "Value (%)" : "Value (₹)"}>
+              <Input
+                type="number"
+                min={0}
+                step="1"
+                value={f.value ?? ""}
+                onChange={(e) => {
+                  const rawValue = e.target.value;
+
+                  setF((prev) => ({
+                    ...prev,
+                    value: rawValue === "" ? "" : rawValue,
+                  }));
+                }}
+                placeholder="0"
+              />
+            </FF>
+          </Row>
 
           <div>
             <Label className="text-xs text-muted-foreground">Applies To</Label>
@@ -8487,8 +12236,22 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
 
           {scope === "EARLY_FULL_YEAR" && (
             <Row>
-              <FF label="Deadline Month"><Input value="April" disabled /></FF>
-              <FF label="Deadline Day"><Input value="15" disabled /></FF>
+              <FF label="Deadline Month (1–12)">
+                <Input
+                  type="number" min={1} max={12}
+                  value={f.earlyPaymentMonth ?? ""}
+                  onChange={(e) => setF({ ...f, earlyPaymentMonth: e.target.value === "" ? null : Number(e.target.value) })}
+                  placeholder="e.g. 4 for April"
+                />
+              </FF>
+              <FF label="Deadline Day (1–31)">
+                <Input
+                  type="number" min={1} max={31}
+                  value={f.earlyPaymentDay ?? ""}
+                  onChange={(e) => setF({ ...f, earlyPaymentDay: e.target.value === "" ? null : Number(e.target.value) })}
+                  placeholder="e.g. 15"
+                />
+              </FF>
             </Row>
           )}
 
@@ -8505,11 +12268,23 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
             )}
           </FF>
 
-          {scope === "NORMAL" && (
-            <FF label="Max Discount Cap (₹, optional)">
-              <Input type="number" min={0} value={f.maxDiscount ?? 0} onChange={(e) => setF({ ...f, maxDiscount: Number(e.target.value) || undefined })} />
-            </FF>
-          )}
+          <FF label="Max Discount Cap (₹, optional)">
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              value={f.maxDiscount ?? ""}
+              onChange={(e) => {
+                const rawValue = e.target.value;
+
+                setF((prev) => ({
+                  ...prev,
+                  maxDiscount: rawValue === "" ? "" : rawValue,
+                }));
+              }}
+              placeholder="0"
+            />
+          </FF>
 
           <Row>
             <SW label="Student Override" checked={f.studentOverride} onChange={(v) => setF({ ...f, studentOverride: v })} />
@@ -8559,48 +12334,28 @@ function StudentDiscountsPanel({
     return m;
   }, [studentDiscounts]);
 
-  // Every student, annotated with their current discounts (empty array if none) —
-  // so the table also surfaces students with zero discounts as an easy "Add" target.
-//   const rows = useMemo(() => {
-//     return students
-//       .filter((s) => (!cls || s.class_name === cls) && (!sec || s.section_name === sec) && (!q || s.full_name?.toLowerCase().includes(q.toLowerCase()) || s.student_no?.toLowerCase().includes(q.toLowerCase())))
-//       .map((s) => {
-//         const match = byStudentUuid.get(s.student_uuid);
-//         return {
-//           student_uuid: s.student_uuid,
-//           student_name: s.full_name,
-//           student_no: s.student_no,
-//           class_name: s.class_name,
-//           section_name: s.section_name,
-//           discounts: match?.discounts ?? [],
-//         };
-//       })
-//       .sort((a, b) => b.discounts.length - a.discounts.length);
-//   }, [students, byStudentUuid, cls, sec, q]);
-
-
-const rows = useMemo(() => {
-  return students
-    .filter(
-      (s) =>
-        (!cls || s.class_name === cls) &&
-        (!sec || s.section_name === sec) &&
-        (!q ||
-          s.full_name?.toLowerCase().includes(q.toLowerCase()) ||
-          s.student_no?.toLowerCase().includes(q.toLowerCase()))
-    )
-    .map((s) => {
-      const match = byStudentUuid.get(s.student_uuid);
-      return {
-        student_uuid: s.student_uuid,
-        student_name: s.full_name,
-        student_no: s.student_no,
-        class_name: s.class_name,
-        section_name: s.section_name,
-        discounts: match?.discounts || [],
-      };
-    });
-}, [students, studentDiscounts, byStudentUuid, cls, sec, q]);
+  const rows = useMemo(() => {
+    return students
+      .filter(
+        (s) =>
+          (!cls || s.class_name === cls) &&
+          (!sec || s.section_name === sec) &&
+          (!q ||
+            s.full_name?.toLowerCase().includes(q.toLowerCase()) ||
+            s.student_no?.toLowerCase().includes(q.toLowerCase()))
+      )
+      .map((s) => {
+        const match = byStudentUuid.get(s.student_uuid);
+        return {
+          student_uuid: s.student_uuid,
+          student_name: s.full_name,
+          student_no: s.student_no,
+          class_name: s.class_name,
+          section_name: s.section_name,
+          discounts: match?.discounts || [],
+        };
+      });
+  }, [students, studentDiscounts, byStudentUuid, cls, sec, q]);
 
   return (
     <Card className="border-border/60">
@@ -8685,6 +12440,173 @@ const rows = useMemo(() => {
   );
 }
 
+// function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editingStudent, onAssign, onUpdateStudent }) {
+//   const [q, setQ] = useState("");
+//   const [cls, setCls] = useState("");
+//   const [picked, setPicked] = useState(new Set());
+//   const [pickedDiscounts, setPickedDiscounts] = useState(new Set());
+//   const [saving, setSaving] = useState(false);
+
+//   const isEditingOne = !!editingStudent;
+
+//   const classes = useMemo(() => Array.from(new Set(students.map((s) => s.class_name).filter(Boolean))).sort(), [students]);
+//   const filtered = useMemo(
+//     () =>
+//       students.filter(
+//         (s) =>
+//           (!cls || s.class_name === cls) &&
+//           (!q || s.full_name?.toLowerCase().includes(q.toLowerCase()) || s.student_no?.toLowerCase().includes(q.toLowerCase()))
+//       ),
+//     [students, cls, q]
+//   );
+
+//   useEffect(() => {
+//     if (!open) return;
+//     setQ("");
+//     setCls("");
+//     if (isEditingOne) {
+//       setPicked(new Set([editingStudent.student_uuid]));
+//       setPickedDiscounts(new Set((editingStudent.discounts || []).map((d) => d.discount_uuid)));
+//     } else {
+//       setPicked(new Set());
+//       setPickedDiscounts(new Set());
+//     }
+//   }, [open, editingStudent, isEditingOne]);
+
+//   const toggleStudent = (uuid) => {
+//     if (isEditingOne) return; // locked to a single student when editing
+//     setPicked((prev) => {
+//       const next = new Set(prev);
+//       if (next.has(uuid)) next.delete(uuid); else next.add(uuid);
+//       return next;
+//     });
+//   };
+//   const toggleDiscount = (uuid) => {
+//     setPickedDiscounts((prev) => {
+//       const next = new Set(prev);
+//       if (next.has(uuid)) next.delete(uuid); else next.add(uuid);
+//       return next;
+//     });
+//   };
+
+//   const toggleSelectAllStudents = () => {
+//   if (isEditingOne) return;
+
+//   const visibleStudentUuids = filtered
+//     .slice(0, 200)
+//     .map((s) => s.student_uuid);
+
+//   const allSelected =
+//     visibleStudentUuids.length > 0 &&
+//     visibleStudentUuids.every((uuid) => picked.has(uuid));
+
+//   setPicked((prev) => {
+//     const next = new Set(prev);
+
+//     if (allSelected) {
+//       visibleStudentUuids.forEach((uuid) => next.delete(uuid));
+//     } else {
+//       visibleStudentUuids.forEach((uuid) => next.add(uuid));
+//     }
+
+//     return next;
+//   });
+// };
+
+//   const save = async () => {
+//     if (picked.size === 0) { toast.error("Pick at least one student"); return; }
+//     setSaving(true);
+//     try {
+//       if (isEditingOne) {
+//         await onUpdateStudent(editingStudent.student_uuid, Array.from(pickedDiscounts));
+//       } else {
+//         await onAssign(Array.from(picked), Array.from(pickedDiscounts));
+//       }
+//       onOpenChange(false);
+//     } finally {
+//       setSaving(false);
+//     }
+//   };
+
+//   return (
+//     <Dialog open={open} onOpenChange={onOpenChange}>
+//       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+//         <DialogHeader>
+//           <DialogTitle>{isEditingOne ? `Edit Discounts — ${editingStudent.student_name}` : "Assign Discount to Students"}</DialogTitle>
+//           <DialogDescription>
+//             {isEditingOne ? "This replaces the student's full discount set." : "Pick students, then pick one or more discount templates to attach."}
+//             {" "}Scope rules (sibling eligibility, active employee link, full-year deadline) are checked by the server per student.
+//           </DialogDescription>
+//         </DialogHeader>
+
+//         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+//           <div className="space-y-2">
+//             <Label className="text-xs text-muted-foreground">Students {isEditingOne && "(locked)"}</Label>
+//             {!isEditingOne && (
+//               <Row>
+//                 <Select value={cls} onValueChange={setCls}>
+//                   <SelectTrigger><SelectValue placeholder="Class" /></SelectTrigger>
+//                   <SelectContent>{classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+//                 </Select>
+//                 <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search..." />
+//               </Row>
+//             )} 
+//             <div className="border rounded-md max-h-72 overflow-y-auto">
+//               <Table>
+//                 <TableBody>
+//                   {(isEditingOne ? students.filter((s) => s.student_uuid === editingStudent.student_uuid) : filtered.slice(0, 200)).map((s) => (
+//                     <TableRow
+//                       key={s.student_uuid}
+//                       className={isEditingOne ? "" : "cursor-pointer"}
+//                       onClick={() => toggleStudent(s.student_uuid)}
+//                     >
+//                       <TableCell className="w-8"><Checkbox checked={picked.has(s.student_uuid)} disabled={isEditingOne} /></TableCell>
+//                       <TableCell className="text-sm">{s.full_name}</TableCell>
+//                       <TableCell className="text-xs text-muted-foreground">{s.class_name}{s.section_name ? `-${s.section_name}` : ""}</TableCell>
+//                     </TableRow>
+//                   ))}
+//                   {!isEditingOne && filtered.length === 0 && (
+//                     <TableRow><TableCell className="text-center text-sm text-muted-foreground py-6">No matches</TableCell></TableRow>
+//                   )}
+//                 </TableBody>
+//               </Table>
+//             </div>
+//             {!isEditingOne && <div className="text-xs text-muted-foreground">{picked.size} student{picked.size === 1 ? "" : "s"} selected</div>}
+//           </div>
+
+//           <div className="space-y-2">
+//             <Label className="text-xs text-muted-foreground">Discount Templates</Label>
+//             <div className="border rounded-md max-h-72 overflow-y-auto p-2 space-y-1.5">
+//               {discounts.filter((d) => d.status === "Active").map((d) => (
+//                 <label key={d.discount_uuid} className="flex items-center gap-2 text-sm rounded-md px-2 py-1.5 hover:bg-muted/50 cursor-pointer">
+//                   <Checkbox checked={pickedDiscounts.has(d.discount_uuid)} onCheckedChange={() => toggleDiscount(d.discount_uuid)} />
+//                   <span className="flex-1">{d.name}</span>
+//                   {d.discountScope && d.discountScope !== "NORMAL" && (
+//                     <Badge variant="outline" className="text-[10px]">{d.discountScope}</Badge>
+//                   )}
+//                   <Badge variant="outline" className="text-xs">{d.type === "Percent" ? `${d.value}%` : inr(d.value)}</Badge>
+//                 </label>
+//               ))}
+//               {discounts.filter((d) => d.status === "Active").length === 0 && (
+//                 <div className="text-xs text-muted-foreground text-center py-4">No active discount templates. Create one in the Discounts tab first.</div>
+//               )}
+//             </div>
+//             <div className="text-xs text-muted-foreground">{pickedDiscounts.size} discount{pickedDiscounts.size === 1 ? "" : "s"} selected</div>
+//           </div>
+//         </div>
+
+//         <DialogFooter>
+//           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+//           <Button onClick={save} className="gradient-primary border-0" disabled={saving}>
+//             {saving ? "Saving…" : isEditingOne ? "Save changes" : "Assign"}
+//           </Button>
+//         </DialogFooter>
+//       </DialogContent>
+//     </Dialog>
+//   );
+// }
+
+
 function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editingStudent, onAssign, onUpdateStudent }) {
   const [q, setQ] = useState("");
   const [cls, setCls] = useState("");
@@ -8726,10 +12648,35 @@ function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editin
       return next;
     });
   };
+
   const toggleDiscount = (uuid) => {
     setPickedDiscounts((prev) => {
       const next = new Set(prev);
       if (next.has(uuid)) next.delete(uuid); else next.add(uuid);
+      return next;
+    });
+  };
+
+  const toggleSelectAllStudents = () => {
+    if (isEditingOne) return;
+
+    const visibleStudentUuids = filtered
+      .slice(0, 200)
+      .map((s) => s.student_uuid);
+
+    const allSelected =
+      visibleStudentUuids.length > 0 &&
+      visibleStudentUuids.every((uuid) => picked.has(uuid));
+
+    setPicked((prev) => {
+      const next = new Set(prev);
+
+      if (allSelected) {
+        visibleStudentUuids.forEach((uuid) => next.delete(uuid));
+      } else {
+        visibleStudentUuids.forEach((uuid) => next.add(uuid));
+      }
+
       return next;
     });
   };
@@ -8749,6 +12696,11 @@ function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editin
     }
   };
 
+  // Calculate if all visible students are selected
+  const visibleStudentUuids = filtered.slice(0, 200).map((s) => s.student_uuid);
+  const allVisibleSelected = visibleStudentUuids.length > 0 && 
+    visibleStudentUuids.every((uuid) => picked.has(uuid));
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -8756,20 +12708,42 @@ function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editin
           <DialogTitle>{isEditingOne ? `Edit Discounts — ${editingStudent.student_name}` : "Assign Discount to Students"}</DialogTitle>
           <DialogDescription>
             {isEditingOne ? "This replaces the student's full discount set." : "Pick students, then pick one or more discount templates to attach."}
+            {" "}Scope rules (sibling eligibility, active employee link, full-year deadline) are checked by the server per student.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Students Section */}
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Students {isEditingOne && "(locked)"}</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Students {isEditingOne && "(locked)"}</Label>
+              {!isEditingOne && filtered.length > 0 && (
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer hover:text-primary">
+                  <Checkbox 
+                    checked={allVisibleSelected}
+                    onCheckedChange={toggleSelectAllStudents}
+                  />
+                  Select All ({filtered.slice(0, 200).length} visible)
+                </label>
+              )}
+            </div>
             {!isEditingOne && (
-              <Row>
+              <div className="flex gap-2">
                 <Select value={cls} onValueChange={setCls}>
-                  <SelectTrigger><SelectValue placeholder="Class" /></SelectTrigger>
-                  <SelectContent>{classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
                 </Select>
-                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search..." />
-              </Row>
+                <Input 
+                  value={q} 
+                  onChange={(e) => setQ(e.target.value)} 
+                  placeholder="Search..." 
+                  className="flex-1"
+                />
+              </div>
             )}
             <div className="border rounded-md max-h-72 overflow-y-auto">
               <Table>
@@ -8777,43 +12751,101 @@ function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editin
                   {(isEditingOne ? students.filter((s) => s.student_uuid === editingStudent.student_uuid) : filtered.slice(0, 200)).map((s) => (
                     <TableRow
                       key={s.student_uuid}
-                      className={isEditingOne ? "" : "cursor-pointer"}
+                      className={isEditingOne ? "" : "cursor-pointer hover:bg-muted/50"}
                       onClick={() => toggleStudent(s.student_uuid)}
                     >
-                      <TableCell className="w-8"><Checkbox checked={picked.has(s.student_uuid)} disabled={isEditingOne} /></TableCell>
+                      <TableCell className="w-8">
+                        <Checkbox 
+                          checked={picked.has(s.student_uuid)} 
+                          disabled={isEditingOne}
+                          onCheckedChange={() => toggleStudent(s.student_uuid)}
+                        />
+                      </TableCell>
                       <TableCell className="text-sm">{s.full_name}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{s.class_name}{s.section_name ? `-${s.section_name}` : ""}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {s.class_name}{s.section_name ? `-${s.section_name}` : ""}
+                      </TableCell>
                     </TableRow>
                   ))}
                   {!isEditingOne && filtered.length === 0 && (
-                    <TableRow><TableCell className="text-center text-sm text-muted-foreground py-6">No matches</TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-6">
+                        {q || cls ? "No matches found" : "No students available"}
+                      </TableCell>
+                    </TableRow>
                   )}
                 </TableBody>
               </Table>
             </div>
-            {!isEditingOne && <div className="text-xs text-muted-foreground">{picked.size} student{picked.size === 1 ? "" : "s"} selected</div>}
+            {!isEditingOne && (
+              <div className="text-xs text-muted-foreground">
+                {picked.size} student{picked.size === 1 ? "" : "s"} selected
+                {filtered.length > 200 && ` (showing first 200 of ${filtered.length})`}
+              </div>
+            )}
           </div>
 
+          {/* Discount Templates Section */}
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Discount Templates</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Discount Templates</Label>
+              {discounts.filter((d) => d.status === "Active").length > 0 && (
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer hover:text-primary">
+                  <Checkbox 
+                    checked={
+                      discounts.filter(d => d.status === "Active").length > 0 &&
+                      discounts.filter(d => d.status === "Active").every(d => pickedDiscounts.has(d.discount_uuid))
+                    }
+                    onCheckedChange={() => {
+                      const activeDiscounts = discounts.filter(d => d.status === "Active");
+                      const allSelected = activeDiscounts.every(d => pickedDiscounts.has(d.discount_uuid));
+                      setPickedDiscounts((prev) => {
+                        const next = new Set(prev);
+                        if (allSelected) {
+                          activeDiscounts.forEach(d => next.delete(d.discount_uuid));
+                        } else {
+                          activeDiscounts.forEach(d => next.add(d.discount_uuid));
+                        }
+                        return next;
+                      });
+                    }}
+                  />
+                  Select All
+                </label>
+              )}
+            </div>
             <div className="border rounded-md max-h-72 overflow-y-auto p-2 space-y-1.5">
               {discounts.filter((d) => d.status === "Active").map((d) => (
                 <label key={d.discount_uuid} className="flex items-center gap-2 text-sm rounded-md px-2 py-1.5 hover:bg-muted/50 cursor-pointer">
-                  <Checkbox checked={pickedDiscounts.has(d.discount_uuid)} onCheckedChange={() => toggleDiscount(d.discount_uuid)} />
+                  <Checkbox 
+                    checked={pickedDiscounts.has(d.discount_uuid)} 
+                    onCheckedChange={() => toggleDiscount(d.discount_uuid)}
+                  />
                   <span className="flex-1">{d.name}</span>
-                  <Badge variant="outline" className="text-xs">{d.type === "Percent" ? `${d.value}%` : inr(d.value)}</Badge>
+                  {d.discountScope && d.discountScope !== "NORMAL" && (
+                    <Badge variant="outline" className="text-[10px]">{d.discountScope}</Badge>
+                  )}
+                  <Badge variant="outline" className="text-xs">
+                    {d.type === "Percent" ? `${d.value}%` : inr(d.value)}
+                  </Badge>
                 </label>
               ))}
               {discounts.filter((d) => d.status === "Active").length === 0 && (
-                <div className="text-xs text-muted-foreground text-center py-4">No active discount templates. Create one in the Discounts tab first.</div>
+                <div className="text-xs text-muted-foreground text-center py-4">
+                  No active discount templates. Create one in the Discounts tab first.
+                </div>
               )}
             </div>
-            <div className="text-xs text-muted-foreground">{pickedDiscounts.size} discount{pickedDiscounts.size === 1 ? "" : "s"} selected</div>
+            <div className="text-xs text-muted-foreground">
+              {pickedDiscounts.size} discount{pickedDiscounts.size === 1 ? "" : "s"} selected
+            </div>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
           <Button onClick={save} className="gradient-primary border-0" disabled={saving}>
             {saving ? "Saving…" : isEditingOne ? "Save changes" : "Assign"}
           </Button>
@@ -8944,75 +12976,576 @@ function exportRowsCsv(rows, fileName) {
   toast.success("Exported");
 }
 
-function buildAuditReport(period, kpis, ledger) {
-  const label = period === "week" ? "Weekly" : period === "month" ? "Monthly" : "Annual";
+/* ================================================================== */
+/* AUDIT REPORT — REAL PERIOD FILTERING                              */
+/* ================================================================== */
+
+function getAuditDateRange(period) {
+  const now = new Date();
+
+  // Remove time for reliable date comparison
+  const today = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
+
+  let from;
+  let to = today;
+
+  if (period === "week") {
+    // Monday -> today
+    const day = today.getDay(); // 0 = Sunday
+    const diff = day === 0 ? 6 : day - 1;
+
+    from = new Date(today);
+    from.setDate(today.getDate() - diff);
+  }
+
+  if (period === "month") {
+    // 1st of current month -> today
+    from = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      1
+    );
+  }
+
+  if (period === "year") {
+    // Academic year: April -> March
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth() + 1;
+
+    const academicStartYear =
+      currentMonth >= 4
+        ? currentYear
+        : currentYear - 1;
+
+    from = new Date(
+      academicStartYear,
+      3, // April
+      1
+    );
+  }
+
+  return { from, to };
+}
+
+
+function normalizePaymentForAudit(txn, students = []) {
+  const student = students.find(
+    (s) => s.student_uuid === txn.student_uuid
+  );
+
+  const status =
+    String(txn.transaction_status || "").toUpperCase() === "SUCCESS"
+      ? "Success"
+      : txn.transaction_status || "Pending";
+
   return {
-    reportTitle: `Fees & Finance Audit Report (${label})`,
-    reportSubtitle: "Consolidated income, dues and late-fee position",
-    reportCode: `AUD/F&F/${period.toUpperCase()}/${TODAY.getFullYear()}`,
-    period: TODAY.toLocaleDateString("en-IN", { month: "long", year: "numeric" }),
-    institute: "Mothers Public School — Edureon ERP",
-    summary: [
-      { label: "Today's Collection", value: kpis.todayColl, tone: "in" },
-      { label: "Outstanding Dues", value: kpis.totalDue, tone: "out" },
-      { label: "Late Fees Accrued", value: kpis.lateCollected, tone: "net" },
-    ],
-    ledger,
+    id:
+      txn.receipt_no ||
+      txn.transaction_uuid ||
+      `TXN-${Math.random().toString(36).slice(2)}`,
+
+    transaction_uuid: txn.transaction_uuid,
+
+    student_uuid: txn.student_uuid,
+
+    student_name:
+      txn.student_name ||
+      student?.full_name ||
+      "—",
+
+    class_name:
+      student?.class_name ||
+      txn.class_name ||
+      "—",
+
+    section:
+      student?.section_name ||
+      txn.section_name ||
+      "—",
+
+    amount: Number(
+      txn.total_amount ??
+      txn.paid_amount ??
+      txn.amount ??
+      0
+    ),
+
+    discount: Number(
+      txn.discount_amount ?? 0
+    ),
+
+    lateFee: Number(
+      txn.late_fee ?? 0
+    ),
+
+    mode:
+      txn.payment_mode ||
+      "—",
+
+    status,
+
+    date: txn.created_at
+      ? new Date(txn.created_at)
+          .toISOString()
+          .split("T")[0]
+      : "",
+
+    created_at: txn.created_at,
+
+    receipt_no: txn.receipt_no,
+
+    payment_type:
+      txn.payment_type ||
+      "PAYMENT",
   };
 }
 
-function openAuditReport({ period, kpis, ledger }) {
-  const win = window.open("", "_blank");
-  if (!win) {
-    toast.error("Please allow pop-ups to view the report");
-    return;
-  }
-  const label = period === "week" ? "Weekly" : period === "month" ? "Monthly" : "Annual";
-  const today = TODAY.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
 
-  win.document.write(`
-    <html>
-      <head>
-        <title>Fees & Finance Audit Report — ${label}</title>
-        <style>
-          body { font-family: -apple-system, Segoe UI, sans-serif; padding: 40px; color: #1a1a1a; }
-          h1 { font-size: 20px; margin-bottom: 4px; }
-          h2 { font-size: 14px; margin-top: 28px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
-          .muted { color: #666; font-size: 13px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-          td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
-          .right { text-align: right; }
-        </style>
-      </head>
-      <body>
-        <h1>Fees & Finance Audit Report (${label})</h1>
-        <p class="muted">Generated ${today} · Academic Year ${ACADEMIC_YEAR}</p>
-        <h2>Summary</h2>
-        <table>
-          <tr><td>Today's Collection</td><td class="right">${inr(kpis.todayColl)}</td></tr>
-          <tr><td>Pending Amount</td><td class="right">${inr(kpis.totalDue)}</td></tr>
-          <tr><td>Overdue Students</td><td class="right">${kpis.overdueStudents}</td></tr>
-          <tr><td>Future Collection</td><td class="right">${inr(kpis.future)}</td></tr>
-          <tr><td>Total Discounts</td><td class="right">${inr(kpis.discountTotal)}</td></tr>
-          <tr><td>Late Fee Collected</td><td class="right">${inr(kpis.lateCollected)}</td></tr>
-        </table>
-        <h2>Recent Ledger Entries</h2>
-        <table>
-          <tr><th>Student</th><th>Class</th><th class="right">Amount</th><th>Status</th><th>Date</th></tr>
-          ${ledger
-            .slice(0, 20)
-            .map(
-              (e) =>
-                `<tr><td>${e.student_name || ""}</td><td>${e.class_name || ""}</td><td class="right">${inr(
-                  e.amount
-                )}</td><td>${e.status}</td><td>${e.date}</td></tr>`
-            )
-            .join("")}
-        </table>
-      </body>
-    </html>
-  `);
-  win.document.close();
+function isDateInsideRange(dateValue, from, to) {
+  if (!dateValue) return false;
+
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  const normalized = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
+
+  return normalized >= from && normalized <= to;
+}
+
+
+async function openAuditReport({
+  period,
+  kpis,
+  students = [],
+}) {
+  try {
+    const { from, to } =
+      getAuditDateRange(period);
+
+    /*
+     * IMPORTANT:
+     * Fetch actual payments here instead of using the page-level
+     * `ledger`, because the page ledger can be empty.
+     */
+    const response = await getPayments({
+      limit: 500,
+    });
+
+    const payments =
+      response?.data?.data ??
+      response?.data ??
+      [];
+
+    const auditPayments = payments
+      .map((txn) =>
+        normalizePaymentForAudit(
+          txn,
+          students
+        )
+      )
+      .filter((txn) =>
+        isDateInsideRange(
+          txn.created_at,
+          from,
+          to
+        )
+      );
+
+    /*
+     * Collection must only count successful payments.
+     */
+    const successfulPayments =
+      auditPayments.filter(
+        (txn) =>
+          txn.status === "Success"
+      );
+
+    const periodCollection =
+      successfulPayments.reduce(
+        (sum, txn) =>
+          sum + Number(txn.amount || 0),
+        0
+      );
+
+    const periodDiscount =
+      successfulPayments.reduce(
+        (sum, txn) =>
+          sum + Number(txn.discount || 0),
+        0
+      );
+
+    const periodLateFee =
+      successfulPayments.reduce(
+        (sum, txn) =>
+          sum + Number(txn.lateFee || 0),
+        0
+      );
+
+    /*
+     * Keep current outstanding/future position from the dashboard.
+     * These are current financial-position values rather than
+     * historical payment-period values.
+     */
+    const auditKpis = {
+      collection: periodCollection,
+
+      totalDue:
+        Number(kpis?.totalDue || 0),
+
+      overdueStudents:
+        Number(kpis?.overdueStudents || 0),
+
+      future:
+        Number(kpis?.future || 0),
+
+      discountTotal:
+        periodDiscount,
+
+      lateCollected:
+        periodLateFee,
+    };
+
+    const label =
+      period === "week"
+        ? "Weekly"
+        : period === "month"
+        ? "Monthly"
+        : "Annual";
+
+    const fromLabel =
+      from.toLocaleDateString(
+        "en-IN",
+        {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }
+      );
+
+    const toLabel =
+      to.toLocaleDateString(
+        "en-IN",
+        {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }
+      );
+
+    const today =
+      new Date().toLocaleDateString(
+        "en-IN",
+        {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        }
+      );
+
+    const win =
+      window.open("", "_blank");
+
+    if (!win) {
+      toast.error(
+        "Please allow pop-ups to view the report"
+      );
+      return;
+    }
+
+    /*
+     * Sort newest first.
+     */
+    const sortedLedger =
+      [...auditPayments].sort(
+        (a, b) =>
+          new Date(b.created_at || 0) -
+          new Date(a.created_at || 0)
+      );
+
+    win.document.write(`
+      <html>
+        <head>
+          <title>
+            Fees & Finance Audit Report — ${label}
+          </title>
+
+          <style>
+            * {
+              box-sizing: border-box;
+            }
+
+            body {
+              font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+
+              padding: 40px;
+              color: #111827;
+              background: #ffffff;
+            }
+
+            h1 {
+              font-size: 22px;
+              margin: 0 0 6px;
+              color: #0f172a;
+            }
+
+            h2 {
+              font-size: 15px;
+              margin-top: 30px;
+              margin-bottom: 0;
+              border-bottom: 1px solid #d1d5db;
+              padding-bottom: 8px;
+              color: #111827;
+            }
+
+            .muted {
+              color: #64748b;
+              font-size: 13px;
+            }
+
+            .period {
+              margin-top: 8px;
+              padding: 8px 12px;
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 6px;
+              font-size: 13px;
+            }
+
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 10px;
+              font-size: 13px;
+            }
+
+            td,
+            th {
+              text-align: left;
+              padding: 9px 10px;
+              border-bottom: 1px solid #e5e7eb;
+            }
+
+            th {
+              font-weight: 600;
+              color: #111827;
+              background: #f8fafc;
+            }
+
+            .right {
+              text-align: right;
+            }
+
+            .center {
+              text-align: center;
+            }
+
+            .success {
+              color: #15803d;
+              font-weight: 600;
+            }
+
+            .pending {
+              color: #b45309;
+              font-weight: 600;
+            }
+
+            .empty {
+              text-align: center;
+              padding: 30px;
+              color: #64748b;
+            }
+
+            .footer {
+              margin-top: 35px;
+              font-size: 11px;
+              color: #94a3b8;
+            }
+
+            @media print {
+              body {
+                padding: 20px;
+              }
+            }
+          </style>
+        </head>
+
+        <body>
+
+          <h1>
+            Fees & Finance Audit Report (${label})
+          </h1>
+
+          <div class="muted">
+            Generated ${today}
+            · Academic Year ${ACADEMIC_YEAR}
+          </div>
+
+          <div class="period">
+            <strong>Audit Period:</strong>
+            ${fromLabel} — ${toLabel}
+          </div>
+
+          <h2>Summary</h2>
+
+          <table>
+            <tr>
+              <td>${label} Collection</td>
+              <td class="right">
+                ${inr(auditKpis.collection)}
+              </td>
+            </tr>
+
+            <tr>
+              <td>Pending Amount</td>
+              <td class="right">
+                ${inr(auditKpis.totalDue)}
+              </td>
+            </tr>
+
+            <tr>
+              <td>Overdue Students</td>
+              <td class="right">
+                ${auditKpis.overdueStudents}
+              </td>
+            </tr>
+
+            <tr>
+              <td>Future Collection</td>
+              <td class="right">
+                ${inr(auditKpis.future)}
+              </td>
+            </tr>
+
+            <tr>
+              <td>Total Discounts</td>
+              <td class="right">
+                ${inr(auditKpis.discountTotal)}
+              </td>
+            </tr>
+
+            <tr>
+              <td>Late Fee Collected</td>
+              <td class="right">
+                ${inr(auditKpis.lateCollected)}
+              </td>
+            </tr>
+          </table>
+
+          <h2>
+            ${label} Ledger Entries
+          </h2>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Class</th>
+                <th>Section</th>
+                <th class="right">Amount</th>
+                <th>Mode</th>
+                <th>Status</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+              ${
+                sortedLedger.length
+                  ? sortedLedger
+                      .slice(0, 100)
+                      .map(
+                        (e) => `
+                          <tr>
+                            <td>
+                              ${e.student_name || "—"}
+                            </td>
+
+                            <td>
+                              ${e.class_name || "—"}
+                            </td>
+
+                            <td>
+                              ${e.section || "—"}
+                            </td>
+
+                            <td class="right">
+                              ${inr(e.amount)}
+                            </td>
+
+                            <td>
+                              ${e.mode || "—"}
+                            </td>
+
+                            <td class="${
+                              e.status === "Success"
+                                ? "success"
+                                : "pending"
+                            }">
+                              ${e.status || "—"}
+                            </td>
+
+                            <td>
+                              ${e.date || "—"}
+                            </td>
+                          </tr>
+                        `
+                      )
+                      .join("")
+                  : `
+                    <tr>
+                      <td
+                        colspan="7"
+                        class="empty"
+                      >
+                        No ledger entries found
+                        for this audit period.
+                      </td>
+                    </tr>
+                  `
+              }
+
+            </tbody>
+          </table>
+
+          <div class="footer">
+            Fees & Finance · Edureon ERP
+          </div>
+
+        </body>
+      </html>
+    `);
+
+    win.document.close();
+
+  } catch (err) {
+    console.error(
+      "Audit report error:",
+      err
+    );
+
+    toast.error(
+      getErrorMessage(
+        err,
+        "Failed to generate audit report"
+      )
+    );
+  }
 }
 
 /* ================================================================== */
@@ -9093,6 +13626,7 @@ const [loadingDashboard, setLoadingDashboard] = useState(false);
       setComponents(list.map(componentFromApi));
     } catch (err) {
       console.error(err);
+      toast.error(getErrorMessage(err, "Failed to load fee components"));
     } finally {
       setLoadingComponents(false);
     }
@@ -9139,10 +13673,7 @@ const fetchDashboard = async () => {
   } catch (err) {
     console.error("Failed to load payment dashboard:", err);
 
-    toast.error(
-      err?.response?.data?.detail ||
-      "Failed to load finance dashboard"
-    );
+    toast.error(getErrorMessage(err, "Failed to load finance dashboard"));
 
     setDashboardData({
       summary: {
@@ -9172,7 +13703,8 @@ const fetchDashboard = async () => {
       }
       await fetchFeeComponents();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Failed to save component");
+      toast.error(getErrorMessage(err, "Failed to save component"));
+      throw err;
     }
   };
 
@@ -9182,7 +13714,7 @@ const fetchDashboard = async () => {
       toast.success("Deleted");
       await fetchFeeComponents();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Delete failed");
+      toast.error(getErrorMessage(err, "Delete failed"));
     }
   };
 
@@ -9192,7 +13724,7 @@ const fetchDashboard = async () => {
       toast.success("Archived");
       await fetchFeeComponents();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Archive failed");
+      toast.error(getErrorMessage(err, "Archive failed"));
     }
   };
 
@@ -9202,7 +13734,7 @@ const fetchDashboard = async () => {
       toast.success("Activated");
       await fetchFeeComponents();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Activation failed");
+      toast.error(getErrorMessage(err, "Activation failed"));
     }
   };
 
@@ -9212,7 +13744,7 @@ const fetchDashboard = async () => {
       toast.success("Cloned");
       await fetchFeeComponents();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Clone failed");
+      toast.error(getErrorMessage(err, "Clone failed"));
     }
   };
 
@@ -9231,7 +13763,7 @@ const fetchDashboard = async () => {
       setStructures(list.map(structureFromApi));
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.detail || "Failed to load fee structures");
+      toast.error(getErrorMessage(err, "Failed to load fee structures"));
     } finally {
       setLoadingStructures(false);
     }
@@ -9249,7 +13781,8 @@ const fetchDashboard = async () => {
       }
       await fetchFeeStructures();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Save failed");
+      toast.error(getErrorMessage(err, "Save failed"));
+      throw err;
     }
   };
 
@@ -9259,7 +13792,7 @@ const fetchDashboard = async () => {
       toast.success("Deleted");
       await fetchFeeStructures();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Delete failed");
+      toast.error(getErrorMessage(err, "Delete failed"));
     }
   };
 
@@ -9269,7 +13802,7 @@ const fetchDashboard = async () => {
       toast.success("Archived");
       await fetchFeeStructures();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Archive failed");
+      toast.error(getErrorMessage(err, "Archive failed"));
     }
   };
 
@@ -9279,7 +13812,7 @@ const fetchDashboard = async () => {
       toast.success("Activated");
       await fetchFeeStructures();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Activation failed");
+      toast.error(getErrorMessage(err, "Activation failed"));
     }
   };
 
@@ -9289,7 +13822,7 @@ const fetchDashboard = async () => {
       toast.success("Structure cloned");
       await fetchFeeStructures();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Clone failed");
+      toast.error(getErrorMessage(err, "Clone failed"));
     }
   };
 
@@ -9306,7 +13839,7 @@ const fetchDashboard = async () => {
     setStructOpen(true);
   } catch (err) {
     console.error(err);
-    toast.error("Failed to load fee structure");
+    toast.error(getErrorMessage(err, "Failed to load fee structure"));
   } finally {
     setLoadingStructures(false);
   }
@@ -9325,7 +13858,7 @@ const fetchDashboard = async () => {
     setStudents(list);
 
   } catch (e) {
-    toast.error("Failed to load students");
+    toast.error(getErrorMessage(e, "Failed to load students"));
   } finally {
     setLoadingStudents(false);
   }
@@ -9381,7 +13914,7 @@ setAssignments(list);
 
   } catch (e) {
 
-    toast.error("Failed to load assignments");
+    toast.error(getErrorMessage(e, "Failed to load assignments"));
 
   } finally {
 
@@ -9394,22 +13927,25 @@ setAssignments(list);
   /*  Fee Discounts — API integration                                  */
   /* ---------------------------------------------------------------- */
 
-  const fetchFeeDiscounts = async () => {
-    setLoadingDiscounts(true);
+const fetchFeeDiscounts = async () => {
+  setLoadingDiscounts(true);
 
-    try {
-      const res = await getFeeDiscounts();
+  try {
+    const res = await getFeeDiscounts();
 
-      const list = extractList(res);
+    const list = extractList(res);
 
-      setDiscounts(list.map(discountFromApi));
-    } catch (err) {
-      console.error(err);
-      toast.error(err?.response?.data?.detail || "Failed to load discounts");
-    } finally {
-      setLoadingDiscounts(false);
-    }
-  };
+    console.log("Discount API response:", res);
+    console.log("Discount list:", list);
+
+    setDiscounts(list.map(discountFromApi));
+  } catch (err) {
+    console.error(err);
+    toast.error(getErrorMessage(err, "Failed to load discounts"));
+  } finally {
+    setLoadingDiscounts(false);
+  }
+};
 
   const saveDiscount = async (formValues, editing) => {
     try {
@@ -9423,7 +13959,8 @@ setAssignments(list);
       }
       await fetchFeeDiscounts();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Failed to save discount");
+      toast.error(getErrorMessage(err, "Failed to save discount"));
+      throw err;
     }
   };
 
@@ -9433,7 +13970,7 @@ setAssignments(list);
       toast.success("Removed");
       await fetchFeeDiscounts();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Delete failed");
+      toast.error(getErrorMessage(err, "Delete failed"));
     }
   };
 
@@ -9443,7 +13980,7 @@ setAssignments(list);
       toast.success("Archived");
       await fetchFeeDiscounts();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Archive failed");
+      toast.error(getErrorMessage(err, "Archive failed"));
     }
   };
 
@@ -9453,12 +13990,16 @@ setAssignments(list);
       toast.success("Activated");
       await fetchFeeDiscounts();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Activation failed");
+      toast.error(getErrorMessage(err, "Activation failed"));
     }
   };
 
   /* ---------------------------------------------------------------- */
   /*  Student Discounts — API integration                              */
+  /*  NOTE: this is where the backend's dynamic, student-specific rules */
+  /*  (sibling eligibility, active-employee check, full-year deadline) */
+  /*  actually get enforced — so this is the most likely place to see  */
+  /*  a structured {message, student_uuid, ...} error come back.       */
   /* ---------------------------------------------------------------- */
 
   const fetchStudentDiscounts = async () => {
@@ -9469,7 +14010,7 @@ setAssignments(list);
       setStudentDiscounts(groupStudentDiscountsFromApi(list));
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.detail || "Failed to load student discounts");
+      toast.error(getErrorMessage(err, "Failed to load student discounts"));
     } finally {
       setLoadingStudentDiscounts(false);
     }
@@ -9483,7 +14024,8 @@ setAssignments(list);
       toast.success("Discounts assigned");
       await fetchStudentDiscounts();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Failed to assign discounts");
+      toast.error(getErrorMessage(err, "Failed to assign discounts"));
+      throw err;
     }
   };
 
@@ -9494,7 +14036,8 @@ setAssignments(list);
       toast.success("Discounts updated");
       await fetchStudentDiscounts();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Failed to update discounts");
+      toast.error(getErrorMessage(err, "Failed to update discounts"));
+      throw err;
     }
   };
 
@@ -9505,7 +14048,7 @@ setAssignments(list);
       toast.success("Removed");
       await fetchStudentDiscounts();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Failed to remove discount");
+      toast.error(getErrorMessage(err, "Failed to remove discount"));
     }
   };
 useEffect(() => {
@@ -9608,7 +14151,7 @@ const addAssignment = async (data) => {
     fetchAssignments();
   } catch (e) {
     console.error(e.response?.data);
-    toast.error(e?.response?.data?.detail || "Failed");
+    toast.error(getErrorMessage(e, "Failed to create assignment"));
   }
 };
 
@@ -9627,23 +14170,25 @@ const removeAssignment = async (
     toast.success("Deleted");
     fetchAssignments();
   } catch (e) {
-    toast.error("Delete Failed");
+    toast.error(getErrorMessage(e, "Delete Failed"));
   }
 };
 
 const archiveAssignment = async (uuid) => {
-
+  try {
     await archiveFeeAssignment(uuid);
-
     fetchAssignments();
-
+  } catch (e) {
+    toast.error(getErrorMessage(e, "Archive failed"));
+  }
 };
 const activateAssignment = async (uuid) => {
-
+  try {
     await activateFeeAssignment(uuid);
-
     fetchAssignments();
-
+  } catch (e) {
+    toast.error(getErrorMessage(e, "Activation failed"));
+  }
 };
 
   const cancelLedgerEntry = (id) => {
@@ -9674,6 +14219,33 @@ const activateAssignment = async (uuid) => {
     toast.success(`${rows.length} invoices generated`);
   };
 
+  const handleExportLedger = async () => {
+    try {
+      const response = await getPayments({ limit: 500 });
+      const data = response?.data?.data ?? response?.data ?? [];
+
+      const rows = data.map((txn) => ({
+        receipt_no: txn.receipt_no || txn.transaction_uuid,
+        student_name: txn.student_name || "—",
+        class_name:
+          students.find((s) => s.student_uuid === txn.student_uuid)?.class_name || "—",
+        amount: Number(txn.total_amount ?? txn.paid_amount ?? 0),
+        mode: txn.payment_mode || "—",
+        status:
+          String(txn.transaction_status || "").toUpperCase() === "SUCCESS"
+            ? "Success"
+            : txn.transaction_status || "Pending",
+        date: txn.created_at ? new Date(txn.created_at).toLocaleDateString("en-GB") : "",
+      }));
+
+      exportRowsCsv(rows, "fee-ledger.csv");
+    } catch (err) {
+      console.error(err);
+      toast.error(getErrorMessage(err, "Failed to export ledger"));
+    }
+  };
+
+  
   return (
     <PageContainer>
       {/* Header actions mirror the .tsx page exactly: Export → Audit dropdown
@@ -9684,7 +14256,7 @@ const activateAssignment = async (uuid) => {
         description="Structures, discounts, assignment, collection, dues, ledger and reports — all in one workspace."
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => exportRowsCsv(ledger, "fee-ledger.csv")}>
+            <Button variant="outline" size="sm" onClick={handleExportLedger}>
               <Download className="h-4 w-4" />
               Export
             </Button>
@@ -9698,9 +14270,41 @@ const activateAssignment = async (uuid) => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => openAuditReport({ period: "week", kpis, ledger })}>Weekly</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openAuditReport({ period: "month", kpis, ledger })}>Monthly</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openAuditReport({ period: "year", kpis, ledger })}>Annual</DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() =>
+                  openAuditReport({
+                    period: "week",
+                    kpis,
+                    students,
+                  })
+                }
+              >
+                Weekly
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                onClick={() =>
+                  openAuditReport({
+                    period: "month",
+                    kpis,
+                    students,
+                  })
+                }
+              >
+                Monthly
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                onClick={() =>
+                  openAuditReport({
+                    period: "year",
+                    kpis,
+                    students,
+                  })
+                }
+              >
+                Annual
+              </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -9839,7 +14443,7 @@ const activateAssignment = async (uuid) => {
         <TabsContent value="reports">
           <ReportsPanel ledger={ledger} students={students} structures={enrichedStructures} paidMonths={paidMonths} />
         </TabsContent>
-\
+
       </Tabs>
 
       <FeeStructureDialog
@@ -9950,8 +14554,32 @@ function StructuresPanel({
   onRemoveComponent,
 }) {
   const [sub, setSub] = useState("library");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewStructure, setPreviewStructure] = useState(null);
+
+  const openStructurePreview = () => {
+    if (!structures?.length) {
+      toast.info("No fee structure available to preview");
+      return;
+    }
+
+    setPreviewStructure(structures[0]);
+    setPreviewOpen(true);
+  };
+
+  const selectPreviewStructure = (uuid) => {
+    const selected = structures.find(
+      (s) => s.fee_structure_uuid === uuid
+    );
+
+    if (selected) {
+      setPreviewStructure(selected);
+    }
+  };
+
   return (
-    <Tabs value={sub} onValueChange={setSub} className="space-y-3">
+    <>
+      <Tabs value={sub} onValueChange={setSub} className="space-y-3">
       <TabsList>
         <TabsTrigger value="library">Components Library</TabsTrigger>
         <TabsTrigger value="builder">Structure Builder</TabsTrigger>
@@ -9977,7 +14605,15 @@ function StructuresPanel({
               <CardDescription>Combine components into class-level structures.</CardDescription>
             </div>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => toast.success("Preview generated")}><Eye className="h-4 w-4" />Preview</Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={openStructurePreview}
+                disabled={!structures?.length}
+              >
+                <Eye className="h-4 w-4" />
+                Preview
+              </Button>
               <Button size="sm" className="gradient-primary border-0" onClick={onNewStructure}><Plus className="h-4 w-4" />New Structure</Button>
             </div>
           </CardHeader>
@@ -10057,7 +14693,274 @@ function StructuresPanel({
           </CardContent>
         </Card>
       </TabsContent>
-    </Tabs>
+      </Tabs>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Eye className="h-5 w-5" />
+            Fee Structure Preview
+          </DialogTitle>
+          <DialogDescription>
+            Review the complete fee structure before assigning it to students.
+          </DialogDescription>
+        </DialogHeader>
+
+        {previewStructure ? (
+          <div className="space-y-5">
+            {structures.length > 1 && (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">
+                  Select Structure
+                </Label>
+                <Select
+                  value={previewStructure.fee_structure_uuid}
+                  onValueChange={selectPreviewStructure}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a fee structure" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {structures.map((s) => (
+                      <SelectItem
+                        key={s.fee_structure_uuid}
+                        value={s.fee_structure_uuid}
+                      >
+                        {s.structure_name} — {s.class_name || "All Classes"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="rounded-xl border bg-muted/20 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold">
+                    {previewStructure.structure_name || "Fee Structure"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {previewStructure.class_name || "All Classes"}
+                    {previewStructure.course_board
+                      ? ` · ${previewStructure.course_board}`
+                      : ""}
+                  </p>
+                </div>
+
+                <Badge
+                  variant={
+                    previewStructure.is_active ? "default" : "secondary"
+                  }
+                >
+                  {previewStructure.is_active ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">
+                  Monthly
+                </div>
+                <div className="text-lg font-semibold mt-1">
+                  {inr(monthlyTotal(previewStructure))}
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">
+                  Annual
+                </div>
+                <div className="text-lg font-semibold mt-1">
+                  {inr(annualTotal(previewStructure))}
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">
+                  Due Day
+                </div>
+                <div className="text-lg font-semibold mt-1">
+                  {previewStructure.due_day_of_month ?? "—"}
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">
+                  Collection
+                </div>
+                <div className="text-lg font-semibold mt-1">
+                  {String(
+                    previewStructure.collection_type || "MONTHLY"
+                  ).replace(/_/g, " ")}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border overflow-hidden">
+              <div className="px-4 py-3 border-b bg-muted/20">
+                <h4 className="font-semibold">Fee Components</h4>
+              </div>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Component</TableHead>
+                    <TableHead>Frequency</TableHead>
+                    <TableHead className="text-right">
+                      Amount
+                    </TableHead>
+                    <TableHead className="text-right">
+                      Annual
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+
+                <TableBody>
+                  {(previewStructure.components || []).map((component, index) => {
+                    const amount = Number(component.amount || 0);
+                    const frequency = String(
+                      component.frequency ||
+                        component.collection_type ||
+                        "MONTHLY"
+                    ).toUpperCase();
+
+                    let annualAmount = amount;
+
+                    if (frequency === "MONTHLY") {
+                      annualAmount = amount * 12;
+                    } else if (frequency === "QUARTERLY") {
+                      annualAmount = amount * 4;
+                    } else if (frequency === "HALF_YEARLY") {
+                      annualAmount = amount * 2;
+                    }
+
+                    return (
+                      <TableRow
+                        key={
+                          component.component_uuid ||
+                          `${component.component_name || "component"}-${index}`
+                        }
+                      >
+                        <TableCell className="font-medium">
+                          {component.component_name ||
+                            component.name ||
+                            "Fee Component"}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {frequency.replace(/_/g, " ")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {inr(amount)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {inr(annualAmount)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+
+                  {(!previewStructure.components ||
+                    previewStructure.components.length === 0) && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={4}
+                        className="text-center text-sm text-muted-foreground py-8"
+                      >
+                        No fee components configured.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={2} className="font-semibold">
+                      Total
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {inr(monthlyTotal(previewStructure))}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {inr(annualTotal(previewStructure))}
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="rounded-lg border p-4">
+                <div className="text-xs text-muted-foreground">
+                  Late Fee
+                </div>
+                <div className="font-medium mt-1">
+                  {inr(previewStructure.late_fee_per_month)}
+                  {" / month"}
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <div className="text-xs text-muted-foreground">
+                  Grace Period
+                </div>
+                <div className="font-medium mt-1">
+                  {previewStructure.grace_days_after_due ?? 0} days
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <div className="text-xs text-muted-foreground">
+                  Academic Year
+                </div>
+                <div className="font-medium mt-1">
+                  {previewStructure.academic_year || ACADEMIC_YEAR}
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <div className="text-xs text-muted-foreground">
+                  Students Assigned
+                </div>
+                <div className="font-medium mt-1">
+                  {students.filter(
+                    (st) =>
+                      st.class_name === previewStructure.class_name
+                  ).length}
+                </div>
+              </div>
+            </div>
+
+            {previewStructure.description && (
+              <div className="rounded-lg border p-4">
+                <div className="text-xs text-muted-foreground">
+                  Description
+                </div>
+                <div className="text-sm mt-1 whitespace-pre-wrap">
+                  {previewStructure.description}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            No fee structure selected.
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setPreviewOpen(false)}
+          >
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -10094,7 +14997,13 @@ function ComponentsLibrary({ components, loading, onSave, onClone, onArchive, on
                 <TableCell className="text-sm font-medium">{c.name}</TableCell>
                 <TableCell><Badge variant="outline" className="text-xs">{c.category}</Badge></TableCell>
                 <TableCell className="text-right font-semibold">{inr(c.default_amount)}</TableCell>
-                <TableCell className="text-xs">{c.recurring ? "Recurring" : "One-time"}</TableCell>
+                <TableCell className="text-xs">
+  {c.type === "RECURRING"
+    ? "Recurring"
+    : c.type === "ANNUAL"
+      ? "Annual"
+      : "One Time"}
+</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {c.mandatory ? "Mandatory · " : "Optional · "}{c.new_admission_only ? "New Adm." : "All"}{c.locked_after_opt_in ? " · Locked after opt-in" : ""}
                 </TableCell>
@@ -10132,7 +15041,8 @@ function ComponentDrawer({ open, onOpenChange, editing, onSave }) {
     name: "",
     category: "TUITION",
     default_amount: 0,
-    recurring: true,
+    // recurring: true,
+    type: "RECURRING",
     mandatory: true,
     new_admission_only: false,
     locked_after_opt_in: false,
@@ -10167,6 +15077,8 @@ function ComponentDrawer({ open, onOpenChange, editing, onSave }) {
     try {
       await onSave(f, editing);
       onOpenChange(false);
+    } catch (err) {
+      console.error(err);
     } finally {
       setSaving(false);
     }
@@ -10207,7 +15119,36 @@ function ComponentDrawer({ open, onOpenChange, editing, onSave }) {
           </Row>
 
           <Row>
-            <SW label="Recurring" checked={f.recurring} onChange={(v) => setF({ ...f, recurring: v })} />
+            {/* <SW label="Recurring" checked={f.recurring} onChange={(v) => setF({ ...f, recurring: v })} /> */}
+            <FF label="Type">
+  <Select
+    value={f.type}
+    onValueChange={(v) =>
+      setF((prev) => ({
+        ...prev,
+        type: v,
+      }))
+    }
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="Select type" />
+    </SelectTrigger>
+
+    <SelectContent>
+      <SelectItem value="RECURRING">
+        Recurring
+      </SelectItem>
+
+      <SelectItem value="ANNUAL">
+        Annual
+      </SelectItem>
+
+      <SelectItem value="ONE_TIME">
+        One Time
+      </SelectItem>
+    </SelectContent>
+  </Select>
+</FF>
             <SW label="Mandatory" checked={f.mandatory} onChange={(v) => setF({ ...f, mandatory: v })} />
           </Row>
 
@@ -10446,10 +15387,27 @@ const assignmentStudentRows = useMemo(() => {
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <Label className="text-sm font-semibold">Components</Label>
                 <div className="flex gap-2">
-                  <Select onValueChange={(v) => addComponentRow(v)}>
-                    <SelectTrigger className="h-8 w-52 text-xs"><SelectValue placeholder="Quick add from library..." /></SelectTrigger>
-                    <SelectContent>{components.filter((c) => c.status === "Active").map((c) => <SelectItem key={c.component_uuid} value={c.component_uuid}>{c.name} · {inr(c.default_amount)}</SelectItem>)}</SelectContent>
-                  </Select>
+<Select
+  value=""
+  onValueChange={(v) => addComponentRow(v)}
+>
+  <SelectTrigger className="h-8 w-52 text-xs">
+    <span>Add Component...</span>
+  </SelectTrigger>
+
+  <SelectContent>
+    {components
+      .filter((c) => c.status === "Active")
+      .map((c) => (
+        <SelectItem
+          key={c.component_uuid}
+          value={c.component_uuid}
+        >
+          {c.name} · {inr(c.default_amount)}
+        </SelectItem>
+      ))}
+  </SelectContent>
+</Select>
                 </div>
               </div>
               {adhoc.length === 0 && <div className="text-xs text-muted-foreground py-3 text-center">No components added. Pick from the library above.</div>}
@@ -10705,7 +15663,7 @@ function CollectionPanel({ students, structures, discounts, settings, paidMonths
       .catch((err) => {
         console.error(err);
         if (!cancelled) {
-          toast.error(err?.response?.data?.detail || "Failed to load dues");
+          toast.error(getErrorMessage(err, "Failed to load dues"));
           setDues({ lines: [], totalDue: 0, totalLate: 0, structure: undefined, assignmentUuid: undefined });
         }
       })
@@ -10840,7 +15798,7 @@ const entry = {
               finishSuccess(data, "UPI");
             } catch (err) {
               console.error(err);
-              toast.error(err?.response?.data?.detail || "Payment verification failed");
+              toast.error(getErrorMessage(err, "Payment verification failed"));
             } finally {
               setSubmitting(false);
             }
@@ -10858,7 +15816,7 @@ const entry = {
         rzp.open();
       } catch (err) {
         console.error(err);
-        toast.error(err?.response?.data?.detail || "Could not start payment");
+        toast.error(getErrorMessage(err, "Could not start payment"));
         setSubmitting(false);
       }
       return;
@@ -10884,7 +15842,7 @@ const entry = {
       finishSuccess(data, selectedMode);
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.detail || "Payment failed");
+      toast.error(getErrorMessage(err, "Payment failed"));
     } finally {
       setSubmitting(false);
     }
@@ -11200,15 +16158,559 @@ function ReceiptDialog({ open, onOpenChange, entry, settings }) {
 
 
 
+// function DuesPanel({ students, onGenInvoices }) {
+//   const [cls, setCls] = useState("");
+//   const [sec, setSec] = useState("");
+//   const [q, setQ] = useState("");
+//   const [only, setOnly] = useState("overdue");
+//   const [picked, setPicked] = useState(new Set());
+//   const [selectedMonth, setSelectedMonth] = useState(() => {
+//     const now = new Date();
+//     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+//   });
+
+//   const [dueRows, setDueRows] = useState([]);
+//   const [loadingDues, setLoadingDues] = useState(false);
+//   const [allMonths, setAllMonths] = useState([]);
+//   const [componentData, setComponentData] = useState([]);
+//   const [summary, setSummary] = useState(null);
+// const [detailsOpen, setDetailsOpen] = useState(false);
+// const [selectedDueStudent, setSelectedDueStudent] = useState(null);
+// const fetchDues = () => {
+//   setLoadingDues(true);
+//   getStudentDues({ academic_year: ACADEMIC_YEAR })
+//     .then((res) => {
+//       const body = res?.data ?? res ?? {};
+//       const componentRows = Array.isArray(body.data) ? body.data : [];
+
+//       setComponentData(componentRows);
+//       setSummary(body.summary || null);
+
+//       // normalize fee_month to "YYYY-MM" so it matches selectedMonth
+//       const months = [
+//         ...new Set(
+//           componentRows
+//             .map((item) => (item.fee_month ? item.fee_month.slice(0, 7) : null))
+//             .filter(Boolean)
+//         ),
+//       ].sort();
+//       setAllMonths(months);
+
+
+//         const byStudent = new Map();
+//         componentRows.forEach((row) => {
+//           const key = row.student_uuid;
+//           if (!byStudent.has(key)) {
+//             byStudent.set(key, {
+//               student_uuid: row.student_uuid,
+//               student_no: row.student_no,
+//               student_name: row.student_name,
+//               class_uuid: row.class_uuid,
+//               class_name: row.class_name,
+//               structure_name: row.structure_name,
+//               academic_year: row.academic_year,
+//               components: [],
+//               // Year totals - take from first row of this student
+//               year_total_amount: Number(row.year_total_amount || 0),
+//               year_total_paid: Number(row.year_total_paid || 0),
+//               year_total_discount: Number(row.year_total_discount || 0),
+//               year_total_late_fee: Number(row.year_total_late_fee || 0),
+//               year_balance_amount: Number(row.year_balance_amount || 0),
+//               // Month totals (sum of all components for this student)
+//               total_amount: 0,
+//               total_discount: 0,
+//               total_late_fee: 0,
+//               total_paid: 0,
+//               total_balance: 0,
+//               status: "PAID",
+//             });
+//           }
+//           const student = byStudent.get(key);
+//           student.components.push({
+//             due_uuid: row.due_uuid,
+//             fee_month: row.fee_month,
+//             component_name: row.component_name,
+//             amount: Number(row.amount || 0),
+//             discount: Number(row.discount || 0),
+//             late_fee: Number(row.late_fee || 0),
+//             paid_amount: Number(row.paid_amount || 0),
+//             balance_amount: Number(row.balance_amount || 0),
+//             status: row.status || "PENDING",
+//           });
+          
+//           // Update month totals (sum of all components)
+//           student.total_amount += Number(row.amount || 0);
+//           student.total_discount += Number(row.discount || 0);
+//           student.total_late_fee += Number(row.late_fee || 0);
+//           student.total_paid += Number(row.paid_amount || 0);
+//           student.total_balance += Number(row.balance_amount || 0);
+          
+//           // Determine overall status based on year balance
+//           const yearBalance = Number(row.year_balance_amount || 0);
+//           if (yearBalance > 0) {
+//             student.status = student.year_total_paid > 0 ? "PARTIAL" : "PENDING";
+//           } else {
+//             student.status = "PAID";
+//           }
+//         });
+        
+//         setDueRows(Array.from(byStudent.values()));
+//       })
+//       .catch((err) => {
+//         console.error(err);
+//         toast.error(getErrorMessage(err, "Failed to load dues"));
+//         setDueRows([]);
+//         setComponentData([]);
+//         setAllMonths([]);
+//         setSummary(null);
+//       })
+//       .finally(() => { setLoadingDues(false); });
+//   };
+
+//   useEffect(fetchDues, []);
+
+// // 2) filtering components for the selected month
+// const filteredComponents = useMemo(() => {
+//   if (!selectedMonth || selectedMonth === "all") return componentData;
+//   return componentData.filter(
+//     (item) => item.fee_month && item.fee_month.slice(0, 7) === selectedMonth
+//   );
+// }, [componentData, selectedMonth]);
+
+//   // Group filtered components by student with month data
+//   const filteredByMonth = useMemo(() => {
+//     const byStudent = new Map();
+//     filteredComponents.forEach((row) => {
+//       const key = row.student_uuid;
+//       if (!byStudent.has(key)) {
+//         byStudent.set(key, {
+//           student_uuid: row.student_uuid,
+//           student_no: row.student_no,
+//           student_name: row.student_name,
+//           class_uuid: row.class_uuid,
+//           class_name: row.class_name,
+//           structure_name: row.structure_name,
+//           fee_month: row.fee_month,
+//           components: [],
+//           // Month totals
+//           month_amount: 0,
+//           month_discount: 0,
+//           month_late_fee: 0,
+//           month_paid: 0,
+//           month_balance: 0,
+//           // Year totals from the row
+//           year_total_amount: Number(row.year_total_amount || 0),
+//           year_total_paid: Number(row.year_total_paid || 0),
+//           year_total_discount: Number(row.year_total_discount || 0),
+//           year_total_late_fee: Number(row.year_total_late_fee || 0),
+//           year_balance_amount: Number(row.year_balance_amount || 0),
+//           status: row.status || "PENDING",
+//         });
+//       }
+//       const student = byStudent.get(key);
+//       student.components.push({
+//         due_uuid: row.due_uuid,
+//         component_name: row.component_name,
+//         amount: Number(row.amount || 0),
+//         discount: Number(row.discount || 0),
+//         late_fee: Number(row.late_fee || 0),
+//         paid_amount: Number(row.paid_amount || 0),
+//         balance_amount: Number(row.balance_amount || 0),
+//         status: row.status || "PENDING",
+//       });
+      
+//       // Sum month totals
+//       student.month_amount += Number(row.amount || 0);
+//       student.month_discount += Number(row.discount || 0);
+//       student.month_late_fee += Number(row.late_fee || 0);
+//       student.month_paid += Number(row.paid_amount || 0);
+//       student.month_balance += Number(row.balance_amount || 0);
+//     });
+//     return Array.from(byStudent.values());
+//   }, [filteredComponents]);
+
+//   const classes = useMemo(() => Array.from(new Set(students.map((s) => s.class_name).filter(Boolean))).sort(), [students]);
+//   const sectionsFor = useMemo(
+//     () => Array.from(new Set(students.filter((s) => !cls || s.class_name === cls).map((s) => s.section_name).filter(Boolean))).sort(),
+//     [students, cls]
+//   );
+
+//   const rows = useMemo(() => {
+//     // Use filteredByMonth for month view, or dueRows for all
+//     const sourceData = selectedMonth && selectedMonth !== "all" ? filteredByMonth : dueRows;
+    
+//     return students
+//       .filter((s) => (!cls || s.class_name === cls) && (!sec || s.section_name === sec) && (!q || s.full_name?.toLowerCase().includes(q.toLowerCase()) || s.student_no?.toLowerCase().includes(q.toLowerCase())))
+//       .map((s) => {
+//         const due = sourceData.find(r => r.student_uuid === s.student_uuid);
+//         if (!due) return null;
+//         return {
+//           ...due,
+//           student_uuid: s.student_uuid,
+//           student_name: s.full_name,
+//           student_no: s.student_no,
+//           class_name: s.class_name,
+//           section_name: s.section_name,
+//         };
+//       })
+//       .filter(Boolean)
+//       .filter((r) => {
+//         if (only === "all") return true;
+//         const balance = (selectedMonth && selectedMonth !== "all") ? r.month_balance : r.year_balance_amount;
+//         return balance > 0;
+//       })
+//       .sort((a, b) => {
+//         const balA = (selectedMonth && selectedMonth !== "all") ? a.month_balance : a.year_balance_amount;
+//         const balB = (selectedMonth && selectedMonth !== "all") ? b.month_balance : b.year_balance_amount;
+//         return balB - balA;
+//       });
+//   }, [students, cls, sec, q, only, dueRows, filteredByMonth, selectedMonth]);
+
+//   const formatMonthLabel = (monthStr) => {
+//     if (!monthStr || monthStr === "all") return "All Months";
+//     try {
+//       const date = new Date(monthStr);
+//       return date.toLocaleString("default", { month: "short", year: "numeric" });
+//     } catch {
+//       return monthStr;
+//     }
+//   };
+
+//   const getStatusColor = (status) => {
+//     switch (status?.toUpperCase()) {
+//       case "PAID": return "bg-emerald-100 text-emerald-800 border-emerald-200";
+//       case "PARTIAL": return "bg-amber-100 text-amber-800 border-amber-200";
+//       case "PENDING": return "bg-red-100 text-red-800 border-red-200";
+//       default: return "bg-gray-100 text-gray-800 border-gray-200";
+//     }
+//   };
+
+//   const isMonthSelected = selectedMonth && selectedMonth !== "all";
+
+//   const remind = () => {
+//     if (picked.size === 0) { toast.error("Pick students first"); return; }
+//     toast.success(`Reminder queued for ${picked.size} students`);
+//     setPicked(new Set());
+//   };
+  
+//   const genInvoice = () => {
+//     if (picked.size === 0) { toast.error("Pick students first"); return; }
+//     onGenInvoices(
+//       rows
+//         .filter((r) => picked.has(r.student_uuid))
+//         .map((r) => ({
+//           student_uuid: r.student_uuid,
+//           student_name: r.student_name,
+//           class_name: r.class_name,
+//           totalDue: isMonthSelected ? r.month_balance : r.year_balance_amount,
+//           totalLate: isMonthSelected ? r.month_late_fee : r.year_total_late_fee,
+//         }))
+//     );
+//     setPicked(new Set());
+//   };
+
+//   return (
+//     <Card className="border-border/60">
+//       <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
+//         <div>
+//           <CardTitle className="font-display text-base">Student Dues</CardTitle>
+//           <CardDescription>
+//             Live balances from the fee-dues API with component-wise breakdown.
+//             {summary && (
+//               <span className="ml-2 text-xs text-muted-foreground">
+//                 · {summary.count} entries · Total Due: {inr(summary.total_due)}
+//               </span>
+//             )}
+//           </CardDescription>
+//         </div>
+//         <div className="flex gap-2 flex-wrap">
+//           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+//             <SelectTrigger className="w-40 h-9 border-primary/30 bg-primary/5">
+//               <CalendarRange className="h-4 w-4 mr-1 text-primary" />
+//               <SelectValue>
+//                 {selectedMonth ? formatMonthLabel(selectedMonth) : "All Months"}
+//               </SelectValue>
+//             </SelectTrigger>
+//             <SelectContent>
+//               <SelectItem value="all">All Months</SelectItem>
+//               {allMonths.map((month) => (
+//                 <SelectItem key={month} value={month}>
+//                   {formatMonthLabel(month)}
+//                 </SelectItem>
+//               ))}
+//             </SelectContent>
+//           </Select>
+
+//           <Select value={only} onValueChange={setOnly}>
+//             <SelectTrigger className="w-32 h-9">
+//               <SelectValue />
+//             </SelectTrigger>
+//             <SelectContent>
+//               <SelectItem value="overdue">Overdue only</SelectItem>
+//               <SelectItem value="all">All students</SelectItem>
+//             </SelectContent>
+//           </Select>
+          
+//           <Select value={cls} onValueChange={setCls}>
+//             <SelectTrigger className="w-24 h-9">
+//               <SelectValue placeholder="Class" />
+//             </SelectTrigger>
+//             <SelectContent>
+//               {classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+//             </SelectContent>
+//           </Select>
+          
+//           <Select value={sec} onValueChange={setSec}>
+//             <SelectTrigger className="w-24 h-9">
+//               <SelectValue placeholder="Section" />
+//             </SelectTrigger>
+//             <SelectContent>
+//               {sectionsFor.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+//             </SelectContent>
+//           </Select>
+          
+//           <Input 
+//             value={q} 
+//             onChange={(e) => setQ(e.target.value)} 
+//             placeholder="Search..." 
+//             className="h-9 w-40" 
+//           />
+          
+//           <Button size="sm" variant="outline" onClick={fetchDues}>
+//             <RefreshCcw className="h-4 w-4" />Refresh
+//           </Button>
+          
+//           <Button
+//             size="sm"
+//             variant="outline"
+//             onClick={() =>
+//               exportRowsCsv(
+//                 rows.map((r) => ({
+//                   student_name: r.student_name,
+//                   student_no: r.student_no,
+//                   class_name: r.class_name,
+//                   fee_month: isMonthSelected ? formatMonthLabel(selectedMonth) : "All Months",
+//                   // Month totals (only when month selected)
+//                   month_amount: isMonthSelected ? r.month_amount : "—",
+//                   month_discount: isMonthSelected ? r.month_discount : "—",
+//                   month_late_fee: isMonthSelected ? r.month_late_fee : "—",
+//                   month_paid: isMonthSelected ? r.month_paid : "—",
+//                   month_balance: isMonthSelected ? r.month_balance : "—",
+//                   // Year totals (always shown)
+//                   year_total_amount: r.year_total_amount || "—",
+//                   year_total_paid: r.year_total_paid || "—",
+//                   year_total_discount: r.year_total_discount || "—",
+//                   year_total_late_fee: r.year_total_late_fee || "—",
+//                   year_balance_amount: r.year_balance_amount || "—",
+//                   status: r.status,
+//                   components: r.components?.map(c => `${c.component_name}(${c.status})`).join("; ") || "",
+//                 })),
+//                 `dues-${isMonthSelected ? selectedMonth : "all"}.csv`
+//               )
+//             }
+//           >
+//             <Download className="h-4 w-4" />Export
+//           </Button>
+//         </div>
+//       </CardHeader>
+      
+//       {picked.size > 0 && (
+//         <div className="mx-4 mb-3 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+//           <Badge>{picked.size} selected</Badge>
+//           <Button size="sm" variant="outline" onClick={remind}>
+//             <Send className="h-4 w-4" />Send Reminders
+//           </Button>
+//           <Button size="sm" variant="outline" onClick={genInvoice}>
+//             <FileText className="h-4 w-4" />Generate Invoices
+//           </Button>
+//           <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())} className="ml-auto">
+//             <X className="h-4 w-4" />Clear
+//           </Button>
+//         </div>
+//       )}
+      
+//       <CardContent className="p-0 overflow-x-auto">
+//         <Table>
+//           <TableHeader>
+//             <TableRow className="bg-muted/30">
+//               <TableHead className="w-8"></TableHead>
+//               <TableHead>Student</TableHead>
+//               <TableHead>Class</TableHead>
+//               <TableHead>Structure</TableHead>
+//               <TableHead>Components & Status</TableHead>
+              
+//               {/* Month columns - shown when a month is selected */}
+//               {isMonthSelected && (
+//                 <>
+//                   <TableHead className="text-right text-xs">Month Amount</TableHead>
+//                   <TableHead className="text-right text-xs">Month Discount</TableHead>
+//                   <TableHead className="text-right text-xs">Month Late Fee</TableHead>
+//                   <TableHead className="text-right text-xs">Month Paid</TableHead>
+//                   <TableHead className="text-right text-xs">Month Balance</TableHead>
+//                 </>
+//               )}
+              
+//               {/* Year columns - always shown */}
+//               <TableHead className="text-right text-xs">Year Amount</TableHead>
+//               <TableHead className="text-right text-xs">Year Paid</TableHead>
+//               <TableHead className="text-right text-xs">Year Discount</TableHead>
+//               <TableHead className="text-right text-xs">Year Late Fee</TableHead>
+//               <TableHead className="text-right text-xs font-bold text-primary">Year Balance</TableHead>
+//               <TableHead>Status</TableHead>
+//               <TableHead className="w-10"></TableHead>
+//             </TableRow>
+//           </TableHeader>
+//           <TableBody>
+//             {loadingDues && (
+//               <TableRow>
+//                 <TableCell colSpan={16} className="text-center text-sm text-muted-foreground py-8">
+//                   <div className="flex items-center justify-center gap-2">
+//                     <RefreshCcw className="h-4 w-4 animate-spin" />
+//                     Loading dues...
+//                   </div>
+//                 </TableCell>
+//               </TableRow>
+//             )}
+            
+//             {!loadingDues && rows.length === 0 && (
+//               <TableRow>
+//                 <TableCell colSpan={16} className="text-center text-sm text-muted-foreground py-8">
+//                   {isMonthSelected 
+//                     ? `No dues found for ${formatMonthLabel(selectedMonth)}` 
+//                     : "No dues found"}
+//                 </TableCell>
+//               </TableRow>
+//             )}
+            
+//             {!loadingDues && rows.slice(0, 300).map((r) => (
+//               <TableRow key={r.student_uuid} className="hover:bg-muted/30">
+//                 <TableCell>
+//                   <Checkbox
+//                     checked={picked.has(r.student_uuid)}
+//                     onCheckedChange={(v) => { 
+//                       const n = new Set(picked); 
+//                       if (v) n.add(r.student_uuid); 
+//                       else n.delete(r.student_uuid); 
+//                       setPicked(n); 
+//                     }}
+//                   />
+//                 </TableCell>
+//                 <TableCell>
+//                   <div className="text-sm font-medium">{r.student_name}</div>
+//                   <div className="text-xs text-muted-foreground">{r.student_no}</div>
+//                 </TableCell>
+//                 <TableCell className="text-xs">{r.class_name ?? "—"}</TableCell>
+//                 <TableCell className="text-xs">{r.structure_name ?? "—"}</TableCell>
+//                 <TableCell>
+//                   <div className="flex flex-col gap-0.5">
+//                     {r.components?.map((comp, idx) => (
+//                       <div key={idx} className="flex items-center gap-1.5 text-xs">
+//                         <span className="truncate max-w-[80px]">{comp.component_name}</span>
+//                         <Badge 
+//                           className={`text-[9px] px-1.5 py-0 h-4 ${getStatusColor(comp.status)}`}
+//                         >
+//                           {comp.status}
+//                         </Badge>
+//                         <span className="text-muted-foreground text-[10px]">
+//                           {inr(comp.balance_amount)}
+//                         </span>
+//                       </div>
+//                     ))}
+//                   </div>
+//                 </TableCell>
+                
+//                 {/* Month columns */}
+//                 {isMonthSelected && (
+//                   <>
+//                     <TableCell className="text-right font-semibold text-xs">
+//                       {inr(r.month_amount || 0)}
+//                     </TableCell>
+//                     <TableCell className="text-right text-orange-500 text-xs">
+//                       {inr(r.month_discount || 0)}
+//                     </TableCell>
+//                     <TableCell className="text-right text-amber-600 text-xs">
+//                       {inr(r.month_late_fee || 0)}
+//                     </TableCell>
+//                     <TableCell className="text-right text-emerald-600 text-xs">
+//                       {inr(r.month_paid || 0)}
+//                     </TableCell>
+//                     <TableCell className="text-right font-semibold text-xs">
+//                       {inr(r.month_balance || 0)}
+//                     </TableCell>
+//                   </>
+//                 )}
+                
+//                 {/* Year columns - from the API response */}
+//                 <TableCell className="text-right text-xs">
+//                   {inr(r.year_total_amount || 0)}
+//                 </TableCell>
+//                 <TableCell className="text-right text-emerald-600 text-xs">
+//                   {inr(r.year_total_paid || 0)}
+//                 </TableCell>
+//                 <TableCell className="text-right text-orange-500 text-xs">
+//                   {inr(r.year_total_discount || 0)}
+//                 </TableCell>
+//                 <TableCell className="text-right text-amber-600 text-xs">
+//                   {inr(r.year_total_late_fee || 0)}
+//                 </TableCell>
+//                 <TableCell className="text-right font-bold text-primary text-xs">
+//                   {inr(r.year_balance_amount || 0)}
+//                 </TableCell>
+//                 <TableCell>
+//                   <Badge className={`${getStatusColor(r.status)} text-xs font-medium`}>
+//                     {r.status || "PENDING"}
+//                   </Badge>
+//                 </TableCell>
+//                 <TableCell>
+//                   <DropdownMenu>
+//                     <DropdownMenuTrigger asChild>
+//                       <Button variant="ghost" size="icon" className="h-7 w-7">
+//                         <MoreHorizontal className="h-4 w-4" />
+//                       </Button>
+//                     </DropdownMenuTrigger>
+//                     <DropdownMenuContent align="end">
+//                       <DropdownMenuItem onClick={() => {
+//                         const compDetails = r.components?.map(c => 
+//                           `${c.component_name}: ${c.status} (${inr(c.balance_amount)})`
+//                         ).join("\n");
+//                         toast.info(`Components:\n${compDetails}\n\nYear Balance: ${inr(r.year_balance_amount)}`);
+//                       }}>
+//                         <Eye className="h-4 w-4 mr-2" />View Details
+//                       </DropdownMenuItem>
+//                       <DropdownMenuItem onClick={() => toast.info("Generate invoice")}>
+//                         <FileText className="h-4 w-4 mr-2" />Invoice
+//                       </DropdownMenuItem>
+//                       <DropdownMenuSeparator />
+//                       <DropdownMenuItem 
+//                         className="text-destructive"
+//                         onClick={() => toast.info("Send reminder")}
+//                       >
+//                         <Send className="h-4 w-4 mr-2" />Send Reminder
+//                       </DropdownMenuItem>
+//                     </DropdownMenuContent>
+//                   </DropdownMenu>
+//                 </TableCell>
+//               </TableRow>
+//             ))}
+//           </TableBody>
+//         </Table>
+//       </CardContent>
+//     </Card>
+//   );
+// }
+
 function DuesPanel({ students, onGenInvoices }) {
   const [cls, setCls] = useState("");
   const [sec, setSec] = useState("");
   const [q, setQ] = useState("");
   const [only, setOnly] = useState("overdue");
   const [picked, setPicked] = useState(new Set());
+
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    return `${now.getFullYear()}-${String(
+      now.getMonth() + 1
+    ).padStart(2, "0")}`;
   });
 
   const [dueRows, setDueRows] = useState([]);
@@ -11217,544 +16719,1775 @@ function DuesPanel({ students, onGenInvoices }) {
   const [componentData, setComponentData] = useState([]);
   const [summary, setSummary] = useState(null);
 
-//   const fetchDues = () => {
-//     setLoadingDues(true);
-//     getStudentDues({ academic_year: ACADEMIC_YEAR })
-//       .then((res) => {
-//         const body = res?.data ?? res ?? {};
-//         const componentRows = Array.isArray(body.data) ? body.data : [];
-        
-//         // Store raw component data
-//         setComponentData(componentRows);
-        
-//         // Store summary
-//         setSummary(body.summary || null);
-        
-//         // Extract unique months from all data
-//         const months = [...new Set(componentRows.map(item => item.fee_month))].sort();
-//         setAllMonths(months);
+  // View Details dialog
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedDueStudent, setSelectedDueStudent] = useState(null);
 
-// 1) building the month dropdown options
-const fetchDues = () => {
-  setLoadingDues(true);
-  getStudentDues({ academic_year: ACADEMIC_YEAR })
-    .then((res) => {
-      const body = res?.data ?? res ?? {};
-      const componentRows = Array.isArray(body.data) ? body.data : [];
+  // ============================================================
+  // FETCH DUES
+  // ============================================================
+  const fetchDues = () => {
+    setLoadingDues(true);
 
-      setComponentData(componentRows);
-      setSummary(body.summary || null);
+    getStudentDues({
+      academic_year: ACADEMIC_YEAR,
+    })
+      .then((res) => {
+        const body = res?.data ?? res ?? {};
 
-      // normalize fee_month to "YYYY-MM" so it matches selectedMonth
-      const months = [
-        ...new Set(
-          componentRows
-            .map((item) => (item.fee_month ? item.fee_month.slice(0, 7) : null))
-            .filter(Boolean)
-        ),
-      ].sort();
-      setAllMonths(months);
+        const componentRows = Array.isArray(body.data)
+          ? body.data
+          : [];
 
+        setComponentData(componentRows);
+        setSummary(body.summary || null);
 
+        // Normalize fee_month to YYYY-MM
+        const months = [
+          ...new Set(
+            componentRows
+              .map((item) =>
+                item.fee_month
+                  ? item.fee_month.slice(0, 7)
+                  : null
+              )
+              .filter(Boolean)
+          ),
+        ].sort();
+
+        setAllMonths(months);
+
+        // ======================================================
+        // GROUP BY STUDENT
+        // ======================================================
         const byStudent = new Map();
+
         componentRows.forEach((row) => {
           const key = row.student_uuid;
+
           if (!byStudent.has(key)) {
             byStudent.set(key, {
               student_uuid: row.student_uuid,
               student_no: row.student_no,
               student_name: row.student_name,
+
               class_uuid: row.class_uuid,
               class_name: row.class_name,
+              section_name: row.section_name,
+
               structure_name: row.structure_name,
               academic_year: row.academic_year,
+
               components: [],
-              // Year totals - take from first row of this student
-              year_total_amount: Number(row.year_total_amount || 0),
-              year_total_paid: Number(row.year_total_paid || 0),
-              year_total_discount: Number(row.year_total_discount || 0),
-              year_total_late_fee: Number(row.year_total_late_fee || 0),
-              year_balance_amount: Number(row.year_balance_amount || 0),
-              // Month totals (sum of all components for this student)
+
+              // Year totals
+              year_total_amount: Number(
+                row.year_total_amount || 0
+              ),
+
+              year_total_paid: Number(
+                row.year_total_paid || 0
+              ),
+
+              year_total_discount: Number(
+                row.year_total_discount || 0
+              ),
+
+              year_total_late_fee: Number(
+                row.year_total_late_fee || 0
+              ),
+
+              year_balance_amount: Number(
+                row.year_balance_amount || 0
+              ),
+
+              // Month totals
               total_amount: 0,
               total_discount: 0,
               total_late_fee: 0,
               total_paid: 0,
               total_balance: 0,
+
               status: "PAID",
             });
           }
+
           const student = byStudent.get(key);
+
+          // Component
           student.components.push({
             due_uuid: row.due_uuid,
             fee_month: row.fee_month,
+
             component_name: row.component_name,
+
             amount: Number(row.amount || 0),
             discount: Number(row.discount || 0),
             late_fee: Number(row.late_fee || 0),
             paid_amount: Number(row.paid_amount || 0),
             balance_amount: Number(row.balance_amount || 0),
+
             status: row.status || "PENDING",
           });
-          
-          // Update month totals (sum of all components)
-          student.total_amount += Number(row.amount || 0);
-          student.total_discount += Number(row.discount || 0);
-          student.total_late_fee += Number(row.late_fee || 0);
-          student.total_paid += Number(row.paid_amount || 0);
-          student.total_balance += Number(row.balance_amount || 0);
-          
-          // Determine overall status based on year balance
-          const yearBalance = Number(row.year_balance_amount || 0);
+
+          // Month totals
+          student.total_amount += Number(
+            row.amount || 0
+          );
+
+          student.total_discount += Number(
+            row.discount || 0
+          );
+
+          student.total_late_fee += Number(
+            row.late_fee || 0
+          );
+
+          student.total_paid += Number(
+            row.paid_amount || 0
+          );
+
+          student.total_balance += Number(
+            row.balance_amount || 0
+          );
+
+          // Determine status from year balance
+          const yearBalance = Number(
+            row.year_balance_amount || 0
+          );
+
           if (yearBalance > 0) {
-            student.status = student.year_total_paid > 0 ? "PARTIAL" : "PENDING";
+            student.status =
+              student.year_total_paid > 0
+                ? "PARTIAL"
+                : "PENDING";
           } else {
             student.status = "PAID";
           }
         });
-        
-        setDueRows(Array.from(byStudent.values()));
+
+        setDueRows(
+          Array.from(byStudent.values())
+        );
       })
       .catch((err) => {
         console.error(err);
-        toast.error(err?.response?.data?.detail || "Failed to load dues");
+
+        toast.error(
+          getErrorMessage(
+            err,
+            "Failed to load dues"
+          )
+        );
+
         setDueRows([]);
         setComponentData([]);
         setAllMonths([]);
         setSummary(null);
       })
-      .finally(() => { setLoadingDues(false); setLoadingDiscountsForStudent(false); });
+      .finally(() => {
+        setLoadingDues(false);
+      });
   };
 
   useEffect(fetchDues, []);
 
-// 2) filtering components for the selected month
-const filteredComponents = useMemo(() => {
-  if (!selectedMonth || selectedMonth === "all") return componentData;
-  return componentData.filter(
-    (item) => item.fee_month && item.fee_month.slice(0, 7) === selectedMonth
-  );
-}, [componentData, selectedMonth]);
+  // ============================================================
+  // FILTER COMPONENTS BY MONTH
+  // ============================================================
+  const filteredComponents = useMemo(() => {
+    if (
+      !selectedMonth ||
+      selectedMonth === "all"
+    ) {
+      return componentData;
+    }
 
-  // Group filtered components by student with month data
+    return componentData.filter(
+      (item) =>
+        item.fee_month &&
+        item.fee_month.slice(0, 7) === selectedMonth
+    );
+  }, [componentData, selectedMonth]);
+
+  // ============================================================
+  // GROUP FILTERED MONTH DATA BY STUDENT
+  // ============================================================
   const filteredByMonth = useMemo(() => {
     const byStudent = new Map();
+
     filteredComponents.forEach((row) => {
       const key = row.student_uuid;
+
       if (!byStudent.has(key)) {
         byStudent.set(key, {
           student_uuid: row.student_uuid,
           student_no: row.student_no,
           student_name: row.student_name,
+
           class_uuid: row.class_uuid,
           class_name: row.class_name,
+
           structure_name: row.structure_name,
+
           fee_month: row.fee_month,
+
           components: [],
+
           // Month totals
           month_amount: 0,
           month_discount: 0,
           month_late_fee: 0,
           month_paid: 0,
           month_balance: 0,
-          // Year totals from the row
-          year_total_amount: Number(row.year_total_amount || 0),
-          year_total_paid: Number(row.year_total_paid || 0),
-          year_total_discount: Number(row.year_total_discount || 0),
-          year_total_late_fee: Number(row.year_total_late_fee || 0),
-          year_balance_amount: Number(row.year_balance_amount || 0),
+
+          // Year totals
+          year_total_amount: Number(
+            row.year_total_amount || 0
+          ),
+
+          year_total_paid: Number(
+            row.year_total_paid || 0
+          ),
+
+          year_total_discount: Number(
+            row.year_total_discount || 0
+          ),
+
+          year_total_late_fee: Number(
+            row.year_total_late_fee || 0
+          ),
+
+          year_balance_amount: Number(
+            row.year_balance_amount || 0
+          ),
+
           status: row.status || "PENDING",
         });
       }
+
       const student = byStudent.get(key);
+
       student.components.push({
         due_uuid: row.due_uuid,
-        component_name: row.component_name,
+
+        component_name:
+          row.component_name,
+
         amount: Number(row.amount || 0),
         discount: Number(row.discount || 0),
         late_fee: Number(row.late_fee || 0),
-        paid_amount: Number(row.paid_amount || 0),
-        balance_amount: Number(row.balance_amount || 0),
+        paid_amount: Number(
+          row.paid_amount || 0
+        ),
+        balance_amount: Number(
+          row.balance_amount || 0
+        ),
+
         status: row.status || "PENDING",
       });
-      
-      // Sum month totals
-      student.month_amount += Number(row.amount || 0);
-      student.month_discount += Number(row.discount || 0);
-      student.month_late_fee += Number(row.late_fee || 0);
-      student.month_paid += Number(row.paid_amount || 0);
-      student.month_balance += Number(row.balance_amount || 0);
+
+      // Month totals
+      student.month_amount += Number(
+        row.amount || 0
+      );
+
+      student.month_discount += Number(
+        row.discount || 0
+      );
+
+      student.month_late_fee += Number(
+        row.late_fee || 0
+      );
+
+      student.month_paid += Number(
+        row.paid_amount || 0
+      );
+
+      student.month_balance += Number(
+        row.balance_amount || 0
+      );
     });
+
     return Array.from(byStudent.values());
   }, [filteredComponents]);
 
-  const classes = useMemo(() => Array.from(new Set(students.map((s) => s.class_name).filter(Boolean))).sort(), [students]);
+  // ============================================================
+  // CLASSES
+  // ============================================================
+  const classes = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          students
+            .map((s) => s.class_name)
+            .filter(Boolean)
+        )
+      ).sort(),
+    [students]
+  );
+
+  // ============================================================
+  // SECTIONS
+  // ============================================================
   const sectionsFor = useMemo(
-    () => Array.from(new Set(students.filter((s) => !cls || s.class_name === cls).map((s) => s.section_name).filter(Boolean))).sort(),
+    () =>
+      Array.from(
+        new Set(
+          students
+            .filter(
+              (s) =>
+                !cls ||
+                s.class_name === cls
+            )
+            .map((s) => s.section_name)
+            .filter(Boolean)
+        )
+      ).sort(),
     [students, cls]
   );
 
+  // ============================================================
+  // FINAL TABLE ROWS
+  // ============================================================
   const rows = useMemo(() => {
-    // Use filteredByMonth for month view, or dueRows for all
-    const sourceData = selectedMonth && selectedMonth !== "all" ? filteredByMonth : dueRows;
-    
+    const sourceData =
+      selectedMonth &&
+      selectedMonth !== "all"
+        ? filteredByMonth
+        : dueRows;
+
     return students
-      .filter((s) => (!cls || s.class_name === cls) && (!sec || s.section_name === sec) && (!q || s.full_name?.toLowerCase().includes(q.toLowerCase()) || s.student_no?.toLowerCase().includes(q.toLowerCase())))
+      .filter(
+        (s) =>
+          (!cls ||
+            s.class_name === cls) &&
+          (!sec ||
+            s.section_name === sec) &&
+          (!q ||
+            s.full_name
+              ?.toLowerCase()
+              .includes(q.toLowerCase()) ||
+            s.student_no
+              ?.toLowerCase()
+              .includes(q.toLowerCase()))
+      )
       .map((s) => {
-        const due = sourceData.find(r => r.student_uuid === s.student_uuid);
+        const due = sourceData.find(
+          (r) =>
+            r.student_uuid ===
+            s.student_uuid
+        );
+
         if (!due) return null;
+
         return {
           ...due,
-          student_uuid: s.student_uuid,
-          student_name: s.full_name,
-          student_no: s.student_no,
-          class_name: s.class_name,
-          section_name: s.section_name,
+
+          student_uuid:
+            s.student_uuid,
+
+          student_name:
+            s.full_name,
+
+          student_no:
+            s.student_no,
+
+          class_name:
+            s.class_name,
+
+          section_name:
+            s.section_name,
         };
       })
       .filter(Boolean)
       .filter((r) => {
-        if (only === "all") return true;
-        const balance = (selectedMonth && selectedMonth !== "all") ? r.month_balance : r.year_balance_amount;
+        if (only === "all") {
+          return true;
+        }
+
+        const balance =
+          selectedMonth &&
+          selectedMonth !== "all"
+            ? r.month_balance
+            : r.year_balance_amount;
+
         return balance > 0;
       })
       .sort((a, b) => {
-        const balA = (selectedMonth && selectedMonth !== "all") ? a.month_balance : a.year_balance_amount;
-        const balB = (selectedMonth && selectedMonth !== "all") ? b.month_balance : b.year_balance_amount;
+        const balA =
+          selectedMonth &&
+          selectedMonth !== "all"
+            ? a.month_balance
+            : a.year_balance_amount;
+
+        const balB =
+          selectedMonth &&
+          selectedMonth !== "all"
+            ? b.month_balance
+            : b.year_balance_amount;
+
         return balB - balA;
       });
-  }, [students, cls, sec, q, only, dueRows, filteredByMonth, selectedMonth]);
+  }, [
+    students,
+    cls,
+    sec,
+    q,
+    only,
+    dueRows,
+    filteredByMonth,
+    selectedMonth,
+  ]);
 
+  // ============================================================
+  // MONTH LABEL
+  // ============================================================
   const formatMonthLabel = (monthStr) => {
-    if (!monthStr || monthStr === "all") return "All Months";
+    if (
+      !monthStr ||
+      monthStr === "all"
+    ) {
+      return "All Months";
+    }
+
     try {
       const date = new Date(monthStr);
-      return date.toLocaleString("default", { month: "short", year: "numeric" });
+
+      return date.toLocaleString(
+        "default",
+        {
+          month: "short",
+          year: "numeric",
+        }
+      );
     } catch {
       return monthStr;
     }
   };
 
+  // ============================================================
+  // STATUS COLOR
+  // ============================================================
   const getStatusColor = (status) => {
-    switch (status?.toUpperCase()) {
-      case "PAID": return "bg-emerald-100 text-emerald-800 border-emerald-200";
-      case "PARTIAL": return "bg-amber-100 text-amber-800 border-amber-200";
-      case "PENDING": return "bg-red-100 text-red-800 border-red-200";
-      default: return "bg-gray-100 text-gray-800 border-gray-200";
+    switch (
+      status?.toUpperCase()
+    ) {
+      case "PAID":
+        return "bg-emerald-100 text-emerald-800 border-emerald-200";
+
+      case "PARTIAL":
+        return "bg-amber-100 text-amber-800 border-amber-200";
+
+      case "PENDING":
+      case "OVERDUE":
+        return "bg-red-100 text-red-800 border-red-200";
+
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
-  const isMonthSelected = selectedMonth && selectedMonth !== "all";
+  const isMonthSelected =
+    selectedMonth &&
+    selectedMonth !== "all";
 
+  // ============================================================
+  // REMINDER
+  // ============================================================
   const remind = () => {
-    if (picked.size === 0) { toast.error("Pick students first"); return; }
-    toast.success(`Reminder queued for ${picked.size} students`);
+    if (picked.size === 0) {
+      toast.error(
+        "Pick students first"
+      );
+      return;
+    }
+
+    toast.success(
+      `Reminder queued for ${picked.size} students`
+    );
+
     setPicked(new Set());
   };
-  
+
+  // ============================================================
+  // GENERATE INVOICE
+  // ============================================================
   const genInvoice = () => {
-    if (picked.size === 0) { toast.error("Pick students first"); return; }
+    if (picked.size === 0) {
+      toast.error(
+        "Pick students first"
+      );
+      return;
+    }
+
     onGenInvoices(
       rows
-        .filter((r) => picked.has(r.student_uuid))
+        .filter((r) =>
+          picked.has(
+            r.student_uuid
+          )
+        )
         .map((r) => ({
-          student_uuid: r.student_uuid,
-          student_name: r.student_name,
-          class_name: r.class_name,
-          totalDue: isMonthSelected ? r.month_balance : r.year_balance_amount,
-          totalLate: isMonthSelected ? r.month_late_fee : r.year_total_late_fee,
+          student_uuid:
+            r.student_uuid,
+
+          student_name:
+            r.student_name,
+
+          class_name:
+            r.class_name,
+
+          totalDue:
+            isMonthSelected
+              ? r.month_balance
+              : r.year_balance_amount,
+
+          totalLate:
+            isMonthSelected
+              ? r.month_late_fee
+              : r.year_total_late_fee,
         }))
     );
+
     setPicked(new Set());
   };
 
-  return (
-    <Card className="border-border/60">
-      <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
-        <div>
-          <CardTitle className="font-display text-base">Student Dues</CardTitle>
-          <CardDescription>
-            Live balances from the fee-dues API with component-wise breakdown.
-            {summary && (
-              <span className="ml-2 text-xs text-muted-foreground">
-                · {summary.count} entries · Total Due: {inr(summary.total_due)}
-              </span>
-            )}
-          </CardDescription>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="w-40 h-9 border-primary/30 bg-primary/5">
-              <CalendarRange className="h-4 w-4 mr-1 text-primary" />
-              <SelectValue>
-                {selectedMonth ? formatMonthLabel(selectedMonth) : "All Months"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Months</SelectItem>
-              {allMonths.map((month) => (
-                <SelectItem key={month} value={month}>
-                  {formatMonthLabel(month)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+  // ============================================================
+  // VIEW DETAILS
+  // ============================================================
+  const openDueDetails = (student) => {
+    setSelectedDueStudent(student);
+    setDetailsOpen(true);
+  };
 
-          <Select value={only} onValueChange={setOnly}>
-            <SelectTrigger className="w-32 h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="overdue">Overdue only</SelectItem>
-              <SelectItem value="all">All students</SelectItem>
-            </SelectContent>
-          </Select>
-          
-          <Select value={cls} onValueChange={setCls}>
-            <SelectTrigger className="w-24 h-9">
-              <SelectValue placeholder="Class" />
-            </SelectTrigger>
-            <SelectContent>
-              {classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          
-          <Select value={sec} onValueChange={setSec}>
-            <SelectTrigger className="w-24 h-9">
-              <SelectValue placeholder="Section" />
-            </SelectTrigger>
-            <SelectContent>
-              {sectionsFor.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          
-          <Input 
-            value={q} 
-            onChange={(e) => setQ(e.target.value)} 
-            placeholder="Search..." 
-            className="h-9 w-40" 
-          />
-          
-          <Button size="sm" variant="outline" onClick={fetchDues}>
-            <RefreshCcw className="h-4 w-4" />Refresh
-          </Button>
-          
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              exportRowsCsv(
-                rows.map((r) => ({
-                  student_name: r.student_name,
-                  student_no: r.student_no,
-                  class_name: r.class_name,
-                  fee_month: isMonthSelected ? formatMonthLabel(selectedMonth) : "All Months",
-                  // Month totals (only when month selected)
-                  month_amount: isMonthSelected ? r.month_amount : "—",
-                  month_discount: isMonthSelected ? r.month_discount : "—",
-                  month_late_fee: isMonthSelected ? r.month_late_fee : "—",
-                  month_paid: isMonthSelected ? r.month_paid : "—",
-                  month_balance: isMonthSelected ? r.month_balance : "—",
-                  // Year totals (always shown)
-                  year_total_amount: r.year_total_amount || "—",
-                  year_total_paid: r.year_total_paid || "—",
-                  year_total_discount: r.year_total_discount || "—",
-                  year_total_late_fee: r.year_total_late_fee || "—",
-                  year_balance_amount: r.year_balance_amount || "—",
-                  status: r.status,
-                  components: r.components?.map(c => `${c.component_name}(${c.status})`).join("; ") || "",
-                })),
-                `dues-${isMonthSelected ? selectedMonth : "all"}.csv`
-              )
-            }
-          >
-            <Download className="h-4 w-4" />Export
-          </Button>
-        </div>
-      </CardHeader>
-      
-      {picked.size > 0 && (
-        <div className="mx-4 mb-3 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-          <Badge>{picked.size} selected</Badge>
-          <Button size="sm" variant="outline" onClick={remind}>
-            <Send className="h-4 w-4" />Send Reminders
-          </Button>
-          <Button size="sm" variant="outline" onClick={genInvoice}>
-            <FileText className="h-4 w-4" />Generate Invoices
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())} className="ml-auto">
-            <X className="h-4 w-4" />Clear
-          </Button>
-        </div>
-      )}
-      
-      <CardContent className="p-0 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/30">
-              <TableHead className="w-8"></TableHead>
-              <TableHead>Student</TableHead>
-              <TableHead>Class</TableHead>
-              <TableHead>Structure</TableHead>
-              <TableHead>Components & Status</TableHead>
-              
-              {/* Month columns - shown when a month is selected */}
-              {isMonthSelected && (
-                <>
-                  <TableHead className="text-right text-xs">Month Amount</TableHead>
-                  <TableHead className="text-right text-xs">Month Discount</TableHead>
-                  <TableHead className="text-right text-xs">Month Late Fee</TableHead>
-                  <TableHead className="text-right text-xs">Month Paid</TableHead>
-                  <TableHead className="text-right text-xs">Month Balance</TableHead>
-                </>
+  // ============================================================
+  // CLOSE DETAILS
+  // ============================================================
+  const closeDueDetails = () => {
+    setDetailsOpen(false);
+    setSelectedDueStudent(null);
+  };
+
+  // ============================================================
+  // RETURN
+  // ============================================================
+  return (
+    <>
+      <Card className="border-border/60">
+
+        {/* ======================================================
+            HEADER
+        ====================================================== */}
+        <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
+
+          <div>
+            <CardTitle className="font-display text-base">
+              Student Dues
+            </CardTitle>
+
+            <CardDescription>
+              Live balances from the fee-dues API
+              with component-wise breakdown.
+
+              {summary && (
+                <span className="ml-2 text-xs text-muted-foreground">
+                  · {summary.count} entries · Total Due:{" "}
+                  {inr(summary.total_due)}
+                </span>
               )}
-              
-              {/* Year columns - always shown */}
-              <TableHead className="text-right text-xs">Year Amount</TableHead>
-              <TableHead className="text-right text-xs">Year Paid</TableHead>
-              <TableHead className="text-right text-xs">Year Discount</TableHead>
-              <TableHead className="text-right text-xs">Year Late Fee</TableHead>
-              <TableHead className="text-right text-xs font-bold text-primary">Year Balance</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-10"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loadingDues && (
-              <TableRow>
-                <TableCell colSpan={16} className="text-center text-sm text-muted-foreground py-8">
-                  <div className="flex items-center justify-center gap-2">
-                    <RefreshCcw className="h-4 w-4 animate-spin" />
-                    Loading dues...
-                  </div>
-                </TableCell>
-              </TableRow>
-            )}
-            
-            {!loadingDues && rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={16} className="text-center text-sm text-muted-foreground py-8">
-                  {isMonthSelected 
-                    ? `No dues found for ${formatMonthLabel(selectedMonth)}` 
-                    : "No dues found"}
-                </TableCell>
-              </TableRow>
-            )}
-            
-            {!loadingDues && rows.slice(0, 300).map((r) => (
-              <TableRow key={r.student_uuid} className="hover:bg-muted/30">
-                <TableCell>
-                  <Checkbox
-                    checked={picked.has(r.student_uuid)}
-                    onCheckedChange={(v) => { 
-                      const n = new Set(picked); 
-                      if (v) n.add(r.student_uuid); 
-                      else n.delete(r.student_uuid); 
-                      setPicked(n); 
-                    }}
-                  />
-                </TableCell>
-                <TableCell>
-                  <div className="text-sm font-medium">{r.student_name}</div>
-                  <div className="text-xs text-muted-foreground">{r.student_no}</div>
-                </TableCell>
-                <TableCell className="text-xs">{r.class_name ?? "—"}</TableCell>
-                <TableCell className="text-xs">{r.structure_name ?? "—"}</TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-0.5">
-                    {r.components?.map((comp, idx) => (
-                      <div key={idx} className="flex items-center gap-1.5 text-xs">
-                        <span className="truncate max-w-[80px]">{comp.component_name}</span>
-                        <Badge 
-                          className={`text-[9px] px-1.5 py-0 h-4 ${getStatusColor(comp.status)}`}
-                        >
-                          {comp.status}
-                        </Badge>
-                        <span className="text-muted-foreground text-[10px]">
-                          {inr(comp.balance_amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </TableCell>
-                
+            </CardDescription>
+          </div>
+
+          {/* ==================================================
+              FILTERS
+          ================================================== */}
+          <div className="flex gap-2 flex-wrap">
+
+            {/* Month */}
+            <Select
+              value={selectedMonth}
+              onValueChange={
+                setSelectedMonth
+              }
+            >
+              <SelectTrigger className="w-40 h-9 border-primary/30 bg-primary/5">
+
+                <CalendarRange className="h-4 w-4 mr-1 text-primary" />
+
+                <SelectValue>
+                  {selectedMonth
+                    ? formatMonthLabel(
+                        selectedMonth
+                      )
+                    : "All Months"}
+                </SelectValue>
+
+              </SelectTrigger>
+
+              <SelectContent>
+
+                <SelectItem value="all">
+                  All Months
+                </SelectItem>
+
+                {allMonths.map(
+                  (month) => (
+                    <SelectItem
+                      key={month}
+                      value={month}
+                    >
+                      {formatMonthLabel(
+                        month
+                      )}
+                    </SelectItem>
+                  )
+                )}
+
+              </SelectContent>
+            </Select>
+
+            {/* Status */}
+            <Select
+              value={only}
+              onValueChange={setOnly}
+            >
+              <SelectTrigger className="w-32 h-9">
+                <SelectValue />
+              </SelectTrigger>
+
+              <SelectContent>
+
+                <SelectItem value="overdue">
+                  Overdue only
+                </SelectItem>
+
+                <SelectItem value="all">
+                  All students
+                </SelectItem>
+
+              </SelectContent>
+            </Select>
+
+            {/* Class */}
+            <Select
+              value={cls}
+              onValueChange={setCls}
+            >
+              <SelectTrigger className="w-24 h-9">
+                <SelectValue placeholder="Class" />
+              </SelectTrigger>
+
+              <SelectContent>
+
+                {classes.map(
+                  (c) => (
+                    <SelectItem
+                      key={c}
+                      value={c}
+                    >
+                      {c}
+                    </SelectItem>
+                  )
+                )}
+
+              </SelectContent>
+            </Select>
+
+            {/* Section */}
+            <Select
+              value={sec}
+              onValueChange={setSec}
+            >
+              <SelectTrigger className="w-24 h-9">
+                <SelectValue placeholder="Section" />
+              </SelectTrigger>
+
+              <SelectContent>
+
+                {sectionsFor.map(
+                  (s) => (
+                    <SelectItem
+                      key={s}
+                      value={s}
+                    >
+                      {s}
+                    </SelectItem>
+                  )
+                )}
+
+              </SelectContent>
+            </Select>
+
+            {/* Search */}
+            <Input
+              value={q}
+              onChange={(e) =>
+                setQ(e.target.value)
+              }
+              placeholder="Search..."
+              className="h-9 w-40"
+            />
+
+            {/* Refresh */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={fetchDues}
+            >
+              <RefreshCcw className="h-4 w-4" />
+              Refresh
+            </Button>
+
+            {/* Export */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                exportRowsCsv(
+                  rows.map((r) => ({
+                    student_name:
+                      r.student_name,
+
+                    student_no:
+                      r.student_no,
+
+                    class_name:
+                      r.class_name,
+
+                    fee_month:
+                      isMonthSelected
+                        ? formatMonthLabel(
+                            selectedMonth
+                          )
+                        : "All Months",
+
+                    month_amount:
+                      isMonthSelected
+                        ? r.month_amount
+                        : "—",
+
+                    month_discount:
+                      isMonthSelected
+                        ? r.month_discount
+                        : "—",
+
+                    month_late_fee:
+                      isMonthSelected
+                        ? r.month_late_fee
+                        : "—",
+
+                    month_paid:
+                      isMonthSelected
+                        ? r.month_paid
+                        : "—",
+
+                    month_balance:
+                      isMonthSelected
+                        ? r.month_balance
+                        : "—",
+
+                    year_total_amount:
+                      r.year_total_amount ||
+                      "—",
+
+                    year_total_paid:
+                      r.year_total_paid ||
+                      "—",
+
+                    year_total_discount:
+                      r.year_total_discount ||
+                      "—",
+
+                    year_total_late_fee:
+                      r.year_total_late_fee ||
+                      "—",
+
+                    year_balance_amount:
+                      r.year_balance_amount ||
+                      "—",
+
+                    status:
+                      r.status,
+
+                    components:
+                      r.components
+                        ?.map(
+                          (c) =>
+                            `${c.component_name}(${c.status})`
+                        )
+                        .join("; ") || "",
+                  })),
+                  `dues-${
+                    isMonthSelected
+                      ? selectedMonth
+                      : "all"
+                  }.csv`
+                )
+              }
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+
+          </div>
+        </CardHeader>
+
+        {/* ======================================================
+            SELECTED ACTIONS
+        ====================================================== */}
+        {picked.size > 0 && (
+          <div className="mx-4 mb-3 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+
+            <Badge>
+              {picked.size} selected
+            </Badge>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={remind}
+            >
+              <Send className="h-4 w-4" />
+              Send Reminders
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={genInvoice}
+            >
+              <FileText className="h-4 w-4" />
+              Generate Invoices
+            </Button>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                setPicked(new Set())
+              }
+              className="ml-auto"
+            >
+              <X className="h-4 w-4" />
+              Clear
+            </Button>
+
+          </div>
+        )}
+
+        {/* ======================================================
+            TABLE
+        ====================================================== */}
+        <CardContent className="p-0 overflow-x-auto">
+
+          <Table>
+
+            {/* ==================================================
+                TABLE HEADER
+            ================================================== */}
+            <TableHeader>
+
+              <TableRow className="bg-muted/30">
+
+                <TableHead className="w-8">
+                </TableHead>
+
+                <TableHead>
+                  Student
+                </TableHead>
+
+                <TableHead>
+                  Class
+                </TableHead>
+
+                <TableHead>
+                  Structure
+                </TableHead>
+
+                <TableHead>
+                  Components & Status
+                </TableHead>
+
                 {/* Month columns */}
                 {isMonthSelected && (
                   <>
-                    <TableCell className="text-right font-semibold text-xs">
-                      {inr(r.month_amount || 0)}
-                    </TableCell>
-                    <TableCell className="text-right text-orange-500 text-xs">
-                      {inr(r.month_discount || 0)}
-                    </TableCell>
-                    <TableCell className="text-right text-amber-600 text-xs">
-                      {inr(r.month_late_fee || 0)}
-                    </TableCell>
-                    <TableCell className="text-right text-emerald-600 text-xs">
-                      {inr(r.month_paid || 0)}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold text-xs">
-                      {inr(r.month_balance || 0)}
-                    </TableCell>
+                    <TableHead className="text-right text-xs">
+                      Month Amount
+                    </TableHead>
+
+                    <TableHead className="text-right text-xs">
+                      Month Discount
+                    </TableHead>
+
+                    <TableHead className="text-right text-xs">
+                      Month Late Fee
+                    </TableHead>
+
+                    <TableHead className="text-right text-xs">
+                      Month Paid
+                    </TableHead>
+
+                    <TableHead className="text-right text-xs">
+                      Month Balance
+                    </TableHead>
                   </>
                 )}
-                
-                {/* Year columns - from the API response */}
-                <TableCell className="text-right text-xs">
-                  {inr(r.year_total_amount || 0)}
-                </TableCell>
-                <TableCell className="text-right text-emerald-600 text-xs">
-                  {inr(r.year_total_paid || 0)}
-                </TableCell>
-                <TableCell className="text-right text-orange-500 text-xs">
-                  {inr(r.year_total_discount || 0)}
-                </TableCell>
-                <TableCell className="text-right text-amber-600 text-xs">
-                  {inr(r.year_total_late_fee || 0)}
-                </TableCell>
-                <TableCell className="text-right font-bold text-primary text-xs">
-                  {inr(r.year_balance_amount || 0)}
-                </TableCell>
-                <TableCell>
-                  <Badge className={`${getStatusColor(r.status)} text-xs font-medium`}>
-                    {r.status || "PENDING"}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-7">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => {
-                        const compDetails = r.components?.map(c => 
-                          `${c.component_name}: ${c.status} (${inr(c.balance_amount)})`
-                        ).join("\n");
-                        toast.info(`Components:\n${compDetails}\n\nYear Balance: ${inr(r.year_balance_amount)}`);
-                      }}>
-                        <Eye className="h-4 w-4 mr-2" />View Details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toast.info("Generate invoice")}>
-                        <FileText className="h-4 w-4 mr-2" />Invoice
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        className="text-destructive"
-                        onClick={() => toast.info("Send reminder")}
-                      >
-                        <Send className="h-4 w-4 mr-2" />Send Reminder
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
+
+                {/* Year columns */}
+                <TableHead className="text-right text-xs">
+                  Year Amount
+                </TableHead>
+
+                <TableHead className="text-right text-xs">
+                  Year Paid
+                </TableHead>
+
+                <TableHead className="text-right text-xs">
+                  Year Discount
+                </TableHead>
+
+                <TableHead className="text-right text-xs">
+                  Year Late Fee
+                </TableHead>
+
+                <TableHead className="text-right text-xs font-bold text-primary">
+                  Year Balance
+                </TableHead>
+
+                <TableHead>
+                  Status
+                </TableHead>
+
+                <TableHead className="w-10">
+                </TableHead>
+
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+
+            </TableHeader>
+
+            {/* ==================================================
+                TABLE BODY
+            ================================================== */}
+            <TableBody>
+
+              {/* Loading */}
+              {loadingDues && (
+                <TableRow>
+
+                  <TableCell
+                    colSpan={16}
+                    className="text-center text-sm text-muted-foreground py-8"
+                  >
+                    <div className="flex items-center justify-center gap-2">
+
+                      <RefreshCcw className="h-4 w-4 animate-spin" />
+
+                      Loading dues...
+
+                    </div>
+                  </TableCell>
+
+                </TableRow>
+              )}
+
+              {/* Empty */}
+              {!loadingDues &&
+                rows.length === 0 && (
+                  <TableRow>
+
+                    <TableCell
+                      colSpan={16}
+                      className="text-center text-sm text-muted-foreground py-8"
+                    >
+                      {isMonthSelected
+                        ? `No dues found for ${formatMonthLabel(
+                            selectedMonth
+                          )}`
+                        : "No dues found"}
+                    </TableCell>
+
+                  </TableRow>
+                )}
+
+              {/* Rows */}
+              {!loadingDues &&
+                rows
+                  .slice(0, 300)
+                  .map((r) => (
+                    <TableRow
+                      key={r.student_uuid}
+                      className="hover:bg-muted/30"
+                    >
+
+                      {/* Checkbox */}
+                      <TableCell>
+
+                        <Checkbox
+                          checked={picked.has(
+                            r.student_uuid
+                          )}
+                          onCheckedChange={(
+                            v
+                          ) => {
+                            const n =
+                              new Set(
+                                picked
+                              );
+
+                            if (v) {
+                              n.add(
+                                r.student_uuid
+                              );
+                            } else {
+                              n.delete(
+                                r.student_uuid
+                              );
+                            }
+
+                            setPicked(n);
+                          }}
+                        />
+
+                      </TableCell>
+
+                      {/* Student */}
+                      <TableCell>
+
+                        <div className="text-sm font-medium">
+                          {r.student_name}
+                        </div>
+
+                        <div className="text-xs text-muted-foreground">
+                          {r.student_no}
+                        </div>
+
+                      </TableCell>
+
+                      {/* Class */}
+                      <TableCell className="text-xs">
+                        {r.class_name ??
+                          "—"}
+                      </TableCell>
+
+                      {/* Structure */}
+                      <TableCell className="text-xs">
+                        {r.structure_name ??
+                          "—"}
+                      </TableCell>
+
+                      {/* Components */}
+                      <TableCell>
+
+                        <div className="flex flex-col gap-0.5">
+
+                          {r.components?.map(
+                            (comp, idx) => (
+                              <div
+                                key={
+                                  comp.due_uuid ||
+                                  idx
+                                }
+                                className="flex items-center gap-1.5 text-xs"
+                              >
+
+                                <span className="truncate max-w-[100px]">
+                                  {
+                                    comp.component_name
+                                  }
+                                </span>
+
+                                <Badge
+                                  className={`text-[9px] px-1.5 py-0 h-4 ${getStatusColor(
+                                    comp.status
+                                  )}`}
+                                >
+                                  {
+                                    comp.status
+                                  }
+                                </Badge>
+
+                                <span className="text-muted-foreground text-[10px]">
+                                  {inr(
+                                    comp.balance_amount
+                                  )}
+                                </span>
+
+                              </div>
+                            )
+                          )}
+
+                        </div>
+
+                      </TableCell>
+
+                      {/* Month */}
+                      {isMonthSelected && (
+                        <>
+                          <TableCell className="text-right font-semibold text-xs">
+                            {inr(
+                              r.month_amount ||
+                                0
+                            )}
+                          </TableCell>
+
+                          <TableCell className="text-right text-orange-500 text-xs">
+                            {inr(
+                              r.month_discount ||
+                                0
+                            )}
+                          </TableCell>
+
+                          <TableCell className="text-right text-amber-600 text-xs">
+                            {inr(
+                              r.month_late_fee ||
+                                0
+                            )}
+                          </TableCell>
+
+                          <TableCell className="text-right text-emerald-600 text-xs">
+                            {inr(
+                              r.month_paid ||
+                                0
+                            )}
+                          </TableCell>
+
+                          <TableCell className="text-right font-semibold text-xs">
+                            {inr(
+                              r.month_balance ||
+                                0
+                            )}
+                          </TableCell>
+                        </>
+                      )}
+
+                      {/* Year Amount */}
+                      <TableCell className="text-right text-xs">
+                        {inr(
+                          r.year_total_amount ||
+                            0
+                        )}
+                      </TableCell>
+
+                      {/* Year Paid */}
+                      <TableCell className="text-right text-emerald-600 text-xs">
+                        {inr(
+                          r.year_total_paid ||
+                            0
+                        )}
+                      </TableCell>
+
+                      {/* Year Discount */}
+                      <TableCell className="text-right text-orange-500 text-xs">
+                        {inr(
+                          r.year_total_discount ||
+                            0
+                        )}
+                      </TableCell>
+
+                      {/* Year Late */}
+                      <TableCell className="text-right text-amber-600 text-xs">
+                        {inr(
+                          r.year_total_late_fee ||
+                            0
+                        )}
+                      </TableCell>
+
+                      {/* Year Balance */}
+                      <TableCell className="text-right font-bold text-primary text-xs">
+                        {inr(
+                          r.year_balance_amount ||
+                            0
+                        )}
+                      </TableCell>
+
+                      {/* Status */}
+                      <TableCell>
+
+                        <Badge
+                          className={`${getStatusColor(
+                            r.status
+                          )} text-xs font-medium`}
+                        >
+                          {r.status ||
+                            "PENDING"}
+                        </Badge>
+
+                      </TableCell>
+
+                      {/* ACTIONS */}
+                      <TableCell>
+
+                        <DropdownMenu>
+
+                          <DropdownMenuTrigger
+                            asChild
+                          >
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+
+                          <DropdownMenuContent align="end">
+
+                            {/* =================================
+                                VIEW DETAILS
+                            ================================= */}
+                            <DropdownMenuItem
+                              onClick={() =>
+                                openDueDetails(
+                                  r
+                                )
+                              }
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+
+                              View Details
+                            </DropdownMenuItem>
+
+                            {/* =================================
+                                INVOICE
+                            ================================= */}
+                            <DropdownMenuItem
+                              onClick={() =>
+                                toast.info(
+                                  "Generate invoice"
+                                )
+                              }
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+
+                              Invoice
+                            </DropdownMenuItem>
+
+                            <DropdownMenuSeparator />
+
+                            {/* =================================
+                                REMINDER
+                            ================================= */}
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() =>
+                                toast.info(
+                                  "Send reminder"
+                                )
+                              }
+                            >
+                              <Send className="h-4 w-4 mr-2" />
+
+                              Send Reminder
+                            </DropdownMenuItem>
+
+                          </DropdownMenuContent>
+
+                        </DropdownMenu>
+
+                      </TableCell>
+
+                    </TableRow>
+                  ))}
+
+            </TableBody>
+
+          </Table>
+
+        </CardContent>
+
+      </Card>
+
+      {/* ========================================================
+          VIEW DETAILS DIALOG
+      ======================================================== */}
+      <Dialog
+        open={detailsOpen}
+        onOpenChange={(open) => {
+          setDetailsOpen(open);
+
+          if (!open) {
+            setSelectedDueStudent(
+              null
+            );
+          }
+        }}
+      >
+
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+
+          <DialogHeader>
+
+            <DialogTitle className="text-lg">
+              Student Fee Details
+            </DialogTitle>
+
+            <DialogDescription>
+              Complete fee component,
+              payment and balance details.
+            </DialogDescription>
+
+          </DialogHeader>
+
+          {selectedDueStudent && (
+            <div className="space-y-5">
+
+              {/* ==================================================
+                  STUDENT INFORMATION
+              ================================================== */}
+              <div className="rounded-lg border bg-muted/30 p-4">
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      Student
+                    </div>
+
+                    <div className="font-semibold text-sm mt-1">
+                      {selectedDueStudent.student_name ||
+                        "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      Student No
+                    </div>
+
+                    <div className="font-medium text-sm mt-1">
+                      {selectedDueStudent.student_no ||
+                        "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      Class
+                    </div>
+
+                    <div className="font-medium text-sm mt-1">
+                      {selectedDueStudent.class_name ||
+                        "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      Section
+                    </div>
+
+                    <div className="font-medium text-sm mt-1">
+                      {selectedDueStudent.section_name ||
+                        "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      Structure
+                    </div>
+
+                    <div className="font-medium text-sm mt-1">
+                      {selectedDueStudent.structure_name ||
+                        "—"}
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* ==================================================
+                  STATUS
+              ================================================== */}
+              <div className="flex items-center justify-between">
+
+                <div>
+                  <div className="font-semibold text-sm">
+                    Payment Status
+                  </div>
+
+                  <div className="text-xs text-muted-foreground">
+                    Current overall fee status
+                  </div>
+                </div>
+
+                <Badge
+                  className={`text-xs ${getStatusColor(
+                    selectedDueStudent.status
+                  )}`}
+                >
+                  {selectedDueStudent.status ||
+                    "PENDING"}
+                </Badge>
+
+              </div>
+
+              {/* ==================================================
+                  MONTH SUMMARY
+              ================================================== */}
+              {isMonthSelected && (
+                <div>
+
+                  <div className="font-semibold text-sm mb-2">
+                    {formatMonthLabel(
+                      selectedMonth
+                    )}{" "}
+                    Summary
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+
+                    <div className="border rounded-lg p-3">
+                      <div className="text-xs text-muted-foreground">
+                        Amount
+                      </div>
+
+                      <div className="font-semibold mt-1">
+                        {inr(
+                          selectedDueStudent.month_amount ||
+                            0
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg p-3">
+                      <div className="text-xs text-muted-foreground">
+                        Discount
+                      </div>
+
+                      <div className="font-semibold text-orange-500 mt-1">
+                        {inr(
+                          selectedDueStudent.month_discount ||
+                            0
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg p-3">
+                      <div className="text-xs text-muted-foreground">
+                        Late Fee
+                      </div>
+
+                      <div className="font-semibold text-amber-600 mt-1">
+                        {inr(
+                          selectedDueStudent.month_late_fee ||
+                            0
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg p-3">
+                      <div className="text-xs text-muted-foreground">
+                        Paid
+                      </div>
+
+                      <div className="font-semibold text-emerald-600 mt-1">
+                        {inr(
+                          selectedDueStudent.month_paid ||
+                            0
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg p-3 bg-primary/5">
+                      <div className="text-xs text-muted-foreground">
+                        Balance
+                      </div>
+
+                      <div className="font-bold text-primary text-lg mt-1">
+                        {inr(
+                          selectedDueStudent.month_balance ||
+                            0
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+
+                </div>
+              )}
+
+              {/* ==================================================
+                  COMPONENT DETAILS
+              ================================================== */}
+              <div>
+
+                <div className="font-semibold text-sm mb-2">
+                  Components & Status
+                </div>
+
+                <div className="border rounded-lg overflow-hidden">
+
+                  <Table>
+
+                    <TableHeader>
+
+                      <TableRow className="bg-muted/30">
+
+                        <TableHead>
+                          Component
+                        </TableHead>
+
+                        <TableHead className="text-right">
+                          Amount
+                        </TableHead>
+
+                        <TableHead className="text-right">
+                          Discount
+                        </TableHead>
+
+                        <TableHead className="text-right">
+                          Late Fee
+                        </TableHead>
+
+                        <TableHead className="text-right">
+                          Paid
+                        </TableHead>
+
+                        <TableHead className="text-right">
+                          Balance
+                        </TableHead>
+
+                        <TableHead>
+                          Status
+                        </TableHead>
+
+                      </TableRow>
+
+                    </TableHeader>
+
+                    <TableBody>
+
+                      {(
+                        selectedDueStudent.components ||
+                        []
+                      ).map(
+                        (comp, index) => (
+                          <TableRow
+                            key={
+                              comp.due_uuid ||
+                              index
+                            }
+                          >
+
+                            <TableCell>
+
+                              <div className="font-medium text-sm">
+                                {
+                                  comp.component_name
+                                }
+                              </div>
+
+                              {comp.fee_month && (
+                                <div className="text-[10px] text-muted-foreground">
+                                  {formatMonthLabel(
+                                    comp.fee_month.slice(
+                                      0,
+                                      7
+                                    )
+                                  )}
+                                </div>
+                              )}
+
+                            </TableCell>
+
+                            <TableCell className="text-right text-sm">
+                              {inr(
+                                comp.amount ||
+                                  0
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-right text-sm text-orange-500">
+                              {inr(
+                                comp.discount ||
+                                  0
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-right text-sm text-amber-600">
+                              {inr(
+                                comp.late_fee ||
+                                  0
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-right text-sm text-emerald-600">
+                              {inr(
+                                comp.paid_amount ||
+                                  0
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-right text-sm font-semibold">
+                              {inr(
+                                comp.balance_amount ||
+                                  0
+                              )}
+                            </TableCell>
+
+                            <TableCell>
+
+                              <Badge
+                                className={`text-[10px] ${getStatusColor(
+                                  comp.status
+                                )}`}
+                              >
+                                {comp.status ||
+                                  "PENDING"}
+                              </Badge>
+
+                            </TableCell>
+
+                          </TableRow>
+                        )
+                      )}
+
+                      {(!selectedDueStudent.components ||
+                        selectedDueStudent
+                          .components
+                          .length ===
+                          0) && (
+                        <TableRow>
+
+                          <TableCell
+                            colSpan={7}
+                            className="text-center py-8 text-sm text-muted-foreground"
+                          >
+                            No component details
+                            available.
+                          </TableCell>
+
+                        </TableRow>
+                      )}
+
+                    </TableBody>
+
+                  </Table>
+
+                </div>
+
+              </div>
+
+              {/* ==================================================
+                  YEAR SUMMARY
+              ================================================== */}
+              <div>
+
+                <div className="font-semibold text-sm mb-2">
+                  Academic Year Summary
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+
+                  {/* Year Amount */}
+                  <div className="border rounded-lg p-3">
+
+                    <div className="text-xs text-muted-foreground">
+                      Year Amount
+                    </div>
+
+                    <div className="font-semibold mt-1">
+                      {inr(
+                        selectedDueStudent.year_total_amount ||
+                          0
+                      )}
+                    </div>
+
+                  </div>
+
+                  {/* Year Paid */}
+                  <div className="border rounded-lg p-3">
+
+                    <div className="text-xs text-muted-foreground">
+                      Year Paid
+                    </div>
+
+                    <div className="font-semibold text-emerald-600 mt-1">
+                      {inr(
+                        selectedDueStudent.year_total_paid ||
+                          0
+                      )}
+                    </div>
+
+                  </div>
+
+                  {/* Year Discount */}
+                  <div className="border rounded-lg p-3">
+
+                    <div className="text-xs text-muted-foreground">
+                      Year Discount
+                    </div>
+
+                    <div className="font-semibold text-orange-500 mt-1">
+                      {inr(
+                        selectedDueStudent.year_total_discount ||
+                          0
+                      )}
+                    </div>
+
+                  </div>
+
+                  {/* Year Late Fee */}
+                  <div className="border rounded-lg p-3">
+
+                    <div className="text-xs text-muted-foreground">
+                      Year Late Fee
+                    </div>
+
+                    <div className="font-semibold text-amber-600 mt-1">
+                      {inr(
+                        selectedDueStudent.year_total_late_fee ||
+                          0
+                      )}
+                    </div>
+
+                  </div>
+
+                  {/* Year Balance */}
+                  <div className="border rounded-lg p-3 bg-primary/5">
+
+                    <div className="text-xs text-muted-foreground">
+                      Year Balance
+                    </div>
+
+                    <div className="font-bold text-primary text-lg mt-1">
+                      {inr(
+                        selectedDueStudent.year_balance_amount ||
+                          0
+                      )}
+                    </div>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+          )}
+
+          {/* ======================================================
+              DIALOG FOOTER
+          ====================================================== */}
+          <DialogFooter>
+
+            <Button
+              variant="outline"
+              onClick={closeDueDetails}
+            >
+              Close
+            </Button>
+
+          </DialogFooter>
+
+        </DialogContent>
+
+      </Dialog>
+    </>
   );
 }
 /* ================================================================== */
@@ -11812,7 +18545,7 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
       setTotalCount(response?.data?.count || transformed.length);
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.detail || "Failed to load transactions");
+      toast.error(getErrorMessage(err, "Failed to load transactions"));
       setLedger([]);
     } finally {
       setLoading(false);
@@ -12027,7 +18760,7 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
             await openPaymentReceipt(r.transaction_uuid);
           } catch (err) {
             console.error(err);
-            toast.error(err?.response?.data?.detail || "Failed to open receipt");
+            toast.error(getErrorMessage(err, "Failed to open receipt"));
           }
         }}
       >
@@ -12042,7 +18775,7 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
             toast.success("Receipt downloaded");
           } catch (err) {
             console.error(err);
-            toast.error(err?.response?.data?.detail || "Failed to download receipt");
+            toast.error(getErrorMessage(err, "Failed to download receipt"));
           }
         }}
       >
@@ -12052,19 +18785,7 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
     </>
   )}
 
-  {r.status === "Success" && (
-    <>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem onClick={() => onCancel?.(r.id)}>
-        <X className="h-4 w-4 mr-2" />
-        Cancel
-      </DropdownMenuItem>
-      <DropdownMenuItem onClick={() => onRefund?.(r.id)}>
-        <RefreshCcw className="h-4 w-4 mr-2" />
-        Refund
-      </DropdownMenuItem>
-    </>
-  )}
+
 </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -12172,7 +18893,7 @@ function StudentLedgerDrawer({ open, onOpenChange, studentUuid, students, struct
       setPaymentSummary(summary);
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.detail || "Failed to load student transactions");
+      toast.error(getErrorMessage(err, "Failed to load student transactions"));
       setStudentTransactions([]);
     } finally {
       setLoading(false);
@@ -12542,167 +19263,6 @@ function StudentLedgerDrawer({ open, onOpenChange, studentUuid, students, struct
 /*  8. REPORTS — API-integrated report grid + custom report builder    */
 /* ================================================================== */
 
-/* ------------------------------------------------------------------ */
-/*  Report catalogue                                                    */
-/*  filter: "dateRange" | "reportDate" | "student" | "none"             */
-/* ------------------------------------------------------------------ */
-const REPORT_DEFS = [
-  { key: "daily", title: "Daily Collection", desc: "All receipts issued today.", filter: "reportDate" },
-  { key: "summary", title: "Collection Summary", desc: "Aggregated by mode and class.", filter: "dateRange" },
- {key: "student-fees",
-    title: "Student Fee Report",
-    desc: "Student-wise fee, payment and outstanding details.",
-    filter: "student",
-  },
-  { key: "ledger", title: "Student Ledger", desc: "Per-student invoices and payments.", filter: "student" },
-  { key: "outstanding", title: "Outstanding Report", desc: "All students with dues.", filter: "none" },
-  { key: "component", title: "Component-wise", desc: "Split by fee heads.", filter: "dateRange" },
-  { key: "class", title: "Class-wise", desc: "Collected vs expected by class.", filter: "dateRange" },
-  { key: "discount", title: "Discount Report", desc: "Discounts granted by template.", filter: "dateRange" },
-  { key: "late", title: "Late Fee Report", desc: "Late fees accrued and collected.", filter: "dateRange" },
-  { key: "future", title: "Future Collection", desc: "Projection for coming months.", filter: "none" },
-  { key: "cancelled", title: "Cancelled Invoices", desc: "Voided receipts.", filter: "none" },
-  { key: "mode", title: "Payment Mode Summary", desc: "Cash/UPI/Card breakdown.", filter: "dateRange" },
-  { key: "cashbook", title: "Cash Book", desc: "Cash-only ledger for the day.", filter: "dateRange" },
-  
-];
-
-function callReportApi(key, { fromDate, toDate, reportDate, studentUuid } = {}) {
-  switch (key) {
-    case "daily":
-      return getDailyCollection(reportDate || undefined);
-    case "summary":
-      return getCollectionSummary({ fromDate, toDate });
-    case "student-fees":
-  return getStudentFeeReport({
-    academic_year: ACADEMIC_YEAR,
-    student_uuid: studentUuid || undefined,
-    from_date: fromDate || undefined,
-    to_date: toDate || undefined,
-  });
-    case "ledger":
-      if (!studentUuid) return Promise.resolve(null);
-      return getStudentLedger(studentUuid);
-    case "outstanding":
-      return getOutstandingReport();
-    case "component":
-      return getComponentWiseReport({ fromDate, toDate });
-    case "class":
-      return getClassWiseReport({ fromDate, toDate });
-    case "discount":
-      return getDiscountReport({ fromDate, toDate });
-    case "late":
-      return getLateFeeReport({ fromDate, toDate });
-    case "future":
-      return getFutureCollection();
-    case "cancelled":
-      return getCancelledReport();
-    case "mode":
-      return getPaymentModeSummary({ fromDate, toDate });
-    case "cashbook":
-      return getCashBook({ fromDate, toDate });
-    default:
-      return Promise.resolve(null);
-  }
-}
-
-
-
-function projectTransactionRow(t) {
-  return {
-    receipt_no: t.receipt_no,
-    student: t.student_name,
-    mode: t.payment_mode,
-    type: t.payment_type,
-    status: t.transaction_status,
-    total: t.total_amount,
-    discount: t.discount_amount,
-    late_fee: t.late_fee,
-    paid: t.paid_amount,
-    balance: t.balance_amount,
-    reference: t.transaction_reference,
-    remarks: t.remarks,
-    date: t.created_at,
-  };
-}
-
-function studentNameByUuid(students, uuid) {
-  return (students || []).find((s) => s.student_uuid === uuid)?.full_name ?? uuid;
-}
-
-function projectOutstandingDueRow(d, students) {
-  return {
-    student: studentNameByUuid(students, d.student_uuid),
-    fee_month: d.fee_month,
-    amount: d.amount,
-    paid_amount: d.paid_amount,
-    outstanding: d.outstanding,
-    status: d.status,
-  };
-}
-
-function projectFutureDueRow(d, students) {
-  return {
-    student: studentNameByUuid(students, d.student_uuid),
-    fee_month: d.fee_month,
-    amount: d.amount,
-    status: d.status,
-  };
-}
-
-// Extracts { rows, totals } from a raw axios response for a given report key.
-function extractReport(key, res, ctx) {
-  // feeReports.js already returns response.data.
-  // So normally `res` itself is the API response body.
-  const body =
-    res?.success !== undefined
-      ? res
-      : (res?.data ?? res ?? {});
-
-  switch (key) {
-    case "daily":
-    case "cashbook": {
-      const list = Array.isArray(body.data) ? body.data : [];
-
-      return {
-        rows: list.map(projectTransactionRow),
-
-        totals: body.summary
-          ? [
-              {
-                label: "Transactions",
-                value: body.summary.transactions,
-              },
-              {
-                label: "Paid Amount",
-                value: inr(body.summary.paid_amount),
-              },
-              {
-                label: "Discount",
-                value: inr(body.summary.discount),
-              },
-              {
-                label: "Late Fee",
-                value: inr(body.summary.late_fee),
-              },
-            ]
-          : [],
-      };
-    }
-
-  case "student-fees": {
-  const list = Array.isArray(body.data)
-    ? body.data
-    : [];
-
-  return {
-    rows: list,
-    totals: [],
-  };
-}
-  }
-}
-
 const isMoneyKey = (k) => /amount|due|late|discount|fee|total|paid|balance|outstanding/i.test(k);
 
 function formatCell(key, value) {
@@ -12713,6 +19273,7 @@ function formatCell(key, value) {
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
+
 function exportRowsExcel(rows, filename) {
   if (!rows?.length) return;
 
@@ -12832,10 +19393,6 @@ function exportRowsPdf(rows, filename) {
   );
 }
 
-
-
-
-
 // function ReportsPanel({ students }) {
 //   const [loading, setLoading] = useState(false);
 //   const [reportData, setReportData] = useState([]);
@@ -12844,10 +19401,7 @@ function exportRowsPdf(rows, filename) {
 //   const [error, setError] = useState("");
 
 //   // =====================================================
-//   // REPORT TYPE
-//   // IMPORTANT:
-//   // value = key used everywhere (API param + filter logic)
-//   // label = shown in dropdown
+//   // REPORT TYPES
 //   // =====================================================
 
 //   const REPORT_TYPES = [
@@ -12856,25 +19410,41 @@ function exportRowsPdf(rows, filename) {
 //       label: "Master Student Fees Report (Paid / Unpaid)",
 //       description: "Paid vs unpaid breakdown across all students",
 //     },
+
 //     {
 //       value: "DAILY_COLLECTION",
 //       label: "Daily Collections Report",
 //       description: "Payments collected on a specific day",
 //     },
+
+//     // ===================================================
+//     // NEW
+//     // ===================================================
+//     {
+//       value: "DAILY_COLLECTION_HEAD",
+//       label: "Daily Collection Head Report",
+//       description:
+//         "Collection head-wise payment mode collection for the selected day",
+//     },
+
 //     {
 //       value: "FEE_PENDING",
 //       label: "Fee Pending Report",
 //       description: "Students with pending / overdue fees",
 //     },
+
 //     {
 //       value: "STUDENT_FEE_NEW",
 //       label: "Student Fee Report (New)",
-//       description: "Detailed fee report with student-wise breakdown",
+//       description:
+//         "Detailed fee report with student-wise breakdown",
 //     },
+
 //     {
 //       value: "RETRACTED_INVOICE",
 //       label: "Retracted Invoice Report",
-//       description: "Invoices that were retracted / cancelled",
+//       description:
+//         "Invoices that were retracted / cancelled",
 //     },
 //   ];
 
@@ -12908,10 +19478,11 @@ function exportRowsPdf(rows, filename) {
 //   const [toDate, setToDate] =
 //     useState("");
 
-//   // Used only by Daily Collections Report
 //   const [collectionDate, setCollectionDate] =
 //     useState(
-//       new Date().toISOString().split("T")[0]
+//       new Date()
+//         .toISOString()
+//         .split("T")[0]
 //     );
 
 //   const [classUuid, setClassUuid] =
@@ -12927,11 +19498,7 @@ function exportRowsPdf(rows, filename) {
 //     useState(true);
 
 //   // =====================================================
-//   // PER-REPORT FILTER VISIBILITY
-//   // IMPORTANT:
-//   // Toggle which filter fields are relevant for the
-//   // currently selected report type. Pure UI switch —
-//   // no reload needed, changes instantly on selection.
+//   // PER REPORT FILTER VISIBILITY
 //   // =====================================================
 
 //   const visibleFilters = useMemo(() => {
@@ -12958,6 +19525,20 @@ function exportRowsPdf(rows, filename) {
 //           paymentStatus: false,
 //         };
 
+//       // =================================================
+//       // NEW DAILY COLLECTION HEAD
+//       // =================================================
+//       case "DAILY_COLLECTION_HEAD":
+//         return {
+//           academicYear: false,
+//           student: false,
+//           class: true,
+//           section: true,
+//           dateRange: false,
+//           collectionDate: true,
+//           paymentStatus: false,
+//         };
+
 //       case "FEE_PENDING":
 //         return {
 //           academicYear: true,
@@ -12966,7 +19547,7 @@ function exportRowsPdf(rows, filename) {
 //           section: true,
 //           dateRange: false,
 //           collectionDate: false,
-//           paymentStatus: false, // locked to PENDING/OVERDUE
+//           paymentStatus: false,
 //         };
 
 //       case "RETRACTED_INVOICE":
@@ -12994,39 +19575,69 @@ function exportRowsPdf(rows, filename) {
 //     }
 //   }, [reportType]);
 
-//   // Status options change per report (e.g. Master Fees
-//   // is Paid/Unpaid only, Pending report is locked)
+//   // =====================================================
+//   // STATUS OPTIONS
+//   // =====================================================
+
 //   const statusOptionsForReport = useMemo(() => {
 //     if (reportType === "MASTER_FEES") {
 //       return [
-//         { value: "all", label: "All Status" },
-//         { value: "PAID", label: "Paid" },
-//         { value: "PENDING", label: "Unpaid" },
+//         {
+//           value: "all",
+//           label: "All Status",
+//         },
+//         {
+//           value: "PAID",
+//           label: "Paid",
+//         },
+//         {
+//           value: "PENDING",
+//           label: "Unpaid",
+//         },
 //       ];
 //     }
 
 //     return [
-//       { value: "all", label: "All Status" },
-//       { value: "PAID", label: "Paid" },
-//       { value: "PARTIAL", label: "Partial" },
-//       { value: "PENDING", label: "Pending" },
-//       { value: "OVERDUE", label: "Overdue" },
-//       { value: "ADVANCE", label: "Advance" },
+//       {
+//         value: "all",
+//         label: "All Status",
+//       },
+//       {
+//         value: "PAID",
+//         label: "Paid",
+//       },
+//       {
+//         value: "PARTIAL",
+//         label: "Partial",
+//       },
+//       {
+//         value: "PENDING",
+//         label: "Pending",
+//       },
+//       {
+//         value: "OVERDUE",
+//         label: "Overdue",
+//       },
+//       {
+//         value: "ADVANCE",
+//         label: "Advance",
+//       },
 //     ];
 //   }, [reportType]);
 
 //   // =====================================================
 //   // REPORT TYPE CHANGE
-//   // Reset the filters that don't apply to the newly
-//   // selected report so stale values can't leak into
-//   // the next request.
 //   // =====================================================
 
 //   const handleReportTypeChange = (value) => {
 //     setReportType(value);
 //     setError("");
 
-//     if (value === "DAILY_COLLECTION") {
+//     // Daily reports
+//     if (
+//       value === "DAILY_COLLECTION" ||
+//       value === "DAILY_COLLECTION_HEAD"
+//     ) {
 //       setFromDate("");
 //       setToDate("");
 //       setStudentUuid("");
@@ -13073,9 +19684,6 @@ function exportRowsPdf(rows, filename) {
 
 //   // =====================================================
 //   // CLASSES
-//   // IMPORTANT:
-//   // value = class UUID
-//   // label = class name
 //   // =====================================================
 
 //   const classes = useMemo(() => {
@@ -13105,9 +19713,6 @@ function exportRowsPdf(rows, filename) {
 
 //   // =====================================================
 //   // SECTIONS
-//   // IMPORTANT:
-//   // value = section UUID
-//   // label = section name
 //   // =====================================================
 
 //   const sections = useMemo(() => {
@@ -13153,18 +19758,15 @@ function exportRowsPdf(rows, filename) {
 //       .filter((student) => {
 //         const name =
 //           student.full_name
-//             ?.toLowerCase()
-//             || "";
+//             ?.toLowerCase() || "";
 
 //         const studentNo =
 //           student.student_no
-//             ?.toLowerCase()
-//             || "";
+//             ?.toLowerCase() || "";
 
 //         const admissionNo =
 //           student.admission_no
-//             ?.toLowerCase()
-//             || "";
+//             ?.toLowerCase() || "";
 
 //         return (
 //           name.includes(q) ||
@@ -13179,11 +19781,114 @@ function exportRowsPdf(rows, filename) {
 //   ]);
 
 //   // =====================================================
+//   // PAYMENT MODE NORMALIZER
+//   // =====================================================
+
+//   const getPaymentColumn = (mode) => {
+//     const value = String(mode || "")
+//       .trim()
+//       .toUpperCase()
+//       .replace(/[\s-]+/g, "_");
+
+//     switch (value) {
+//       case "CASH":
+//         return "Cash";
+
+//       case "CHEQUE":
+//       case "CHECK":
+//         return "Cheque";
+
+//       case "BANK_TRANSFER":
+//       case "BANKTRANSFER":
+//         return "Bank Transfer";
+
+//       case "CARD":
+//       case "SWIPE":
+//         return "Swipe";
+
+//       case "DD":
+//       case "DEMAND_DRAFT":
+//         return "DD";
+
+//       case "PAYTM":
+//         return "Paytm";
+
+//       case "NEFT":
+//         return "NEFT";
+
+//       case "NSO":
+//         return "NSO";
+
+//       case "ONLINE_MANUAL":
+//         return "Online Manual";
+
+//       case "CREDIT_NOTE":
+//       case "ADJUST_FROM_CREDIT_NOTE":
+//         return "Adjust from Credit Note";
+
+//       case "STUDENT_ACCOUNT":
+//       case "ADJUST_FROM_STUDENT_ACCOUNT":
+//         return "Adjust from Student Account balance";
+
+//       case "UPI":
+//         return "UPI";
+
+//       case "RAZORPAY":
+//       case "NETBANKING":
+//       case "NET_BANKING":
+//       case "ONLINE":
+//         return "Online";
+
+//       case "OTHER_SETTLEMENT":
+//         return "Other Settlement";
+
+//       case "CANCELLED":
+//         return "Cancelled";
+
+//       default:
+//         return "Online";
+//     }
+//   };
+
+//   // =====================================================
+//   // DAILY COLLECTION HEAD PAYMENT COLUMNS
+//   // =====================================================
+
+//   const DAILY_HEAD_COLUMNS = [
+//     "Online",
+//     "Cheque",
+//     "Cash",
+//     "Bank Transfer",
+//     "Other Settlement",
+//     "Cancelled",
+//     "Swipe",
+//     "DD",
+//     "Paytm",
+//     "Adjust from Student Account balance",
+//     "NEFT",
+//     "NSO",
+//     "Online Manual",
+//     "Adjust from Credit Note",
+//     "UPI",
+//   ];
+
+//   // =====================================================
+//   // GET TRANSACTION DETAIL AMOUNT
+//   // =====================================================
+
+//   const getTransactionComponentDetails = (txn) => {
+//     if (
+//       Array.isArray(txn.details) &&
+//       txn.details.length > 0
+//     ) {
+//       return txn.details;
+//     }
+
+//     return [];
+//   };
+
+//   // =====================================================
 //   // FETCH REPORT
-//   // IMPORTANT:
-//   // report_type is now sent to the API so the backend
-//   // can route to the correct query. All existing param
-//   // shape is preserved for backward compatibility.
 //   // =====================================================
 
 //   const fetchReport = async () => {
@@ -13191,43 +19896,827 @@ function exportRowsPdf(rows, filename) {
 //     setError("");
 
 //     try {
+//       // =================================================
+//       // DAILY COLLECTION HEAD REPORT
+//       // =================================================
+
+//       if (
+//         reportType ===
+//         "DAILY_COLLECTION_HEAD"
+//       ) {
+//         const response =
+//           await getPayments({
+//             limit: 500,
+//           });
+
+//         const payments =
+//           response?.data?.data ??
+//           response?.data ??
+//           [];
+
+//         const selectedDate =
+//           collectionDate ||
+//           new Date()
+//             .toISOString()
+//             .split("T")[0];
+
+//         // -----------------------------------------------
+//         // ONLY SUCCESSFUL PAYMENTS
+//         // -----------------------------------------------
+
+//         const dailyPayments =
+//           payments.filter((txn) => {
+//             if (
+//               txn.transaction_status !==
+//               "SUCCESS"
+//             ) {
+//               return false;
+//             }
+
+//             if (!txn.created_at) {
+//               return false;
+//             }
+
+//             const paymentDate =
+//               new Date(
+//                 txn.created_at
+//               )
+//                 .toLocaleDateString(
+//                   "en-CA"
+//                 );
+
+//             return (
+//               paymentDate ===
+//               selectedDate
+//             );
+//           });
+
+//         // -----------------------------------------------
+//         // CLASS / SECTION FILTER
+//         // -----------------------------------------------
+
+//         const filteredPayments =
+//           dailyPayments.filter(
+//             (txn) => {
+//               const student =
+//                 (students || []).find(
+//                   (s) =>
+//                     s.student_uuid ===
+//                     txn.student_uuid
+//                 );
+
+//               // If student is not available
+//               // in frontend list, don't include
+//               // because class/section cannot be verified.
+//               if (!student) {
+//                 return false;
+//               }
+
+//               if (
+//                 classUuid !== "all" &&
+//                 classUuid &&
+//                 student.class_uuid !==
+//                   classUuid
+//               ) {
+//                 return false;
+//               }
+
+//               if (
+//                 sectionUuid !== "all" &&
+//                 sectionUuid &&
+//                 student.section_uuid !==
+//                   sectionUuid
+//               ) {
+//                 return false;
+//               }
+
+//               return true;
+//             }
+//           );
+
+//         // -----------------------------------------------
+//         // GROUP COLLECTION HEAD
+//         // -----------------------------------------------
+
+//         const collectionMap =
+//           new Map();
+
+//         filteredPayments.forEach(
+//           (txn) => {
+//             const paymentColumn =
+//               getPaymentColumn(
+//                 txn.payment_mode
+//               );
+
+//             const details =
+//               getTransactionComponentDetails(
+//                 txn
+//               );
+
+//             // -------------------------------------------
+//             // NORMAL FEE COMPONENTS
+//             // -------------------------------------------
+
+//             if (details.length > 0) {
+//               details.forEach(
+//                 (detail) => {
+//                   const collectionHead =
+//                     detail.component_name ||
+//                     detail.name ||
+//                     "Other Income";
+
+//                   const amount =
+//                     Number(
+//                       detail.amount ??
+//                         detail.paid_amount ??
+//                         0
+//                     );
+
+//                   if (
+//                     !Number.isFinite(
+//                       amount
+//                     ) ||
+//                     amount <= 0
+//                   ) {
+//                     return;
+//                   }
+
+//                   if (
+//                     !collectionMap.has(
+//                       collectionHead
+//                     )
+//                   ) {
+//                     const row = {
+//                       "Collection Head":
+//                         collectionHead,
+
+//                       Date:
+//                         selectedDate,
+//                     };
+
+//                     DAILY_HEAD_COLUMNS.forEach(
+//                       (column) => {
+//                         row[column] = 0;
+//                       }
+//                     );
+
+//                     collectionMap.set(
+//                       collectionHead,
+//                       row
+//                     );
+//                   }
+
+//                   const row =
+//                     collectionMap.get(
+//                       collectionHead
+//                     );
+
+//                   row[paymentColumn] =
+//                     Number(
+//                       row[paymentColumn] || 0
+//                     ) + amount;
+//                 }
+//               );
+//             }
+
+//             // -------------------------------------------
+//             // LATE FEE
+//             //
+//             // Add late fee separately because
+//             // many payment transaction details
+//             // contain only actual fee components.
+//             // Avoid duplicate if a detail already
+//             // contains Late Fee.
+//             // -------------------------------------------
+
+//             const lateFee =
+//               Number(
+//                 txn.late_fee || 0
+//               );
+
+//             if (
+//               lateFee > 0
+//             ) {
+//               const hasLateFeeDetail =
+//                 details.some(
+//                   (detail) =>
+//                     String(
+//                       detail.component_name ||
+//                         detail.name ||
+//                         ""
+//                     )
+//                       .toLowerCase()
+//                       .includes(
+//                         "late"
+//                       )
+//                 );
+
+//               if (!hasLateFeeDetail) {
+//                 const collectionHead =
+//                   "Late Fee";
+
+//                 if (
+//                   !collectionMap.has(
+//                     collectionHead
+//                   )
+//                 ) {
+//                   const row = {
+//                     "Collection Head":
+//                       collectionHead,
+
+//                     Date:
+//                       selectedDate,
+//                   };
+
+//                   DAILY_HEAD_COLUMNS.forEach(
+//                     (column) => {
+//                       row[column] = 0;
+//                     }
+//                   );
+
+//                   collectionMap.set(
+//                     collectionHead,
+//                     row
+//                   );
+//                 }
+
+//                 const row =
+//                   collectionMap.get(
+//                     collectionHead
+//                   );
+
+//                 row[paymentColumn] =
+//                   Number(
+//                     row[paymentColumn] || 0
+//                   ) + lateFee;
+//               }
+//             }
+
+//             // -------------------------------------------
+//             // IF TRANSACTION HAS NO DETAILS
+//             // -------------------------------------------
+
+//             if (
+//               details.length === 0 &&
+//               lateFee <= 0
+//             ) {
+//               const collectionHead =
+//                 "Other Income";
+
+//               const amount =
+//                 Number(
+//                   txn.total_amount || 0
+//                 );
+
+//               if (amount > 0) {
+//                 if (
+//                   !collectionMap.has(
+//                     collectionHead
+//                   )
+//                 ) {
+//                   const row = {
+//                     "Collection Head":
+//                       collectionHead,
+
+//                     Date:
+//                       selectedDate,
+//                   };
+
+//                   DAILY_HEAD_COLUMNS.forEach(
+//                     (column) => {
+//                       row[column] = 0;
+//                     }
+//                   );
+
+//                   collectionMap.set(
+//                     collectionHead,
+//                     row
+//                   );
+//                 }
+
+//                 const row =
+//                   collectionMap.get(
+//                     collectionHead
+//                   );
+
+//                 row[paymentColumn] =
+//                   Number(
+//                     row[paymentColumn] || 0
+//                   ) + amount;
+//               }
+//             }
+//           }
+//         );
+
+//         // -----------------------------------------------
+//         // FORMAT DATE
+//         // -----------------------------------------------
+
+//         const displayDate =
+//           new Date(
+//             `${selectedDate}T00:00:00`
+//           ).toLocaleDateString(
+//             "en-GB"
+//           );
+
+//         // -----------------------------------------------
+//         // CREATE REPORT ROWS
+//         // -----------------------------------------------
+
+//         const collectionRows =
+//           Array.from(
+//             collectionMap.values()
+//           ).map(
+//             (row, index) => {
+//               const formattedRow = {
+//                 "Sr No":
+//                   index + 1,
+
+//                 "Collection Head":
+//                   row[
+//                     "Collection Head"
+//                   ],
+
+//                 Date:
+//                   displayDate,
+//               };
+
+//               let total = 0;
+
+//               DAILY_HEAD_COLUMNS.forEach(
+//                 (column) => {
+//                   const amount =
+//                     Number(
+//                       row[column] || 0
+//                     );
+
+//                   formattedRow[
+//                     column
+//                   ] = amount;
+
+//                   total += amount;
+//                 }
+//               );
+
+//               formattedRow[
+//                 "Total (₹)"
+//               ] = total;
+
+//               return formattedRow;
+//             }
+//           );
+
+//         // -----------------------------------------------
+//         // TOTAL ROW
+//         // -----------------------------------------------
+
+//         if (
+//           collectionRows.length > 0
+//         ) {
+//           const totalRow = {
+//             "Sr No": "",
+//             "Collection Head":
+//               "Total",
+//             Date: "",
+//           };
+
+//           let grandTotal = 0;
+
+//           DAILY_HEAD_COLUMNS.forEach(
+//             (column) => {
+//               const total =
+//                 collectionRows.reduce(
+//                   (sum, row) =>
+//                     sum +
+//                     Number(
+//                       row[column] || 0
+//                     ),
+//                   0
+//                 );
+
+//               totalRow[column] =
+//                 total;
+
+//               grandTotal += total;
+//             }
+//           );
+
+//           totalRow[
+//             "Total (₹)"
+//           ] = grandTotal;
+
+//           collectionRows.push(
+//             totalRow
+//           );
+//         }
+
+//         // -----------------------------------------------
+//         // SET DATA
+//         // -----------------------------------------------
+
+//         setComponents([]);
+
+//         setReportData(
+//           collectionRows
+//         );
+
+//         // -----------------------------------------------
+//         // TOTALS
+//         // -----------------------------------------------
+
+//         const grandCollection =
+//           collectionRows.length > 0
+//             ? Number(
+//                 collectionRows[
+//                   collectionRows.length - 1
+//                 ]["Total (₹)"] || 0
+//               )
+//             : 0;
+
+//         setTotals([
+//           {
+//             label:
+//               "Successful Payments",
+//             value:
+//               filteredPayments.length,
+//           },
+
+//           {
+//             label:
+//               "Collection Heads",
+//             value:
+//               collectionRows.length >
+//               0
+//                 ? collectionRows.length -
+//                   1
+//                 : 0,
+//           },
+
+//           {
+//             label:
+//               "Total Collection",
+//             value:
+//               inr(
+//                 grandCollection
+//               ),
+//           },
+//         ]);
+
+//         return;
+//       }
+
+//       // =================================================
+//       // DAILY COLLECTION REPORT
+//       // =================================================
+
+//       if (
+//         reportType ===
+//         "DAILY_COLLECTION"
+//       ) {
+//         const response =
+//           await getPayments({
+//             limit: 500,
+//           });
+
+//         const payments =
+//           response?.data?.data ??
+//           response?.data ??
+//           [];
+
+//         const selectedDate =
+//           collectionDate ||
+//           new Date()
+//             .toLocaleDateString(
+//               "en-CA"
+//             );
+
+//         // -----------------------------------------------
+//         // ONLY SUCCESSFUL PAYMENTS
+//         // -----------------------------------------------
+
+//         const dailyPayments =
+//           payments.filter(
+//             (txn) => {
+//               if (
+//                 txn.transaction_status !==
+//                 "SUCCESS"
+//               ) {
+//                 return false;
+//               }
+
+//               if (!txn.created_at) {
+//                 return false;
+//               }
+
+//               const paymentDate =
+//                 new Date(
+//                   txn.created_at
+//                 ).toLocaleDateString(
+//                   "en-CA"
+//                 );
+
+//               return (
+//                 paymentDate ===
+//                 selectedDate
+//               );
+//             }
+//           );
+
+//         // -----------------------------------------------
+//         // CLASS / SECTION FILTER
+//         // -----------------------------------------------
+
+//         const filteredPayments =
+//           dailyPayments.filter(
+//             (txn) => {
+//               const student =
+//                 (students || []).find(
+//                   (s) =>
+//                     s.student_uuid ===
+//                     txn.student_uuid
+//                 );
+
+//               if (!student) {
+//                 return false;
+//               }
+
+//               if (
+//                 classUuid !== "all" &&
+//                 classUuid &&
+//                 student.class_uuid !==
+//                   classUuid
+//               ) {
+//                 return false;
+//               }
+
+//               if (
+//                 sectionUuid !== "all" &&
+//                 sectionUuid &&
+//                 student.section_uuid !==
+//                   sectionUuid
+//               ) {
+//                 return false;
+//               }
+
+//               return true;
+//             }
+//           );
+
+//         // -----------------------------------------------
+//         // FORMAT DAILY COLLECTION ROWS
+//         // -----------------------------------------------
+
+//         const formattedRows =
+//           filteredPayments.map(
+//             (txn, index) => {
+//               const student =
+//                 (students || []).find(
+//                   (s) =>
+//                     s.student_uuid ===
+//                     txn.student_uuid
+//                 ) || {};
+
+//               const grossAmount =
+//                 Number(
+//                   txn.details?.reduce(
+//                     (sum, detail) =>
+//                       sum +
+//                       Number(
+//                         detail.amount ||
+//                           0
+//                       ),
+//                     0
+//                   ) ||
+//                     txn.total_amount ||
+//                     0
+//                 );
+
+//               const discountAmount =
+//                 Number(
+//                   txn.discount_amount ||
+//                     0
+//                 );
+
+//               const lateFee =
+//                 Number(
+//                   txn.late_fee || 0
+//                 );
+
+//               const paidAmount =
+//                 Number(
+//                   txn.total_amount || 0
+//                 );
+
+//               return {
+//                 "Sr No":
+//                   index + 1,
+
+//                 Student:
+//                   txn.student_name ||
+//                   student.full_name ||
+//                   "—",
+
+//                 Class:
+//                   student.class_name ||
+//                   "—",
+
+//                 Section:
+//                   student.section_name ||
+//                   "—",
+
+//                 "Admission No":
+//                   student.admission_no ||
+//                   txn.admission_number ||
+//                   "—",
+
+//                 Invoice:
+//                   txn.invoice_number ||
+//                   txn.invoice_no ||
+//                   "—",
+
+//                 Receipt:
+//                   txn.receipt_no ||
+//                   "—",
+
+//                 "Gross (₹)":
+//                   grossAmount,
+
+//                 "Discount (₹)":
+//                   discountAmount,
+
+//                 "Late Fee (₹)":
+//                   lateFee,
+
+//                 "Net (₹)":
+//                   paidAmount,
+
+//                 "Paid (₹)":
+//                   paidAmount,
+
+//                 "Pending (₹)":
+//                   0,
+
+//                 "Payment Mode":
+//                   txn.payment_mode ||
+//                   "—",
+
+//                 Reference:
+//                   txn.reference_number ||
+//                   txn.razorpay_payment_id ||
+//                   "—",
+
+//                 "Payment Date":
+//                   txn.created_at
+//                     ? new Date(
+//                         txn.created_at
+//                       ).toLocaleString()
+//                     : "—",
+//               };
+//             }
+//           );
+
+//         setComponents([]);
+
+//         setReportData(
+//           formattedRows
+//         );
+
+//         // -----------------------------------------------
+//         // TOTALS
+//         // -----------------------------------------------
+
+//         const totalGross =
+//           filteredPayments.reduce(
+//             (sum, txn) =>
+//               sum +
+//               Number(
+//                 txn.details?.reduce(
+//                   (detailSum, detail) =>
+//                     detailSum +
+//                     Number(
+//                       detail.amount ||
+//                         0
+//                     ),
+//                   0
+//                 ) ||
+//                   txn.total_amount ||
+//                   0
+//               ),
+//             0
+//           );
+
+//         const totalDiscount =
+//           filteredPayments.reduce(
+//             (sum, txn) =>
+//               sum +
+//               Number(
+//                 txn.discount_amount ||
+//                   0
+//               ),
+//             0
+//           );
+
+//         const totalLateFee =
+//           filteredPayments.reduce(
+//             (sum, txn) =>
+//               sum +
+//               Number(
+//                 txn.late_fee || 0
+//               ),
+//             0
+//           );
+
+//         const totalPaid =
+//           filteredPayments.reduce(
+//             (sum, txn) =>
+//               sum +
+//               Number(
+//                 txn.total_amount || 0
+//               ),
+//             0
+//           );
+
+//         setTotals([
+//           {
+//             label: "Payments",
+//             value:
+//               filteredPayments.length,
+//           },
+
+//           {
+//             label: "Total Gross",
+//             value:
+//               inr(totalGross),
+//           },
+
+//           {
+//             label:
+//               "Total Discount",
+//             value:
+//               inr(totalDiscount),
+//           },
+
+//           {
+//             label:
+//               "Total Late Fee",
+//             value:
+//               inr(totalLateFee),
+//           },
+
+//           {
+//             label:
+//               "Total Collection",
+//             value:
+//               inr(totalPaid),
+//           },
+//         ]);
+
+//         return;
+//       }
+
+//       // =================================================
+//       // ALL OTHER REPORTS
+//       // =================================================
+
 //       const params = {
-//         report_type: reportType,
+//         report_type:
+//           reportType,
 
 //         academic_year:
 //           visibleFilters.academicYear
-//             ? academicYear || undefined
+//             ? academicYear ||
+//               undefined
 //             : undefined,
 
 //         student_uuid:
 //           visibleFilters.student
-//             ? studentUuid || undefined
+//             ? studentUuid ||
+//               undefined
 //             : undefined,
 
 //         from_date:
 //           visibleFilters.dateRange
-//             ? fromDate || undefined
+//             ? fromDate ||
+//               undefined
 //             : undefined,
 
 //         to_date:
 //           visibleFilters.dateRange
-//             ? toDate || undefined
+//             ? toDate ||
+//               undefined
 //             : undefined,
 
 //         collection_date:
 //           visibleFilters.collectionDate
-//             ? collectionDate || undefined
+//             ? collectionDate ||
+//               undefined
 //             : undefined,
 
-//         // IMPORTANT:
-//         // UUID is sent here
 //         class_uuid:
 //           classUuid === "all"
 //             ? undefined
 //             : classUuid,
 
-//         // IMPORTANT:
-//         // UUID is sent here
 //         section_uuid:
 //           sectionUuid === "all"
 //             ? undefined
@@ -13251,26 +20740,25 @@ function exportRowsPdf(rows, filename) {
 
 //       if (!body.success) {
 //         throw new Error(
-//           body.message ||
-//             "Failed to fetch report"
+//           typeof body.message ===
+//             "string"
+//             ? body.message
+//             : describeErrorDetail(
+//                 body.message
+//               ) ||
+//                 "Failed to fetch report"
 //         );
 //       }
-
-//       // =================================================
-//       // API DATA
-//       // =================================================
 
 //       const data =
 //         Array.isArray(body.data)
 //           ? body.data
 //           : [];
 
-//       // =================================================
-//       // GLOBAL COMPONENT LIST
-//       // =================================================
-
 //       const componentsList =
-//         Array.isArray(body.components)
+//         Array.isArray(
+//           body.components
+//         )
 //           ? body.components
 //           : [];
 
@@ -13278,9 +20766,9 @@ function exportRowsPdf(rows, filename) {
 //         componentsList
 //       );
 
-//       // =================================================
-//       // FORMAT ROWS
-//       // =================================================
+//       // -----------------------------------------------
+//       // FORMAT NORMAL REPORT
+//       // -----------------------------------------------
 
 //       const formattedRows =
 //         data.map((row) => {
@@ -13288,15 +20776,15 @@ function exportRowsPdf(rows, filename) {
 //             "Sr No":
 //               row.sr_no,
 
-//             "Student":
+//             Student:
 //               row.student_name ||
 //               "—",
 
-//             "Class":
+//             Class:
 //               row.class_name ||
 //               "—",
 
-//             "Section":
+//             Section:
 //               row.section_name ||
 //               "—",
 
@@ -13304,11 +20792,11 @@ function exportRowsPdf(rows, filename) {
 //               row.admission_number ||
 //               "—",
 
-//             "Invoice":
+//             Invoice:
 //               row.invoice_number ||
 //               "—",
 
-//             "Receipt":
+//             Receipt:
 //               row.receipt_number ||
 //               "—",
 //           };
@@ -13330,56 +20818,117 @@ function exportRowsPdf(rows, filename) {
 //             }
 //           );
 
-//           formattedRow["Gross (₹)"] =
-//             Number(row.gross_amount || 0);
+//           formattedRow[
+//             "Gross (₹)"
+//           ] =
+//             Number(
+//               row.gross_amount ||
+//                 0
+//             );
 
-//           formattedRow["Discount (₹)"] =
-//             Number(row.concession_amount || 0);
+//           formattedRow[
+//             "Discount (₹)"
+//           ] =
+//             Number(
+//               row.concession_amount ||
+//                 0
+//             );
 
-//           formattedRow["Late Fee (₹)"] =
-//             Number(row.late_fee || 0);
+//           formattedRow[
+//             "Late Fee (₹)"
+//           ] =
+//             Number(
+//               row.late_fee ||
+//                 0
+//             );
 
-//           formattedRow["Net (₹)"] =
-//             Number(row.net_amount || 0);
+//           formattedRow[
+//             "Net (₹)"
+//           ] =
+//             Number(
+//               row.net_amount ||
+//                 0
+//             );
 
-//           formattedRow["Paid (₹)"] =
-//             Number(row.paid_amount || 0);
+//           formattedRow[
+//             "Paid (₹)"
+//           ] =
+//             Number(
+//               row.paid_amount ||
+//                 0
+//             );
 
-//           formattedRow["Pending (₹)"] =
-//             Number(row.pending_amount || 0);
+//           formattedRow[
+//             "Pending (₹)"
+//           ] =
+//             Number(
+//               row.pending_amount ||
+//                 0
+//             );
 
-//           formattedRow["Payment Mode"] =
-//             row.payment_mode || "—";
+//           formattedRow[
+//             "Payment Mode"
+//           ] =
+//             row.payment_mode ||
+//             "—";
 
-//           formattedRow["Reference"] =
-//             row.reference_number || "—";
+//           formattedRow[
+//             "Reference"
+//           ] =
+//             row.reference_number ||
+//             "—";
 
-//           formattedRow["Payment Date"] =
+//           formattedRow[
+//             "Payment Date"
+//           ] =
 //             row.payment_date
-//               ? new Date(row.payment_date).toLocaleDateString()
+//               ? new Date(
+//                   row.payment_date
+//                 ).toLocaleDateString()
 //               : "—";
 
-//           formattedRow["Due Date"] =
+//           formattedRow[
+//             "Due Date"
+//           ] =
 //             row.due_date
-//               ? new Date(row.due_date).toLocaleDateString()
+//               ? new Date(
+//                   row.due_date
+//                 ).toLocaleDateString()
 //               : "—";
 
-//           formattedRow["Invoice Date"] =
+//           formattedRow[
+//             "Invoice Date"
+//           ] =
 //             row.invoice_date
-//               ? new Date(row.invoice_date).toLocaleDateString()
+//               ? new Date(
+//                   row.invoice_date
+//                 ).toLocaleDateString()
 //               : "—";
 
-//           if (reportType === "RETRACTED_INVOICE") {
-//             formattedRow["Retracted On"] =
+//           if (
+//             reportType ===
+//             "RETRACTED_INVOICE"
+//           ) {
+//             formattedRow[
+//               "Retracted On"
+//             ] =
 //               row.retracted_at
-//                 ? new Date(row.retracted_at).toLocaleDateString()
+//                 ? new Date(
+//                     row.retracted_at
+//                   ).toLocaleDateString()
 //                 : "—";
 
-//             formattedRow["Retracted By"] =
-//               row.retracted_by || "—";
+//             formattedRow[
+//               "Retracted By"
+//             ] =
+//               row.retracted_by ||
+//               "—";
 
-//             formattedRow["Reason"] =
-//               row.retraction_reason || "—";
+//             formattedRow[
+//               "Reason"
+//             ] =
+//               row.retraction_reason ||
+//               "—";
 //           }
 
 //           return formattedRow;
@@ -13389,56 +20938,161 @@ function exportRowsPdf(rows, filename) {
 //         formattedRows
 //       );
 
-//       // =================================================
-//       // TOTALS
-//       // =================================================
+//       // -----------------------------------------------
+//       // NORMAL REPORT TOTALS
+//       // -----------------------------------------------
 
 //       const totalGross =
-//         data.reduce((sum, row) => sum + Number(row.gross_amount || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.gross_amount ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const totalDiscount =
-//         data.reduce((sum, row) => sum + Number(row.concession_amount || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.concession_amount ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const totalLateFee =
-//         data.reduce((sum, row) => sum + Number(row.late_fee || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.late_fee ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const totalNet =
-//         data.reduce((sum, row) => sum + Number(row.net_amount || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.net_amount ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const totalPaid =
-//         data.reduce((sum, row) => sum + Number(row.paid_amount || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.paid_amount ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const totalPending =
-//         data.reduce((sum, row) => sum + Number(row.pending_amount || 0), 0);
+//         data.reduce(
+//           (sum, row) =>
+//             sum +
+//             Number(
+//               row.pending_amount ||
+//                 0
+//             ),
+//           0
+//         );
 
 //       const componentTotals = {};
 
-//       componentsList.forEach((component) => {
-//         componentTotals[component] = data.reduce(
-//           (sum, row) =>
-//             sum + Number(row.components?.[component] || 0),
-//           0
-//         );
-//       });
+//       componentsList.forEach(
+//         (component) => {
+//           componentTotals[
+//             component
+//           ] = data.reduce(
+//             (sum, row) =>
+//               sum +
+//               Number(
+//                 row.components?.[
+//                   component
+//                 ] || 0
+//               ),
+//             0
+//           );
+//         }
+//       );
 
 //       const totalCards = [
-//         { label: "Students", value: data.length },
-//         { label: "Total Gross", value: inr(totalGross) },
-//         { label: "Total Discount", value: inr(totalDiscount) },
-//         { label: "Total Late Fee", value: inr(totalLateFee) },
-//         { label: "Total Net", value: inr(totalNet) },
-//         { label: "Total Paid", value: inr(totalPaid) },
-//         { label: "Total Pending", value: inr(totalPending) },
+//         {
+//           label: "Students",
+//           value:
+//             data.length,
+//         },
+
+//         {
+//           label: "Total Gross",
+//           value:
+//             inr(totalGross),
+//         },
+
+//         {
+//           label:
+//             "Total Discount",
+//           value:
+//             inr(totalDiscount),
+//         },
+
+//         {
+//           label:
+//             "Total Late Fee",
+//           value:
+//             inr(totalLateFee),
+//         },
+
+//         {
+//           label: "Total Net",
+//           value:
+//             inr(totalNet),
+//         },
+
+//         {
+//           label: "Total Paid",
+//           value:
+//             inr(totalPaid),
+//         },
+
+//         {
+//           label:
+//             "Total Pending",
+//           value:
+//             inr(totalPending),
+//         },
 //       ];
 
-//       componentsList.forEach((component) => {
-//         totalCards.push({
-//           label: component,
-//           value: inr(componentTotals[component] || 0),
-//         });
-//       });
+//       componentsList.forEach(
+//         (component) => {
+//           totalCards.push({
+//             label:
+//               component,
 
-//       setTotals(totalCards);
+//             value:
+//               inr(
+//                 componentTotals[
+//                   component
+//                 ] || 0
+//               ),
+//           });
+//         }
+//       );
+
+//       setTotals(
+//         totalCards
+//       );
 //     } catch (err) {
 //       console.error(
 //         "Report Error:",
@@ -13446,9 +21100,10 @@ function exportRowsPdf(rows, filename) {
 //       );
 
 //       setError(
-//         err?.response?.data?.detail ||
-//           err?.message ||
+//         getErrorMessage(
+//           err,
 //           "Failed to load report"
+//         )
 //       );
 
 //       setReportData([]);
@@ -13460,38 +21115,59 @@ function exportRowsPdf(rows, filename) {
 //   };
 
 //   // =====================================================
-//   // INITIAL LOAD
+//   // INITIAL / REPORT TYPE LOAD
 //   // =====================================================
 
 //   useEffect(() => {
 //     fetchReport();
+
 //     // eslint-disable-next-line react-hooks/exhaustive-deps
 //   }, []);
 
-//   // Re-fetch automatically whenever the report type
-//   // itself changes, so switching the dropdown is enough
-//   // — no need to also press Generate.
 //   useEffect(() => {
 //     fetchReport();
+
 //     // eslint-disable-next-line react-hooks/exhaustive-deps
 //   }, [reportType]);
+
+//   useEffect(() => {
+//     if (
+//       reportType ===
+//         "DAILY_COLLECTION" ||
+//       reportType ===
+//         "DAILY_COLLECTION_HEAD"
+//     ) {
+//       fetchReport();
+//     }
+
+//     // eslint-disable-next-line react-hooks/exhaustive-deps
+//   }, [collectionDate]);
 
 //   // =====================================================
 //   // STUDENT SELECT
 //   // =====================================================
 
-//   const handleStudentSelect = (student) => {
-//     setStudentUuid(student.student_uuid);
-//     setStudentQuery(student.full_name);
+//   const handleStudentSelect = (
+//     student
+//   ) => {
+//     setStudentUuid(
+//       student.student_uuid
+//     );
 
-//     // Auto-fill class & section from the selected student
-//     // so the two dropdowns don't need to be set by hand.
+//     setStudentQuery(
+//       student.full_name
+//     );
+
 //     if (student.class_uuid) {
-//       setClassUuid(student.class_uuid);
+//       setClassUuid(
+//         student.class_uuid
+//       );
 //     }
 
 //     if (student.section_uuid) {
-//       setSectionUuid(student.section_uuid);
+//       setSectionUuid(
+//         student.section_uuid
+//       );
 //     }
 //   };
 
@@ -13506,11 +21182,18 @@ function exportRowsPdf(rows, filename) {
 //     setToDate("");
 //     setClassUuid("all");
 //     setSectionUuid("all");
+
 //     setPaymentStatus(
-//       reportType === "FEE_PENDING" ? "PENDING" : "all"
+//       reportType ===
+//         "FEE_PENDING"
+//         ? "PENDING"
+//         : "all"
 //     );
+
 //     setCollectionDate(
-//       new Date().toISOString().split("T")[0]
+//       new Date()
+//         .toISOString()
+//         .split("T")[0]
 //     );
 
 //     fetchReport();
@@ -13525,7 +21208,9 @@ function exportRowsPdf(rows, filename) {
 //       return [];
 //     }
 
-//     return Object.keys(reportData[0]);
+//     return Object.keys(
+//       reportData[0]
+//     );
 //   }, [reportData]);
 
 //   // =====================================================
@@ -13534,40 +21219,71 @@ function exportRowsPdf(rows, filename) {
 
 //   const exportExcel = () => {
 //     if (!reportData.length) {
-//       toast.error("No data to export");
+//       toast.error(
+//         "No data to export"
+//       );
 //       return;
 //     }
 
-//     const exportRows = reportData.map((row) => {
-//       const exportRow = { ...row };
+//     const exportRows =
+//       reportData.map(
+//         (row) => {
+//           const exportRow = {
+//             ...row,
+//           };
 
-//       components.forEach((component) => {
-//         if (
-//           exportRow[component] !== null &&
-//           exportRow[component] !== undefined
-//         ) {
-//           exportRow[component] = Number(exportRow[component]);
+//           components.forEach(
+//             (component) => {
+//               if (
+//                 exportRow[
+//                   component
+//                 ] !== null &&
+//                 exportRow[
+//                   component
+//                 ] !== undefined
+//               ) {
+//                 exportRow[
+//                   component
+//                 ] = Number(
+//                   exportRow[
+//                     component
+//                   ]
+//                 );
+//               }
+//             }
+//           );
+
+//           return exportRow;
 //         }
-//       });
+//       );
 
-//       return exportRow;
-//     });
+//     const worksheet =
+//       XLSX.utils.json_to_sheet(
+//         exportRows
+//       );
 
-//     const worksheet = XLSX.utils.json_to_sheet(exportRows);
-//     const workbook = XLSX.utils.book_new();
+//     const workbook =
+//       XLSX.utils.book_new();
 
 //     XLSX.utils.book_append_sheet(
 //       workbook,
 //       worksheet,
-//       activeReport.label.slice(0, 31)
+//       activeReport.label.slice(
+//         0,
+//         31
+//       )
 //     );
 
 //     XLSX.writeFile(
 //       workbook,
-//       `${reportType.toLowerCase()}-${new Date().toISOString().split("T")[0]}.xlsx`
+//       `${reportType.toLowerCase()}-${new Date()
+//         .toISOString()
+//         .split("T")[0]}.xlsx`
 //     );
 
-//     toast.success("Report exported successfully");
+//     toast.success(
+//       "Report exported successfully"
+//     );
 //   };
 
 //   // =====================================================
@@ -13576,60 +21292,153 @@ function exportRowsPdf(rows, filename) {
 
 //   const exportPDF = () => {
 //     if (!reportData.length) {
-//       toast.error("No data to export");
+//       toast.error(
+//         "No data to export"
+//       );
 //       return;
 //     }
 
 //     const doc = new jsPDF({
-//       orientation: "landscape",
+//       orientation:
+//         "landscape",
 //       unit: "mm",
 //       format: "a4",
 //     });
 
 //     doc.setFontSize(16);
-//     doc.text(activeReport.label, 14, 15);
 
-//     doc.setFontSize(9);
-//     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22);
-
-//     if (visibleFilters.academicYear) {
-//       doc.text(`Academic Year: ${academicYear}`, 14, 28);
-//     }
-
-//     const pdfColumns = columns;
-
-//     const pdfData = reportData.map((row) =>
-//       pdfColumns.map((column) => {
-//         const value = row[column];
-//         const isMoney =
-//           components.includes(column) || column.includes("₹");
-
-//         if (value === null || value === undefined) {
-//           return "—";
-//         }
-
-//         return isMoney && typeof value === "number"
-//           ? Number(value).toFixed(2)
-//           : value;
-//       })
+//     doc.text(
+//       activeReport.label,
+//       14,
+//       15
 //     );
 
+//     doc.setFontSize(9);
+
+//     doc.text(
+//       `Generated: ${new Date().toLocaleString()}`,
+//       14,
+//       22
+//     );
+
+//     if (
+//       visibleFilters.academicYear
+//     ) {
+//       doc.text(
+//         `Academic Year: ${academicYear}`,
+//         14,
+//         28
+//       );
+//     }
+
+//     const pdfColumns =
+//       columns;
+
+//     const pdfData =
+//       reportData.map(
+//         (row) =>
+//           pdfColumns.map(
+//             (column) => {
+//               const value =
+//                 row[column];
+
+//               const isMoney =
+//                 components.includes(
+//                   column
+//                 ) ||
+//                 column.includes(
+//                   "₹"
+//                 ) ||
+//                 column ===
+//                   "Online" ||
+//                 column ===
+//                   "Cheque" ||
+//                 column ===
+//                   "Cash" ||
+//                 column ===
+//                   "Bank Transfer" ||
+//                 column ===
+//                   "Other Settlement" ||
+//                 column ===
+//                   "Cancelled" ||
+//                 column ===
+//                   "Swipe" ||
+//                 column === "DD" ||
+//                 column ===
+//                   "Paytm" ||
+//                 column ===
+//                   "Adjust from Student Account balance" ||
+//                 column ===
+//                   "NEFT" ||
+//                 column === "NSO" ||
+//                 column ===
+//                   "Online Manual" ||
+//                 column ===
+//                   "Adjust from Credit Note" ||
+//                 column === "UPI" ||
+//                 column ===
+//                   "Total (₹)";
+
+//               if (
+//                 value === null ||
+//                 value === undefined
+//               ) {
+//                 return "—";
+//               }
+
+//               return isMoney &&
+//                 typeof value ===
+//                   "number"
+//                 ? Number(
+//                     value
+//                   ).toFixed(2)
+//                 : value;
+//             }
+//           )
+//       );
+
 //     autoTable(doc, {
-//       head: [pdfColumns],
+//       head: [
+//         pdfColumns,
+//       ],
+
 //       body: pdfData,
-//       startY: 32,
-//       styles: { fontSize: 6, cellPadding: 1.2 },
-//       headStyles: { fontSize: 6, fillColor: [99, 102, 241] },
-//       margin: { left: 5, right: 5 },
-//       horizontalPageBreak: true,
-//       horizontalPageBreakRepeat: 1,
+
+//       startY:
+//         visibleFilters.academicYear
+//           ? 32
+//           : 28,
+
+//       styles: {
+//         fontSize: 6,
+//         cellPadding: 1.2,
+//       },
+
+//       headStyles: {
+//         fontSize: 6,
+//       },
+
+//       margin: {
+//         left: 5,
+//         right: 5,
+//       },
+
+//       horizontalPageBreak:
+//         true,
+
+//       horizontalPageBreakRepeat:
+//         1,
 //     });
 
 //     doc.save(
-//       `${reportType.toLowerCase()}-${new Date().toISOString().split("T")[0]}.pdf`
+//       `${reportType.toLowerCase()}-${new Date()
+//         .toISOString()
+//         .split("T")[0]}.pdf`
 //     );
 
-//     toast.success("PDF exported successfully");
+//     toast.success(
+//       "PDF exported successfully"
+//     );
 //   };
 
 //   // =====================================================
@@ -13640,7 +21449,7 @@ function exportRowsPdf(rows, filename) {
 //     <div className="space-y-4">
 
 //       {/* =================================================
-//           FILTER CARD
+//           REPORT FILTER CARD
 //       ================================================= */}
 
 //       <Card className="border-border/60">
@@ -13648,27 +21457,41 @@ function exportRowsPdf(rows, filename) {
 //         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
 
 //           <div>
+
 //             <CardTitle className="font-display text-base flex items-center gap-2">
+
 //               <FileBarChart2 className="h-4 w-4 text-primary" />
+
 //               {activeReport.label}
+
 //             </CardTitle>
 
 //             <CardDescription>
+
 //               {activeReport.description}
+
 //               {components.length > 0 && (
 //                 <span className="ml-2 text-xs text-muted-foreground">
 //                   · {components.length} fee components
 //                 </span>
 //               )}
+
 //             </CardDescription>
+
 //           </div>
 
 //           <Button
 //             variant="ghost"
 //             size="sm"
-//             onClick={() => setShowFilters(!showFilters)}
+//             onClick={() =>
+//               setShowFilters(
+//                 !showFilters
+//               )
+//             }
 //           >
-//             {showFilters ? "Hide Filters" : "Show Filters"}
+//             {showFilters
+//               ? "Hide Filters"
+//               : "Show Filters"}
 //           </Button>
 
 //         </CardHeader>
@@ -13676,268 +21499,457 @@ function exportRowsPdf(rows, filename) {
 //         {showFilters && (
 //           <CardContent className="pt-0 space-y-3">
 
-//             {/* =========================================
-//                 REPORT TYPE — always shown, first field
-//             ========================================= */}
-
 //             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
 
+//               {/* REPORT TYPE */}
+
 //               <FF label="Report Type">
+
 //                 <Select
 //                   value={reportType}
-//                   onValueChange={handleReportTypeChange}
+//                   onValueChange={
+//                     handleReportTypeChange
+//                   }
 //                 >
+
 //                   <SelectTrigger className="h-9">
 //                     <SelectValue placeholder="Select report" />
 //                   </SelectTrigger>
 
 //                   <SelectContent>
-//                     {REPORT_TYPES.map((rt) => (
-//                       <SelectItem key={rt.value} value={rt.value}>
-//                         {rt.label}
-//                       </SelectItem>
-//                     ))}
+
+//                     {REPORT_TYPES.map(
+//                       (rt) => (
+//                         <SelectItem
+//                           key={
+//                             rt.value
+//                           }
+//                           value={
+//                             rt.value
+//                           }
+//                         >
+//                           {rt.label}
+//                         </SelectItem>
+//                       )
+//                     )}
+
 //                   </SelectContent>
+
 //                 </Select>
+
 //               </FF>
 
-//               {/* =========================================
-//                   ACADEMIC YEAR
-//               ========================================= */}
+//               {/* ACADEMIC YEAR */}
 
 //               {visibleFilters.academicYear && (
 //                 <FF label="Academic Year">
+
 //                   <Select
-//                     value={academicYear}
-//                     onValueChange={setAcademicYear}
+//                     value={
+//                       academicYear
+//                     }
+//                     onValueChange={
+//                       setAcademicYear
+//                     }
 //                   >
+
 //                     <SelectTrigger className="h-9">
 //                       <SelectValue placeholder="Select year" />
 //                     </SelectTrigger>
 
 //                     <SelectContent>
-//                       {academicYears.map((year) => (
-//                         <SelectItem key={year} value={year}>
-//                           {year}
-//                         </SelectItem>
-//                       ))}
+
+//                       {academicYears.map(
+//                         (year) => (
+//                           <SelectItem
+//                             key={year}
+//                             value={year}
+//                           >
+//                             {year}
+//                           </SelectItem>
+//                         )
+//                       )}
+
 //                     </SelectContent>
+
 //                   </Select>
+
 //                 </FF>
 //               )}
 
-//               {/* =========================================
-//                   STUDENT
-//               ========================================= */}
+//               {/* STUDENT */}
 
 //               {visibleFilters.student && (
 //                 <div className="space-y-1.5 relative">
+
 //                   <Label className="text-xs text-muted-foreground">
 //                     Student
 //                   </Label>
 
 //                   <Input
 //                     placeholder="Search by name, student no or admission no..."
-//                     value={studentQuery}
+//                     value={
+//                       studentQuery
+//                     }
 //                     onChange={(e) => {
-//                       const value = e.target.value;
-//                       setStudentQuery(value);
-//                       if (!value) setStudentUuid("");
+//                       const value =
+//                         e.target
+//                           .value;
+
+//                       setStudentQuery(
+//                         value
+//                       );
+
+//                       if (!value) {
+//                         setStudentUuid(
+//                           ""
+//                         );
+//                       }
 //                     }}
 //                     className="h-9"
 //                   />
 
 //                   {studentQuery &&
 //                     !studentUuid &&
-//                     matchingStudents.length > 0 && (
+//                     matchingStudents.length >
+//                       0 && (
 //                       <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-//                         {matchingStudents.map((student) => (
-//                           <button
-//                             key={student.student_uuid}
-//                             type="button"
-//                             className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center justify-between"
-//                             onClick={() => handleStudentSelect(student)}
-//                           >
-//                             <span>{student.full_name}</span>
-//                             <span className="text-xs text-muted-foreground">
-//                               {student.class_name}
-//                               {student.section_name
-//                                 ? `-${student.section_name}`
-//                                 : ""}
-//                             </span>
-//                           </button>
-//                         ))}
+
+//                         {matchingStudents.map(
+//                           (student) => (
+//                             <button
+//                               key={
+//                                 student.student_uuid
+//                               }
+//                               type="button"
+//                               className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center justify-between"
+//                               onClick={() =>
+//                                 handleStudentSelect(
+//                                   student
+//                                 )
+//                               }
+//                             >
+
+//                               <span>
+//                                 {
+//                                   student.full_name
+//                                 }
+//                               </span>
+
+//                               <span className="text-xs text-muted-foreground">
+
+//                                 {
+//                                   student.class_name
+//                                 }
+
+//                                 {student.section_name
+//                                   ? `-${student.section_name}`
+//                                   : ""}
+
+//                               </span>
+
+//                             </button>
+//                           )
+//                         )}
+
 //                       </div>
 //                     )}
 
 //                   {studentUuid && (
 //                     <div className="text-xs text-primary flex items-center gap-1.5 bg-primary/5 rounded-md px-2 py-1 w-fit">
+
 //                       <Check className="h-3 w-3" />
-//                       <span className="font-medium">{studentQuery}</span>
+
+//                       <span className="font-medium">
+//                         {
+//                           studentQuery
+//                         }
+//                       </span>
+
 //                       <button
 //                         type="button"
 //                         className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
 //                         onClick={() => {
-//                           setStudentUuid("");
-//                           setStudentQuery("");
-//                           setClassUuid("all");
-//                           setSectionUuid("all");
+//                           setStudentUuid(
+//                             ""
+//                           );
+
+//                           setStudentQuery(
+//                             ""
+//                           );
+
+//                           setClassUuid(
+//                             "all"
+//                           );
+
+//                           setSectionUuid(
+//                             "all"
+//                           );
 //                         }}
 //                       >
 //                         <X className="h-3 w-3" />
 //                       </button>
+
 //                     </div>
 //                   )}
+
 //                 </div>
 //               )}
 
-//               {/* =========================================
-//                   CLASS
-//               ========================================= */}
+//               {/* CLASS */}
 
 //               {visibleFilters.class && (
 //                 <FF label="Class">
+
 //                   <Select
-//                     value={classUuid}
-//                     onValueChange={(value) => {
-//                       setClassUuid(value);
-//                       setSectionUuid("all");
+//                     value={
+//                       classUuid
+//                     }
+//                     onValueChange={(
+//                       value
+//                     ) => {
+//                       setClassUuid(
+//                         value
+//                       );
+
+//                       setSectionUuid(
+//                         "all"
+//                       );
 //                     }}
 //                   >
+
 //                     <SelectTrigger className="h-9">
 //                       <SelectValue placeholder="All Classes" />
 //                     </SelectTrigger>
 
 //                     <SelectContent>
-//                       <SelectItem value="all">All Classes</SelectItem>
-//                       {classes.map((item) => (
-//                         <SelectItem key={item.uuid} value={item.uuid}>
-//                           {item.name}
-//                         </SelectItem>
-//                       ))}
+
+//                       <SelectItem value="all">
+//                         All Classes
+//                       </SelectItem>
+
+//                       {classes.map(
+//                         (item) => (
+//                           <SelectItem
+//                             key={
+//                               item.uuid
+//                             }
+//                             value={
+//                               item.uuid
+//                             }
+//                           >
+//                             {
+//                               item.name
+//                             }
+//                           </SelectItem>
+//                         )
+//                       )}
+
 //                     </SelectContent>
+
 //                   </Select>
+
 //                 </FF>
 //               )}
 
-//               {/* =========================================
-//                   SECTION
-//               ========================================= */}
+//               {/* SECTION */}
 
 //               {visibleFilters.section && (
 //                 <FF label="Section">
+
 //                   <Select
-//                     value={sectionUuid}
-//                     onValueChange={setSectionUuid}
+//                     value={
+//                       sectionUuid
+//                     }
+//                     onValueChange={
+//                       setSectionUuid
+//                     }
 //                   >
+
 //                     <SelectTrigger className="h-9">
 //                       <SelectValue placeholder="All Sections" />
 //                     </SelectTrigger>
 
 //                     <SelectContent>
-//                       <SelectItem value="all">All Sections</SelectItem>
-//                       {sections.map((item) => (
-//                         <SelectItem key={item.uuid} value={item.uuid}>
-//                           {item.name}
-//                         </SelectItem>
-//                       ))}
+
+//                       <SelectItem value="all">
+//                         All Sections
+//                       </SelectItem>
+
+//                       {sections.map(
+//                         (item) => (
+//                           <SelectItem
+//                             key={
+//                               item.uuid
+//                             }
+//                             value={
+//                               item.uuid
+//                             }
+//                           >
+//                             {
+//                               item.name
+//                             }
+//                           </SelectItem>
+//                         )
+//                       )}
+
 //                     </SelectContent>
+
 //                   </Select>
+
 //                 </FF>
 //               )}
 
-//               {/* =========================================
-//                   DATE RANGE (From / To)
-//               ========================================= */}
+//               {/* FROM / TO */}
 
 //               {visibleFilters.dateRange && (
 //                 <>
 //                   <FF label="From Date">
+
 //                     <Input
 //                       type="date"
-//                       value={fromDate}
-//                       onChange={(e) => setFromDate(e.target.value)}
+//                       value={
+//                         fromDate
+//                       }
+//                       onChange={(e) =>
+//                         setFromDate(
+//                           e.target
+//                             .value
+//                         )
+//                       }
 //                       className="h-9"
 //                     />
+
 //                   </FF>
 
 //                   <FF label="To Date">
+
 //                     <Input
 //                       type="date"
-//                       value={toDate}
-//                       onChange={(e) => setToDate(e.target.value)}
+//                       value={
+//                         toDate
+//                       }
+//                       onChange={(e) =>
+//                         setToDate(
+//                           e.target
+//                             .value
+//                         )
+//                       }
 //                       className="h-9"
 //                     />
+
 //                   </FF>
 //                 </>
 //               )}
 
-//               {/* =========================================
-//                   SINGLE COLLECTION DATE
-//                   (Daily Collections Report only)
-//               ========================================= */}
+//               {/* COLLECTION DATE */}
 
 //               {visibleFilters.collectionDate && (
 //                 <FF label="Collection Date">
+
 //                   <Input
 //                     type="date"
-//                     value={collectionDate}
-//                     onChange={(e) => setCollectionDate(e.target.value)}
+//                     value={
+//                       collectionDate
+//                     }
+//                     onChange={(e) =>
+//                       setCollectionDate(
+//                         e.target
+//                           .value
+//                       )
+//                     }
 //                     className="h-9"
 //                   />
+
 //                 </FF>
 //               )}
 
-//               {/* =========================================
-//                   PAYMENT STATUS
-//               ========================================= */}
+//               {/* PAYMENT STATUS */}
 
 //               {visibleFilters.paymentStatus && (
 //                 <FF label="Payment Status">
+
 //                   <Select
-//                     value={paymentStatus}
-//                     onValueChange={setPaymentStatus}
+//                     value={
+//                       paymentStatus
+//                     }
+//                     onValueChange={
+//                       setPaymentStatus
+//                     }
 //                   >
+
 //                     <SelectTrigger className="h-9">
 //                       <SelectValue placeholder="All Status" />
 //                     </SelectTrigger>
 
 //                     <SelectContent>
-//                       {statusOptionsForReport.map((status) => (
-//                         <SelectItem key={status.value} value={status.value}>
-//                           {status.label}
-//                         </SelectItem>
-//                       ))}
+
+//                       {statusOptionsForReport.map(
+//                         (status) => (
+//                           <SelectItem
+//                             key={
+//                               status.value
+//                             }
+//                             value={
+//                               status.value
+//                             }
+//                           >
+//                             {
+//                               status.label
+//                             }
+//                           </SelectItem>
+//                         )
+//                       )}
+
 //                     </SelectContent>
+
 //                   </Select>
+
 //                 </FF>
 //               )}
 
-//               {/* =========================================
-//                   ACTIONS
-//               ========================================= */}
+//               {/* BUTTONS */}
 
 //               <div className="flex items-end gap-2">
+
 //                 <Button
 //                   size="sm"
 //                   className="gradient-primary border-0 flex-1"
-//                   onClick={fetchReport}
-//                   disabled={loading}
+//                   onClick={
+//                     fetchReport
+//                   }
+//                   disabled={
+//                     loading
+//                   }
 //                 >
+
 //                   <RefreshCcw
-//                     className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+//                     className={`h-4 w-4 ${
+//                       loading
+//                         ? "animate-spin"
+//                         : ""
+//                     }`}
 //                   />
-//                   {loading ? "Loading..." : "Generate"}
+
+//                   {loading
+//                     ? "Loading..."
+//                     : "Generate"}
+
 //                 </Button>
 
 //                 <Button
 //                   size="sm"
 //                   variant="outline"
-//                   onClick={clearFilters}
-//                   disabled={loading}
+//                   onClick={
+//                     clearFilters
+//                   }
+//                   disabled={
+//                     loading
+//                   }
 //                 >
 //                   Clear
 //                 </Button>
+
 //               </div>
 
 //             </div>
@@ -13948,22 +21960,39 @@ function exportRowsPdf(rows, filename) {
 //       </Card>
 
 //       {/* =================================================
-//           SUMMARY
+//           TOTAL CARDS
 //       ================================================= */}
 
 //       {totals.length > 0 && (
 //         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
-//           {totals.slice(0, 7).map((total) => (
-//             <div
-//               key={total.label}
-//               className="rounded-lg border border-border/60 bg-card px-3 py-2 text-center"
-//             >
-//               <div className="text-xs text-muted-foreground">
-//                 {total.label}
-//               </div>
-//               <div className="text-sm font-semibold">{total.value}</div>
-//             </div>
-//           ))}
+
+//           {totals
+//             .slice(0, 7)
+//             .map(
+//               (total) => (
+//                 <div
+//                   key={
+//                     total.label
+//                   }
+//                   className="rounded-lg border border-border/60 bg-card px-3 py-2 text-center"
+//                 >
+
+//                   <div className="text-xs text-muted-foreground">
+//                     {
+//                       total.label
+//                     }
+//                   </div>
+
+//                   <div className="text-sm font-semibold">
+//                     {
+//                       total.value
+//                     }
+//                   </div>
+
+//                 </div>
+//               )
+//             )}
+
 //         </div>
 //       )}
 
@@ -13973,8 +22002,11 @@ function exportRowsPdf(rows, filename) {
 
 //       {error && (
 //         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+
 //           <AlertCircle className="h-4 w-4 inline mr-2" />
+
 //           {error}
+
 //         </div>
 //       )}
 
@@ -13983,157 +22015,388 @@ function exportRowsPdf(rows, filename) {
 //       ================================================= */}
 
 //       <Card className="border-border/60">
+
 //         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-2 flex-wrap">
+
 //           <div>
+
 //             <CardTitle className="font-display text-base">
+
 //               Report Data
+
 //               <span className="ml-2 text-sm font-normal text-muted-foreground">
+
 //                 {reportData.length} records
+
 //               </span>
+
 //             </CardTitle>
+
 //           </div>
 
 //           <div className="flex gap-2">
+
+//             {/* EXCEL */}
+
 //             <Button
 //               size="sm"
 //               variant="outline"
-//               onClick={exportExcel}
-//               disabled={!reportData.length || loading}
+//               onClick={
+//                 exportExcel
+//               }
+//               disabled={
+//                 !reportData.length ||
+//                 loading
+//               }
 //             >
+
 //               <Download className="h-4 w-4" />
+
 //               Excel
+
 //             </Button>
+
+//             {/* PDF */}
 
 //             <Button
 //               size="sm"
 //               variant="outline"
-//               onClick={exportPDF}
-//               disabled={!reportData.length || loading}
+//               onClick={
+//                 exportPDF
+//               }
+//               disabled={
+//                 !reportData.length ||
+//                 loading
+//               }
 //             >
+
 //               <FileText className="h-4 w-4" />
+
 //               PDF
+
 //             </Button>
+
+//             {/* REFRESH */}
 
 //             <Button
 //               size="sm"
 //               variant="outline"
-//               onClick={fetchReport}
-//               disabled={loading}
+//               onClick={
+//                 fetchReport
+//               }
+//               disabled={
+//                 loading
+//               }
 //             >
+
 //               <RefreshCcw
-//                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+//                 className={`h-4 w-4 ${
+//                   loading
+//                     ? "animate-spin"
+//                     : ""
+//                 }`}
 //               />
+
 //             </Button>
+
 //           </div>
+
 //         </CardHeader>
 
 //         <CardContent className="p-0 overflow-x-auto">
+
 //           <div className="max-h-[500px] overflow-y-auto">
+
 //             <Table>
+
 //               <TableHeader>
+
 //                 <TableRow className="sticky top-0 bg-background z-10">
-//                   {columns.map((column) => (
-//                     <TableHead
-//                       key={column}
-//                       className="whitespace-nowrap text-xs font-semibold"
-//                     >
-//                       {column}
-//                     </TableHead>
-//                   ))}
+
+//                   {columns.map(
+//                     (column) => (
+//                       <TableHead
+//                         key={
+//                           column
+//                         }
+//                         className="whitespace-nowrap text-xs font-semibold"
+//                       >
+//                         {
+//                           column
+//                         }
+//                       </TableHead>
+//                     )
+//                   )}
+
 //                 </TableRow>
+
 //               </TableHeader>
 
 //               <TableBody>
+
+//                 {/* LOADING */}
+
 //                 {loading ? (
 //                   <TableRow>
+
 //                     <TableCell
-//                       colSpan={columns.length || 1}
+//                       colSpan={
+//                         columns.length ||
+//                         1
+//                       }
 //                       className="text-center py-8"
 //                     >
+
 //                       <div className="flex items-center justify-center gap-2 text-muted-foreground">
+
 //                         <RefreshCcw className="h-4 w-4 animate-spin" />
+
 //                         Loading report...
+
 //                       </div>
+
 //                     </TableCell>
+
 //                   </TableRow>
-//                 ) : reportData.length === 0 ? (
+
+//                 ) : reportData.length ===
+//                   0 ? (
+
+//                   /* EMPTY */
+
 //                   <TableRow>
+
 //                     <TableCell
-//                       colSpan={columns.length || 1}
+//                       colSpan={
+//                         columns.length ||
+//                         1
+//                       }
 //                       className="text-center py-8 text-muted-foreground"
 //                     >
-//                       No data found. Adjust your filters and click "Generate".
+//                       No data found.
+//                       Adjust your
+//                       filters and
+//                       click
+//                       "Generate".
 //                     </TableCell>
-//                   </TableRow>
-//                 ) : (
-//                   reportData.map((row, index) => (
-//                     <TableRow key={index} className="hover:bg-muted/30">
-//                       {columns.map((column) => {
-//                         const value = row[column];
-//                         const isComponent = components.includes(column);
-//                         const isMoney =
-//                           isComponent ||
-//                           column.includes("₹") ||
-//                           column.includes("Gross") ||
-//                           column.includes("Discount") ||
-//                           column.includes("Late") ||
-//                           column.includes("Net") ||
-//                           column.includes("Paid") ||
-//                           column.includes("Pending");
-//                         const isPending = column === "Pending (₹)";
 
-//                         return (
-//                           <TableCell
-//                             key={column}
-//                             className={`
-//                               whitespace-nowrap text-sm
-//                               ${isMoney && typeof value === "number" ? "font-mono" : ""}
-//                               ${isPending && typeof value === "number" && value > 0 ? "text-warning font-semibold" : ""}
-//                             `}
-//                           >
-//                             {value === null || value === undefined || value === ""
-//                               ? "—"
-//                               : typeof value === "number" && isMoney
-//                               ? inr(value)
-//                               : value}
-//                           </TableCell>
-//                         );
-//                       })}
-//                     </TableRow>
-//                   ))
+//                   </TableRow>
+
+//                 ) : (
+
+//                   /* DATA */
+
+//                   reportData.map(
+//                     (row, index) => (
+//                       <TableRow
+//                         key={
+//                           index
+//                         }
+//                         className="hover:bg-muted/30"
+//                       >
+
+//                         {columns.map(
+//                           (
+//                             column
+//                           ) => {
+//                             const value =
+//                               row[
+//                                 column
+//                               ];
+
+//                             const isComponent =
+//                               components.includes(
+//                                 column
+//                               );
+
+//                             // =================================
+//                             // MONEY COLUMNS
+//                             // =================================
+
+//                             const isMoney =
+//                               isComponent ||
+//                               column.includes(
+//                                 "₹"
+//                               ) ||
+//                               column.includes(
+//                                 "Gross"
+//                               ) ||
+//                               column.includes(
+//                                 "Discount"
+//                               ) ||
+//                               column.includes(
+//                                 "Late"
+//                               ) ||
+//                               column.includes(
+//                                 "Net"
+//                               ) ||
+//                               column.includes(
+//                                 "Paid"
+//                               ) ||
+//                               column.includes(
+//                                 "Pending"
+//                               ) ||
+
+//                               // DAILY COLLECTION HEAD
+//                               column ===
+//                                 "Online" ||
+//                               column ===
+//                                 "Cheque" ||
+//                               column ===
+//                                 "Cash" ||
+//                               column ===
+//                                 "Bank Transfer" ||
+//                               column ===
+//                                 "Other Settlement" ||
+//                               column ===
+//                                 "Cancelled" ||
+//                               column ===
+//                                 "Swipe" ||
+//                               column ===
+//                                 "DD" ||
+//                               column ===
+//                                 "Paytm" ||
+//                               column ===
+//                                 "Adjust from Student Account balance" ||
+//                               column ===
+//                                 "NEFT" ||
+//                               column ===
+//                                 "NSO" ||
+//                               column ===
+//                                 "Online Manual" ||
+//                               column ===
+//                                 "Adjust from Credit Note" ||
+//                               column ===
+//                                 "UPI" ||
+//                               column ===
+//                                 "Total (₹)";
+
+//                             const isPending =
+//                               column ===
+//                               "Pending (₹)";
+
+//                             const isTotalRow =
+//                               row[
+//                                 "Collection Head"
+//                               ] ===
+//                               "Total";
+
+//                             return (
+//                               <TableCell
+//                                 key={
+//                                   column
+//                                 }
+//                                 className={`
+//                                   whitespace-nowrap text-sm
+//                                   ${
+//                                     isMoney &&
+//                                     typeof value ===
+//                                       "number"
+//                                       ? "font-mono"
+//                                       : ""
+//                                   }
+
+//                                   ${
+//                                     isPending &&
+//                                     typeof value ===
+//                                       "number" &&
+//                                     value > 0
+//                                       ? "text-warning font-semibold"
+//                                       : ""
+//                                   }
+
+//                                   ${
+//                                     isTotalRow
+//                                       ? "font-bold bg-muted/40"
+//                                       : ""
+//                                   }
+//                                 `}
+//                               >
+
+//                                 {value ===
+//                                   null ||
+//                                 value ===
+//                                   undefined ||
+//                                 value ===
+//                                   ""
+//                                   ? "—"
+//                                   : typeof value ===
+//                                       "number" &&
+//                                     isMoney
+//                                   ? inr(
+//                                       value
+//                                     )
+//                                   : value}
+
+//                               </TableCell>
+//                             );
+//                           }
+//                         )}
+
+//                       </TableRow>
+//                     )
+//                   )
 //                 )}
+
 //               </TableBody>
+
 //             </Table>
+
 //           </div>
+
 //         </CardContent>
+
 //       </Card>
 
 //       {/* =================================================
-//           GLOBAL COMPONENTS
+//           FEE COMPONENTS
 //       ================================================= */}
 
-//       {components.length > 0 && reportData.length > 0 && (
-//         <Card className="border-border/60">
-//           <CardHeader className="pb-3">
-//             <CardTitle className="font-display text-base">
-//               Fee Components
-//             </CardTitle>
-//             <CardDescription>
-//               Components tracked in this report
-//             </CardDescription>
-//           </CardHeader>
+//       {components.length >
+//         0 &&
+//         reportData.length >
+//           0 && (
+//           <Card className="border-border/60">
 
-//           <CardContent>
-//             <div className="flex flex-wrap gap-2">
-//               {components.map((component) => (
-//                 <Badge key={component} variant="secondary" className="text-xs">
-//                   {component}
-//                 </Badge>
-//               ))}
-//             </div>
-//           </CardContent>
-//         </Card>
-//       )}
+//             <CardHeader className="pb-3">
+
+//               <CardTitle className="font-display text-base">
+//                 Fee Components
+//               </CardTitle>
+
+//               <CardDescription>
+//                 Components tracked
+//                 in this report
+//               </CardDescription>
+
+//             </CardHeader>
+
+//             <CardContent>
+
+//               <div className="flex flex-wrap gap-2">
+
+//                 {components.map(
+//                   (component) => (
+//                     <Badge
+//                       key={
+//                         component
+//                       }
+//                       variant="secondary"
+//                       className="text-xs"
+//                     >
+//                       {
+//                         component
+//                       }
+//                     </Badge>
+//                   )
+//                 )}
+
+//               </div>
+
+//             </CardContent>
+
+//           </Card>
+//         )}
 
 //     </div>
 //   );
@@ -14147,12 +22410,8 @@ function ReportsPanel({ students }) {
   const [error, setError] = useState("");
 
   // =====================================================
-  // REPORT TYPE
-  // IMPORTANT:
-  // value = key used everywhere (API param + filter logic)
-  // label = shown in dropdown
+  // REPORT TYPES
   // =====================================================
-
   const REPORT_TYPES = [
     {
       value: "MASTER_FEES",
@@ -14163,6 +22422,12 @@ function ReportsPanel({ students }) {
       value: "DAILY_COLLECTION",
       label: "Daily Collections Report",
       description: "Payments collected on a specific day",
+    },
+    {
+      value: "DAILY_COLLECTION_HEAD",
+      label: "Daily Collection Head Report",
+      description:
+        "Collection head-wise payment mode collection for the selected day",
     },
     {
       value: "FEE_PENDING",
@@ -14181,62 +22446,32 @@ function ReportsPanel({ students }) {
     },
   ];
 
-  const [reportType, setReportType] =
-    useState("STUDENT_FEE_NEW");
+  const [reportType, setReportType] = useState("STUDENT_FEE_NEW");
 
   const activeReport = useMemo(
-    () =>
-      REPORT_TYPES.find(
-        (r) => r.value === reportType
-      ) || REPORT_TYPES[3],
+    () => REPORT_TYPES.find((r) => r.value === reportType) || REPORT_TYPES[3],
     [reportType]
   );
 
   // =====================================================
   // FILTER STATES
   // =====================================================
-
-  const [academicYear, setAcademicYear] =
-    useState(ACADEMIC_YEAR);
-
-  const [studentUuid, setStudentUuid] =
-    useState("");
-
-  const [studentQuery, setStudentQuery] =
-    useState("");
-
-  const [fromDate, setFromDate] =
-    useState("");
-
-  const [toDate, setToDate] =
-    useState("");
-
-  // Used only by Daily Collections Report
-  const [collectionDate, setCollectionDate] =
-    useState(
-      new Date().toISOString().split("T")[0]
-    );
-
-  const [classUuid, setClassUuid] =
-    useState("all");
-
-  const [sectionUuid, setSectionUuid] =
-    useState("all");
-
-  const [paymentStatus, setPaymentStatus] =
-    useState("all");
-
-  const [showFilters, setShowFilters] =
-    useState(true);
+  const [academicYear, setAcademicYear] = useState(ACADEMIC_YEAR);
+  const [studentUuid, setStudentUuid] = useState("");
+  const [studentQuery, setStudentQuery] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [collectionDate, setCollectionDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+  const [classUuid, setClassUuid] = useState("all");
+  const [sectionUuid, setSectionUuid] = useState("all");
+  const [paymentStatus, setPaymentStatus] = useState("all");
+  const [showFilters, setShowFilters] = useState(true);
 
   // =====================================================
-  // PER-REPORT FILTER VISIBILITY
-  // IMPORTANT:
-  // Toggle which filter fields are relevant for the
-  // currently selected report type. Pure UI switch —
-  // no reload needed, changes instantly on selection.
+  // PER REPORT FILTER VISIBILITY
   // =====================================================
-
   const visibleFilters = useMemo(() => {
     switch (reportType) {
       case "MASTER_FEES":
@@ -14251,6 +22486,7 @@ function ReportsPanel({ students }) {
         };
 
       case "DAILY_COLLECTION":
+      case "DAILY_COLLECTION_HEAD":
         return {
           academicYear: false,
           student: false,
@@ -14269,7 +22505,7 @@ function ReportsPanel({ students }) {
           section: true,
           dateRange: false,
           collectionDate: false,
-          paymentStatus: false, // locked to PENDING/OVERDUE
+          paymentStatus: false,
         };
 
       case "RETRACTED_INVOICE":
@@ -14297,8 +22533,9 @@ function ReportsPanel({ students }) {
     }
   }, [reportType]);
 
-  // Status options change per report (e.g. Master Fees
-  // is Paid/Unpaid only, Pending report is locked)
+  // =====================================================
+  // STATUS OPTIONS
+  // =====================================================
   const statusOptionsForReport = useMemo(() => {
     if (reportType === "MASTER_FEES") {
       return [
@@ -14320,16 +22557,12 @@ function ReportsPanel({ students }) {
 
   // =====================================================
   // REPORT TYPE CHANGE
-  // Reset the filters that don't apply to the newly
-  // selected report so stale values can't leak into
-  // the next request.
   // =====================================================
-
   const handleReportTypeChange = (value) => {
     setReportType(value);
     setError("");
 
-    if (value === "DAILY_COLLECTION") {
+    if (value === "DAILY_COLLECTION" || value === "DAILY_COLLECTION_HEAD") {
       setFromDate("");
       setToDate("");
       setStudentUuid("");
@@ -14356,19 +22589,13 @@ function ReportsPanel({ students }) {
   // =====================================================
   // ACADEMIC YEARS
   // =====================================================
-
   const academicYears = useMemo(() => {
     const years = [];
-
-    const currentYear =
-      new Date().getFullYear();
+    const currentYear = new Date().getFullYear();
 
     for (let i = 0; i < 5; i++) {
       const year = currentYear - i;
-
-      years.push(
-        `${year}-${String(year + 1).slice(-2)}`
-      );
+      years.push(`${year}-${String(year + 1).slice(-2)}`);
     }
 
     return years;
@@ -14376,64 +22603,40 @@ function ReportsPanel({ students }) {
 
   // =====================================================
   // CLASSES
-  // IMPORTANT:
-  // value = class UUID
-  // label = class name
   // =====================================================
-
   const classes = useMemo(() => {
     const classMap = new Map();
 
     (students || []).forEach((student) => {
-      if (
-        student.class_uuid &&
-        student.class_name
-      ) {
-        classMap.set(
-          student.class_uuid,
-          {
-            uuid: student.class_uuid,
-            name: student.class_name,
-          }
-        );
+      if (student.class_uuid && student.class_name) {
+        classMap.set(student.class_uuid, {
+          uuid: student.class_uuid,
+          name: student.class_name,
+        });
       }
     });
 
-    return Array.from(
-      classMap.values()
-    ).sort((a, b) =>
+    return Array.from(classMap.values()).sort((a, b) =>
       a.name.localeCompare(b.name)
     );
   }, [students]);
 
   // =====================================================
   // SECTIONS
-  // IMPORTANT:
-  // value = section UUID
-  // label = section name
   // =====================================================
-
   const sections = useMemo(() => {
     const sectionMap = new Map();
 
     (students || []).forEach((student) => {
-      if (
-        student.section_uuid &&
-        student.section_name
-      ) {
-        sectionMap.set(
-          student.section_uuid,
-          {
-            uuid: student.section_uuid,
-            name: student.section_name,
-          }
-        );
+      if (student.section_uuid && student.section_name) {
+        sectionMap.set(student.section_uuid, {
+          uuid: student.section_uuid,
+          name: student.section_name,
+        });
       }
     });
 
-    return Array.from(
-      sectionMap.values()
-    ).sort((a, b) =>
+    return Array.from(sectionMap.values()).sort((a, b) =>
       a.name.localeCompare(b.name)
     );
   }, [students]);
@@ -14441,33 +22644,18 @@ function ReportsPanel({ students }) {
   // =====================================================
   // STUDENT SEARCH
   // =====================================================
-
   const matchingStudents = useMemo(() => {
     if (!studentQuery.trim()) {
       return [];
     }
 
-    const q =
-      studentQuery
-        .toLowerCase()
-        .trim();
+    const q = studentQuery.toLowerCase().trim();
 
     return (students || [])
       .filter((student) => {
-        const name =
-          student.full_name
-            ?.toLowerCase()
-            || "";
-
-        const studentNo =
-          student.student_no
-            ?.toLowerCase()
-            || "";
-
-        const admissionNo =
-          student.admission_no
-            ?.toLowerCase()
-            || "";
+        const name = student.full_name?.toLowerCase() || "";
+        const studentNo = student.student_no?.toLowerCase() || "";
+        const admissionNo = student.admission_no?.toLowerCase() || "";
 
         return (
           name.includes(q) ||
@@ -14476,250 +22664,534 @@ function ReportsPanel({ students }) {
         );
       })
       .slice(0, 8);
-  }, [
-    studentQuery,
-    students,
-  ]);
+  }, [studentQuery, students]);
+
+  // =====================================================
+  // PAYMENT MODE NORMALIZER
+  // =====================================================
+  const getPaymentColumn = (mode) => {
+    const value = String(mode || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, "_");
+
+    switch (value) {
+      case "CASH":
+        return "Cash";
+      case "CHEQUE":
+      case "CHECK":
+        return "Cheque";
+      case "BANK_TRANSFER":
+      case "BANKTRANSFER":
+        return "Bank Transfer";
+      case "CARD":
+      case "SWIPE":
+        return "Swipe";
+      case "DD":
+      case "DEMAND_DRAFT":
+        return "DD";
+      case "PAYTM":
+        return "Paytm";
+      case "NEFT":
+        return "NEFT";
+      case "NSO":
+        return "NSO";
+      case "ONLINE_MANUAL":
+        return "Online Manual";
+      case "CREDIT_NOTE":
+      case "ADJUST_FROM_CREDIT_NOTE":
+        return "Adjust from Credit Note";
+      case "STUDENT_ACCOUNT":
+      case "ADJUST_FROM_STUDENT_ACCOUNT":
+        return "Adjust from Student Account balance";
+      case "UPI":
+        return "UPI";
+      case "RAZORPAY":
+      case "NETBANKING":
+      case "NET_BANKING":
+      case "ONLINE":
+        return "Online";
+      case "OTHER_SETTLEMENT":
+        return "Other Settlement";
+      case "CANCELLED":
+        return "Cancelled";
+      default:
+        return "Online";
+    }
+  };
+
+  // =====================================================
+  // DAILY COLLECTION HEAD PAYMENT COLUMNS
+  // =====================================================
+  const DAILY_HEAD_COLUMNS = [
+    "Online",
+    "Cheque",
+    "Cash",
+    "Bank Transfer",
+    "Other Settlement",
+    "Cancelled",
+    "Swipe",
+    "DD",
+    "Paytm",
+    "Adjust from Student Account balance",
+    "NEFT",
+    "NSO",
+    "Online Manual",
+    "Adjust from Credit Note",
+    "UPI",
+  ];
+
+  // =====================================================
+  // GET TRANSACTION DETAIL AMOUNT
+  // =====================================================
+  const getTransactionComponentDetails = (txn) => {
+    if (Array.isArray(txn.details) && txn.details.length > 0) {
+      return txn.details;
+    }
+    return [];
+  };
 
   // =====================================================
   // FETCH REPORT
-  // IMPORTANT:
-  // report_type is now sent to the API so the backend
-  // can route to the correct query. All existing param
-  // shape is preserved for backward compatibility.
   // =====================================================
-
   const fetchReport = async () => {
     setLoading(true);
     setError("");
 
     try {
-      const params = {
-        report_type: reportType,
+      // =================================================
+      // DAILY COLLECTION HEAD REPORT
+      // =================================================
+      if (reportType === "DAILY_COLLECTION_HEAD") {
+        const response = await getPayments({ limit: 500 });
+        const payments = response?.data?.data ?? response?.data ?? [];
 
-        academic_year:
-          visibleFilters.academicYear
-            ? academicYear || undefined
-            : undefined,
+        const selectedDate =
+          collectionDate || new Date().toISOString().split("T")[0];
 
-        student_uuid:
-          visibleFilters.student
-            ? studentUuid || undefined
-            : undefined,
+        const dailyPayments = payments.filter((txn) => {
+          if (txn.transaction_status !== "SUCCESS") return false;
+          if (!txn.created_at) return false;
 
-        from_date:
-          visibleFilters.dateRange
-            ? fromDate || undefined
-            : undefined,
+          const paymentDate = new Date(txn.created_at).toLocaleDateString(
+            "en-CA"
+          );
 
-        to_date:
-          visibleFilters.dateRange
-            ? toDate || undefined
-            : undefined,
+          return paymentDate === selectedDate;
+        });
 
-        collection_date:
-          visibleFilters.collectionDate
-            ? collectionDate || undefined
-            : undefined,
+        const filteredPayments = dailyPayments.filter((txn) => {
+          const student = (students || []).find(
+            (s) => s.student_uuid === txn.student_uuid
+          );
 
-        // IMPORTANT:
-        // UUID is sent here
-        class_uuid:
-          classUuid === "all"
-            ? undefined
-            : classUuid,
+          if (!student) return false;
 
-        // IMPORTANT:
-        // UUID is sent here
-        section_uuid:
-          sectionUuid === "all"
-            ? undefined
-            : sectionUuid,
+          if (
+            classUuid !== "all" &&
+            classUuid &&
+            student.class_uuid !== classUuid
+          ) {
+            return false;
+          }
 
-        payment_status:
-          paymentStatus === "all"
-            ? undefined
-            : paymentStatus,
-      };
+          if (
+            sectionUuid !== "all" &&
+            sectionUuid &&
+            student.section_uuid !== sectionUuid
+          ) {
+            return false;
+          }
 
-      const response =
-        await getStudentFeeReport(
-          params
+          return true;
+        });
+
+        const collectionMap = new Map();
+
+        const ensureRow = (collectionHead) => {
+          if (!collectionMap.has(collectionHead)) {
+            const row = {
+              "Collection Head": collectionHead,
+              Date: selectedDate,
+            };
+            DAILY_HEAD_COLUMNS.forEach((column) => {
+              row[column] = 0;
+            });
+            collectionMap.set(collectionHead, row);
+          }
+          return collectionMap.get(collectionHead);
+        };
+
+        filteredPayments.forEach((txn) => {
+          const paymentColumn = getPaymentColumn(txn.payment_mode);
+          const details = getTransactionComponentDetails(txn);
+
+          // NORMAL FEE COMPONENTS
+          if (details.length > 0) {
+            details.forEach((detail) => {
+              const collectionHead =
+                detail.component_name || detail.name || "Other Income";
+              const amount = Number(
+                detail.amount ?? detail.paid_amount ?? 0
+              );
+
+              if (!Number.isFinite(amount) || amount <= 0) return;
+
+              const row = ensureRow(collectionHead);
+              row[paymentColumn] = Number(row[paymentColumn] || 0) + amount;
+            });
+          }
+
+          // LATE FEE (avoid duplicate if already present in details)
+          const lateFee = Number(txn.late_fee || 0);
+
+          if (lateFee > 0) {
+            const hasLateFeeDetail = details.some((detail) =>
+              String(detail.component_name || detail.name || "")
+                .toLowerCase()
+                .includes("late")
+            );
+
+            if (!hasLateFeeDetail) {
+              const row = ensureRow("Late Fee");
+              row[paymentColumn] = Number(row[paymentColumn] || 0) + lateFee;
+            }
+          }
+
+          // TRANSACTION WITH NO DETAILS AT ALL
+          if (details.length === 0 && lateFee <= 0) {
+            const amount = Number(txn.total_amount || 0);
+
+            if (amount > 0) {
+              const row = ensureRow("Other Income");
+              row[paymentColumn] = Number(row[paymentColumn] || 0) + amount;
+            }
+          }
+        });
+
+        const displayDate = new Date(
+          `${selectedDate}T00:00:00`
+        ).toLocaleDateString("en-GB");
+
+        const collectionRows = Array.from(collectionMap.values()).map(
+          (row, index) => {
+            const formattedRow = {
+              "Sr No": index + 1,
+              "Collection Head": row["Collection Head"],
+              Date: displayDate,
+            };
+
+            let total = 0;
+
+            DAILY_HEAD_COLUMNS.forEach((column) => {
+              const amount = Number(row[column] || 0);
+              formattedRow[column] = amount;
+              total += amount;
+            });
+
+            formattedRow["Total (₹)"] = total;
+
+            return formattedRow;
+          }
         );
 
-      const body =
-        response?.data ??
-        response ??
-        {};
+        if (collectionRows.length > 0) {
+          const totalRow = {
+            "Sr No": "",
+            "Collection Head": "Total",
+            Date: "",
+          };
 
-      if (!body.success) {
-        throw new Error(
-          body.message ||
-            "Failed to fetch report"
-        );
+          let grandTotal = 0;
+
+          DAILY_HEAD_COLUMNS.forEach((column) => {
+            const total = collectionRows.reduce(
+              (sum, row) => sum + Number(row[column] || 0),
+              0
+            );
+            totalRow[column] = total;
+            grandTotal += total;
+          });
+
+          totalRow["Total (₹)"] = grandTotal;
+          collectionRows.push(totalRow);
+        }
+
+        setComponents([]);
+        setReportData(collectionRows);
+
+        const grandCollection =
+          collectionRows.length > 0
+            ? Number(
+                collectionRows[collectionRows.length - 1]["Total (₹)"] || 0
+              )
+            : 0;
+
+        setTotals([
+          { label: "Successful Payments", value: filteredPayments.length },
+          {
+            label: "Collection Heads",
+            value:
+              collectionRows.length > 0 ? collectionRows.length - 1 : 0,
+          },
+          { label: "Total Collection", value: inr(grandCollection) },
+        ]);
+
+        return;
       }
 
       // =================================================
-      // API DATA
+      // DAILY COLLECTION REPORT
       // =================================================
+      if (reportType === "DAILY_COLLECTION") {
+        const response = await getPayments({ limit: 500 });
+        const payments = response?.data?.data ?? response?.data ?? [];
 
-      const data =
-        Array.isArray(body.data)
-          ? body.data
-          : [];
+        const selectedDate =
+          collectionDate || new Date().toLocaleDateString("en-CA");
 
-      // =================================================
-      // GLOBAL COMPONENT LIST
-      // =================================================
+        const dailyPayments = payments.filter((txn) => {
+          if (txn.transaction_status !== "SUCCESS") return false;
+          if (!txn.created_at) return false;
 
-      const componentsList =
-        Array.isArray(body.components)
-          ? body.components
-          : [];
-
-      setComponents(
-        componentsList
-      );
-
-      // =================================================
-      // FORMAT ROWS
-      // =================================================
-
-      const formattedRows =
-        data.map((row) => {
-          const formattedRow = {
-            "Sr No":
-              row.sr_no,
-
-            "Student":
-              row.student_name ||
-              "—",
-
-            "Class":
-              row.class_name ||
-              "—",
-
-            "Section":
-              row.section_name ||
-              "—",
-
-            "Admission No":
-              row.admission_number ||
-              "—",
-
-            "Invoice":
-              row.invoice_number ||
-              "—",
-
-            "Receipt":
-              row.receipt_number ||
-              "—",
-          };
-
-          componentsList.forEach(
-            (component) => {
-              const value =
-                row.components?.[
-                  component
-                ];
-
-              formattedRow[
-                component
-              ] =
-                value === null ||
-                value === undefined
-                  ? null
-                  : Number(value);
-            }
+          const paymentDate = new Date(txn.created_at).toLocaleDateString(
+            "en-CA"
           );
 
-          formattedRow["Gross (₹)"] =
-            Number(row.gross_amount || 0);
-
-          formattedRow["Discount (₹)"] =
-            Number(row.concession_amount || 0);
-
-          formattedRow["Late Fee (₹)"] =
-            Number(row.late_fee || 0);
-
-          formattedRow["Net (₹)"] =
-            Number(row.net_amount || 0);
-
-          formattedRow["Paid (₹)"] =
-            Number(row.paid_amount || 0);
-
-          formattedRow["Pending (₹)"] =
-            Number(row.pending_amount || 0);
-
-          formattedRow["Payment Mode"] =
-            row.payment_mode || "—";
-
-          formattedRow["Reference"] =
-            row.reference_number || "—";
-
-          formattedRow["Payment Date"] =
-            row.payment_date
-              ? new Date(row.payment_date).toLocaleDateString()
-              : "—";
-
-          formattedRow["Due Date"] =
-            row.due_date
-              ? new Date(row.due_date).toLocaleDateString()
-              : "—";
-
-          formattedRow["Invoice Date"] =
-            row.invoice_date
-              ? new Date(row.invoice_date).toLocaleDateString()
-              : "—";
-
-          if (reportType === "RETRACTED_INVOICE") {
-            formattedRow["Retracted On"] =
-              row.retracted_at
-                ? new Date(row.retracted_at).toLocaleDateString()
-                : "—";
-
-            formattedRow["Retracted By"] =
-              row.retracted_by || "—";
-
-            formattedRow["Reason"] =
-              row.retraction_reason || "—";
-          }
-
-          return formattedRow;
+          return paymentDate === selectedDate;
         });
 
-      setReportData(
-        formattedRows
+        const filteredPayments = dailyPayments.filter((txn) => {
+          const student = (students || []).find(
+            (s) => s.student_uuid === txn.student_uuid
+          );
+
+          if (!student) return false;
+
+          if (
+            classUuid !== "all" &&
+            classUuid &&
+            student.class_uuid !== classUuid
+          ) {
+            return false;
+          }
+
+          if (
+            sectionUuid !== "all" &&
+            sectionUuid &&
+            student.section_uuid !== sectionUuid
+          ) {
+            return false;
+          }
+
+          return true;
+        });
+
+        const formattedRows = filteredPayments.map((txn, index) => {
+          const student =
+            (students || []).find(
+              (s) => s.student_uuid === txn.student_uuid
+            ) || {};
+
+          const grossAmount = Number(
+            txn.details?.reduce(
+              (sum, detail) => sum + Number(detail.amount || 0),
+              0
+            ) ||
+              txn.total_amount ||
+              0
+          );
+
+          const discountAmount = Number(txn.discount_amount || 0);
+          const lateFee = Number(txn.late_fee || 0);
+          const paidAmount = Number(txn.total_amount || 0);
+
+          return {
+            "Sr No": index + 1,
+            Student: txn.student_name || student.full_name || "—",
+            Class: student.class_name || "—",
+            Section: student.section_name || "—",
+            "Admission No":
+              student.admission_no || txn.admission_number || "—",
+            Invoice: txn.invoice_number || txn.invoice_no || "—",
+            Receipt: txn.receipt_no || "—",
+            "Gross (₹)": grossAmount,
+            "Discount (₹)": discountAmount,
+            "Late Fee (₹)": lateFee,
+            "Net (₹)": paidAmount,
+            "Paid (₹)": paidAmount,
+            "Pending (₹)": 0,
+            "Payment Mode": txn.payment_mode || "—",
+            Reference: txn.reference_number || txn.razorpay_payment_id || "—",
+            "Payment Date": txn.created_at
+              ? new Date(txn.created_at).toLocaleString()
+              : "—",
+          };
+        });
+
+        setComponents([]);
+        setReportData(formattedRows);
+
+        const totalGross = filteredPayments.reduce(
+          (sum, txn) =>
+            sum +
+            Number(
+              txn.details?.reduce(
+                (detailSum, detail) => detailSum + Number(detail.amount || 0),
+                0
+              ) ||
+                txn.total_amount ||
+                0
+            ),
+          0
+        );
+
+        const totalDiscount = filteredPayments.reduce(
+          (sum, txn) => sum + Number(txn.discount_amount || 0),
+          0
+        );
+
+        const totalLateFee = filteredPayments.reduce(
+          (sum, txn) => sum + Number(txn.late_fee || 0),
+          0
+        );
+
+        const totalPaid = filteredPayments.reduce(
+          (sum, txn) => sum + Number(txn.total_amount || 0),
+          0
+        );
+
+        setTotals([
+          { label: "Payments", value: filteredPayments.length },
+          { label: "Total Gross", value: inr(totalGross) },
+          { label: "Total Discount", value: inr(totalDiscount) },
+          { label: "Total Late Fee", value: inr(totalLateFee) },
+          { label: "Total Collection", value: inr(totalPaid) },
+        ]);
+
+        return;
+      }
+
+      // =================================================
+      // ALL OTHER REPORTS
+      // =================================================
+      const params = {
+        report_type: reportType,
+        academic_year: visibleFilters.academicYear
+          ? academicYear || undefined
+          : undefined,
+        student_uuid: visibleFilters.student
+          ? studentUuid || undefined
+          : undefined,
+        from_date: visibleFilters.dateRange
+          ? fromDate || undefined
+          : undefined,
+        to_date: visibleFilters.dateRange ? toDate || undefined : undefined,
+        collection_date: visibleFilters.collectionDate
+          ? collectionDate || undefined
+          : undefined,
+        class_uuid: classUuid === "all" ? undefined : classUuid,
+        section_uuid: sectionUuid === "all" ? undefined : sectionUuid,
+        payment_status:
+          paymentStatus === "all" ? undefined : paymentStatus,
+      };
+
+      const response = await getStudentFeeReport(params);
+      const body = response?.data ?? response ?? {};
+
+      if (!body.success) {
+        throw new Error(
+          typeof body.message === "string"
+            ? body.message
+            : describeErrorDetail(body.message) || "Failed to fetch report"
+        );
+      }
+
+      const data = Array.isArray(body.data) ? body.data : [];
+      const componentsList = Array.isArray(body.components)
+        ? body.components
+        : [];
+
+      setComponents(componentsList);
+
+      const formattedRows = data.map((row) => {
+        const formattedRow = {
+          "Sr No": row.sr_no,
+          Student: row.student_name || "—",
+          Class: row.class_name || "—",
+          Section: row.section_name || "—",
+          "Admission No": row.admission_number || "—",
+          Invoice: row.invoice_number || "—",
+          Receipt: row.receipt_number || "—",
+        };
+
+        componentsList.forEach((component) => {
+          const value = row.components?.[component];
+          formattedRow[component] =
+            value === null || value === undefined ? null : Number(value);
+        });
+
+        formattedRow["Gross (₹)"] = Number(row.gross_amount || 0);
+        formattedRow["Discount (₹)"] = Number(row.concession_amount || 0);
+        formattedRow["Late Fee (₹)"] = Number(row.late_fee || 0);
+        formattedRow["Net (₹)"] = Number(row.net_amount || 0);
+        formattedRow["Paid (₹)"] = Number(row.paid_amount || 0);
+        formattedRow["Pending (₹)"] = Number(row.pending_amount || 0);
+        formattedRow["Payment Mode"] = row.payment_mode || "—";
+        formattedRow["Reference"] = row.reference_number || "—";
+        formattedRow["Payment Date"] = row.payment_date
+          ? new Date(row.payment_date).toLocaleDateString()
+          : "—";
+        formattedRow["Due Date"] = row.due_date
+          ? new Date(row.due_date).toLocaleDateString()
+          : "—";
+        formattedRow["Invoice Date"] = row.invoice_date
+          ? new Date(row.invoice_date).toLocaleDateString()
+          : "—";
+
+        if (reportType === "RETRACTED_INVOICE") {
+          formattedRow["Retracted On"] = row.retracted_at
+            ? new Date(row.retracted_at).toLocaleDateString()
+            : "—";
+          formattedRow["Retracted By"] = row.retracted_by || "—";
+          formattedRow["Reason"] = row.retraction_reason || "—";
+        }
+
+        return formattedRow;
+      });
+
+      setReportData(formattedRows);
+
+      const totalGross = data.reduce(
+        (sum, row) => sum + Number(row.gross_amount || 0),
+        0
       );
-
-      // =================================================
-      // TOTALS
-      // =================================================
-
-      const totalGross =
-        data.reduce((sum, row) => sum + Number(row.gross_amount || 0), 0);
-
-      const totalDiscount =
-        data.reduce((sum, row) => sum + Number(row.concession_amount || 0), 0);
-
-      const totalLateFee =
-        data.reduce((sum, row) => sum + Number(row.late_fee || 0), 0);
-
-      const totalNet =
-        data.reduce((sum, row) => sum + Number(row.net_amount || 0), 0);
-
-      const totalPaid =
-        data.reduce((sum, row) => sum + Number(row.paid_amount || 0), 0);
-
-      const totalPending =
-        data.reduce((sum, row) => sum + Number(row.pending_amount || 0), 0);
+      const totalDiscount = data.reduce(
+        (sum, row) => sum + Number(row.concession_amount || 0),
+        0
+      );
+      const totalLateFee = data.reduce(
+        (sum, row) => sum + Number(row.late_fee || 0),
+        0
+      );
+      const totalNet = data.reduce(
+        (sum, row) => sum + Number(row.net_amount || 0),
+        0
+      );
+      const totalPaid = data.reduce(
+        (sum, row) => sum + Number(row.paid_amount || 0),
+        0
+      );
+      const totalPending = data.reduce(
+        (sum, row) => sum + Number(row.pending_amount || 0),
+        0
+      );
 
       const componentTotals = {};
 
       componentsList.forEach((component) => {
         componentTotals[component] = data.reduce(
-          (sum, row) =>
-            sum + Number(row.components?.[component] || 0),
+          (sum, row) => sum + Number(row.components?.[component] || 0),
           0
         );
       });
@@ -14743,17 +23215,8 @@ function ReportsPanel({ students }) {
 
       setTotals(totalCards);
     } catch (err) {
-      console.error(
-        "Report Error:",
-        err
-      );
-
-      setError(
-        err?.response?.data?.detail ||
-          err?.message ||
-          "Failed to load report"
-      );
-
+      console.error("Report Error:", err);
+      setError(getErrorMessage(err, "Failed to load report"));
       setReportData([]);
       setTotals([]);
       setComponents([]);
@@ -14763,37 +23226,23 @@ function ReportsPanel({ students }) {
   };
 
   // =====================================================
-  // INITIAL LOAD
+  // INITIAL / REPORT TYPE LOAD
   // =====================================================
-
   useEffect(() => {
     fetchReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-fetch automatically whenever the report type
-  // itself changes, so switching the dropdown is enough
-  // — no need to also press Generate.
   useEffect(() => {
     fetchReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportType]);
 
-  // =====================================================
-  // FIX: Daily Collections Report has no other visible
-  // filter to trigger a refetch (student/date-range/status
-  // are all hidden for this report — see visibleFilters).
-  // Without this effect, changing the Collection Date only
-  // updates local state and the table silently keeps
-  // showing whatever was loaded initially (today's date),
-  // until the user notices and clicks "Generate" by hand.
-  // This effect re-runs fetchReport() whenever the date
-  // changes, but only while DAILY_COLLECTION is selected,
-  // so it doesn't cause stray fetches for other reports.
-  // =====================================================
-
   useEffect(() => {
-    if (reportType === "DAILY_COLLECTION") {
+    if (
+      reportType === "DAILY_COLLECTION" ||
+      reportType === "DAILY_COLLECTION_HEAD"
+    ) {
       fetchReport();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -14802,13 +23251,10 @@ function ReportsPanel({ students }) {
   // =====================================================
   // STUDENT SELECT
   // =====================================================
-
   const handleStudentSelect = (student) => {
     setStudentUuid(student.student_uuid);
     setStudentQuery(student.full_name);
 
-    // Auto-fill class & section from the selected student
-    // so the two dropdowns don't need to be set by hand.
     if (student.class_uuid) {
       setClassUuid(student.class_uuid);
     }
@@ -14821,7 +23267,6 @@ function ReportsPanel({ students }) {
   // =====================================================
   // CLEAR FILTERS
   // =====================================================
-
   const clearFilters = () => {
     setStudentUuid("");
     setStudentQuery("");
@@ -14829,32 +23274,22 @@ function ReportsPanel({ students }) {
     setToDate("");
     setClassUuid("all");
     setSectionUuid("all");
-    setPaymentStatus(
-      reportType === "FEE_PENDING" ? "PENDING" : "all"
-    );
-    setCollectionDate(
-      new Date().toISOString().split("T")[0]
-    );
-
+    setPaymentStatus(reportType === "FEE_PENDING" ? "PENDING" : "all");
+    setCollectionDate(new Date().toISOString().split("T")[0]);
     fetchReport();
   };
 
   // =====================================================
   // TABLE COLUMNS
   // =====================================================
-
   const columns = useMemo(() => {
-    if (!reportData.length) {
-      return [];
-    }
-
+    if (!reportData.length) return [];
     return Object.keys(reportData[0]);
   }, [reportData]);
 
   // =====================================================
   // EXCEL EXPORT
   // =====================================================
-
   const exportExcel = () => {
     if (!reportData.length) {
       toast.error("No data to export");
@@ -14887,7 +23322,9 @@ function ReportsPanel({ students }) {
 
     XLSX.writeFile(
       workbook,
-      `${reportType.toLowerCase()}-${new Date().toISOString().split("T")[0]}.xlsx`
+      `${reportType.toLowerCase()}-${
+        new Date().toISOString().split("T")[0]
+      }.xlsx`
     );
 
     toast.success("Report exported successfully");
@@ -14896,7 +23333,6 @@ function ReportsPanel({ students }) {
   // =====================================================
   // PDF EXPORT
   // =====================================================
-
   const exportPDF = () => {
     if (!reportData.length) {
       toast.error("No data to export");
@@ -14921,15 +23357,35 @@ function ReportsPanel({ students }) {
 
     const pdfColumns = columns;
 
+    const MONEY_COLUMN_NAMES = new Set([
+      "Online",
+      "Cheque",
+      "Cash",
+      "Bank Transfer",
+      "Other Settlement",
+      "Cancelled",
+      "Swipe",
+      "DD",
+      "Paytm",
+      "Adjust from Student Account balance",
+      "NEFT",
+      "NSO",
+      "Online Manual",
+      "Adjust from Credit Note",
+      "UPI",
+      "Total (₹)",
+    ]);
+
     const pdfData = reportData.map((row) =>
       pdfColumns.map((column) => {
         const value = row[column];
-        const isMoney =
-          components.includes(column) || column.includes("₹");
 
-        if (value === null || value === undefined) {
-          return "—";
-        }
+        const isMoney =
+          components.includes(column) ||
+          column.includes("₹") ||
+          MONEY_COLUMN_NAMES.has(column);
+
+        if (value === null || value === undefined) return "—";
 
         return isMoney && typeof value === "number"
           ? Number(value).toFixed(2)
@@ -14940,16 +23396,18 @@ function ReportsPanel({ students }) {
     autoTable(doc, {
       head: [pdfColumns],
       body: pdfData,
-      startY: 32,
+      startY: visibleFilters.academicYear ? 32 : 28,
       styles: { fontSize: 6, cellPadding: 1.2 },
-      headStyles: { fontSize: 6, fillColor: [99, 102, 241] },
+      headStyles: { fontSize: 6 },
       margin: { left: 5, right: 5 },
       horizontalPageBreak: true,
       horizontalPageBreakRepeat: 1,
     });
 
     doc.save(
-      `${reportType.toLowerCase()}-${new Date().toISOString().split("T")[0]}.pdf`
+      `${reportType.toLowerCase()}-${
+        new Date().toISOString().split("T")[0]
+      }.pdf`
     );
 
     toast.success("PDF exported successfully");
@@ -14958,24 +23416,16 @@ function ReportsPanel({ students }) {
   // =====================================================
   // RENDER
   // =====================================================
-
   return (
     <div className="space-y-4">
-
-      {/* =================================================
-          FILTER CARD
-      ================================================= */}
-
+      {/* REPORT FILTER CARD */}
       <Card className="border-border/60">
-
         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
-
           <div>
             <CardTitle className="font-display text-base flex items-center gap-2">
               <FileBarChart2 className="h-4 w-4 text-primary" />
               {activeReport.label}
             </CardTitle>
-
             <CardDescription>
               {activeReport.description}
               {components.length > 0 && (
@@ -14993,27 +23443,17 @@ function ReportsPanel({ students }) {
           >
             {showFilters ? "Hide Filters" : "Show Filters"}
           </Button>
-
         </CardHeader>
 
         {showFilters && (
           <CardContent className="pt-0 space-y-3">
-
-            {/* =========================================
-                REPORT TYPE — always shown, first field
-            ========================================= */}
-
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
-
+              {/* REPORT TYPE */}
               <FF label="Report Type">
-                <Select
-                  value={reportType}
-                  onValueChange={handleReportTypeChange}
-                >
+                <Select value={reportType} onValueChange={handleReportTypeChange}>
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Select report" />
                   </SelectTrigger>
-
                   <SelectContent>
                     {REPORT_TYPES.map((rt) => (
                       <SelectItem key={rt.value} value={rt.value}>
@@ -15024,20 +23464,13 @@ function ReportsPanel({ students }) {
                 </Select>
               </FF>
 
-              {/* =========================================
-                  ACADEMIC YEAR
-              ========================================= */}
-
+              {/* ACADEMIC YEAR */}
               {visibleFilters.academicYear && (
                 <FF label="Academic Year">
-                  <Select
-                    value={academicYear}
-                    onValueChange={setAcademicYear}
-                  >
+                  <Select value={academicYear} onValueChange={setAcademicYear}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select year" />
                     </SelectTrigger>
-
                     <SelectContent>
                       {academicYears.map((year) => (
                         <SelectItem key={year} value={year}>
@@ -15049,10 +23482,7 @@ function ReportsPanel({ students }) {
                 </FF>
               )}
 
-              {/* =========================================
-                  STUDENT
-              ========================================= */}
-
+              {/* STUDENT */}
               {visibleFilters.student && (
                 <div className="space-y-1.5 relative">
                   <Label className="text-xs text-muted-foreground">
@@ -15114,10 +23544,7 @@ function ReportsPanel({ students }) {
                 </div>
               )}
 
-              {/* =========================================
-                  CLASS
-              ========================================= */}
-
+              {/* CLASS */}
               {visibleFilters.class && (
                 <FF label="Class">
                   <Select
@@ -15130,7 +23557,6 @@ function ReportsPanel({ students }) {
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="All Classes" />
                     </SelectTrigger>
-
                     <SelectContent>
                       <SelectItem value="all">All Classes</SelectItem>
                       {classes.map((item) => (
@@ -15143,20 +23569,13 @@ function ReportsPanel({ students }) {
                 </FF>
               )}
 
-              {/* =========================================
-                  SECTION
-              ========================================= */}
-
+              {/* SECTION */}
               {visibleFilters.section && (
                 <FF label="Section">
-                  <Select
-                    value={sectionUuid}
-                    onValueChange={setSectionUuid}
-                  >
+                  <Select value={sectionUuid} onValueChange={setSectionUuid}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="All Sections" />
                     </SelectTrigger>
-
                     <SelectContent>
                       <SelectItem value="all">All Sections</SelectItem>
                       {sections.map((item) => (
@@ -15169,10 +23588,7 @@ function ReportsPanel({ students }) {
                 </FF>
               )}
 
-              {/* =========================================
-                  DATE RANGE (From / To)
-              ========================================= */}
-
+              {/* FROM / TO */}
               {visibleFilters.dateRange && (
                 <>
                   <FF label="From Date">
@@ -15195,11 +23611,7 @@ function ReportsPanel({ students }) {
                 </>
               )}
 
-              {/* =========================================
-                  SINGLE COLLECTION DATE
-                  (Daily Collections Report only)
-              ========================================= */}
-
+              {/* COLLECTION DATE */}
               {visibleFilters.collectionDate && (
                 <FF label="Collection Date">
                   <Input
@@ -15211,20 +23623,13 @@ function ReportsPanel({ students }) {
                 </FF>
               )}
 
-              {/* =========================================
-                  PAYMENT STATUS
-              ========================================= */}
-
+              {/* PAYMENT STATUS */}
               {visibleFilters.paymentStatus && (
                 <FF label="Payment Status">
-                  <Select
-                    value={paymentStatus}
-                    onValueChange={setPaymentStatus}
-                  >
+                  <Select value={paymentStatus} onValueChange={setPaymentStatus}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="All Status" />
                     </SelectTrigger>
-
                     <SelectContent>
                       {statusOptionsForReport.map((status) => (
                         <SelectItem key={status.value} value={status.value}>
@@ -15236,10 +23641,7 @@ function ReportsPanel({ students }) {
                 </FF>
               )}
 
-              {/* =========================================
-                  ACTIONS
-              ========================================= */}
-
+              {/* BUTTONS */}
               <div className="flex items-end gap-2">
                 <Button
                   size="sm"
@@ -15262,18 +23664,12 @@ function ReportsPanel({ students }) {
                   Clear
                 </Button>
               </div>
-
             </div>
-
           </CardContent>
         )}
-
       </Card>
 
-      {/* =================================================
-          SUMMARY
-      ================================================= */}
-
+      {/* TOTAL CARDS */}
       {totals.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
           {totals.slice(0, 7).map((total) => (
@@ -15290,10 +23686,7 @@ function ReportsPanel({ students }) {
         </div>
       )}
 
-      {/* =================================================
-          ERROR
-      ================================================= */}
-
+      {/* ERROR */}
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 inline mr-2" />
@@ -15301,10 +23694,7 @@ function ReportsPanel({ students }) {
         </div>
       )}
 
-      {/* =================================================
-          REPORT TABLE
-      ================================================= */}
-
+      {/* REPORT TABLE */}
       <Card className="border-border/60">
         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-2 flex-wrap">
           <div>
@@ -15394,6 +23784,7 @@ function ReportsPanel({ students }) {
                       {columns.map((column) => {
                         const value = row[column];
                         const isComponent = components.includes(column);
+
                         const isMoney =
                           isComponent ||
                           column.includes("₹") ||
@@ -15402,16 +23793,45 @@ function ReportsPanel({ students }) {
                           column.includes("Late") ||
                           column.includes("Net") ||
                           column.includes("Paid") ||
-                          column.includes("Pending");
+                          column.includes("Pending") ||
+                          column === "Online" ||
+                          column === "Cheque" ||
+                          column === "Cash" ||
+                          column === "Bank Transfer" ||
+                          column === "Other Settlement" ||
+                          column === "Cancelled" ||
+                          column === "Swipe" ||
+                          column === "DD" ||
+                          column === "Paytm" ||
+                          column === "Adjust from Student Account balance" ||
+                          column === "NEFT" ||
+                          column === "NSO" ||
+                          column === "Online Manual" ||
+                          column === "Adjust from Credit Note" ||
+                          column === "UPI" ||
+                          column === "Total (₹)";
+
                         const isPending = column === "Pending (₹)";
+                        const isTotalRow = row["Collection Head"] === "Total";
 
                         return (
                           <TableCell
                             key={column}
                             className={`
                               whitespace-nowrap text-sm
-                              ${isMoney && typeof value === "number" ? "font-mono" : ""}
-                              ${isPending && typeof value === "number" && value > 0 ? "text-warning font-semibold" : ""}
+                              ${
+                                isMoney && typeof value === "number"
+                                  ? "font-mono"
+                                  : ""
+                              }
+                              ${
+                                isPending &&
+                                typeof value === "number" &&
+                                value > 0
+                                  ? "text-warning font-semibold"
+                                  : ""
+                              }
+                              ${isTotalRow ? "font-bold bg-muted/40" : ""}
                             `}
                           >
                             {value === null || value === undefined || value === ""
@@ -15431,10 +23851,7 @@ function ReportsPanel({ students }) {
         </CardContent>
       </Card>
 
-      {/* =================================================
-          GLOBAL COMPONENTS
-      ================================================= */}
-
+      {/* FEE COMPONENTS */}
       {components.length > 0 && reportData.length > 0 && (
         <Card className="border-border/60">
           <CardHeader className="pb-3">
@@ -15457,7 +23874,6 @@ function ReportsPanel({ students }) {
           </CardContent>
         </Card>
       )}
-
     </div>
   );
 }
@@ -15739,21 +24155,21 @@ function LateRuleDrawer({ open, onOpenChange, editing, onSave }) {
 
 
 /* ================================================================== */
-/*  FEE COLLECTION DIALOG — supports Online (Razorpay), Cash & Cheque   */
-/* ================================================================== */
-
-
-
-/* ================================================================== */
 /*  FEE COLLECTION DIALOG — Online (Razorpay: UPI/Card/NetBanking/     */
 /*  Bank Transfer), Cash & Cheque                                      */
+/*  IMPORTANT: sibling / early-full-year discount PREVIEW amounts here */
+/*  are client-side estimates only, for UX. The server (per the        */
+/*  FeeAssignmentStudentDiscountService rules) is the final authority  */
+/*  on whether a discount actually applies and for how much — it does  */
+/*  not read anything hardcoded from the frontend.                     */
 /* ================================================================== */
 
 function getSelectedDiscountRule(discountRows = []) {
   const rows = Array.isArray(discountRows) ? discountRows : [];
   const early = rows.find((d) => String(d.discount_scope || d.discountScope || "").toUpperCase() === "EARLY_FULL_YEAR");
   const sibling = rows.find((d) => String(d.discount_scope || d.discountScope || "").toUpperCase() === "SIBLING");
-  return { early, sibling };
+  const staff = rows.find((d) => String(d.discount_scope || d.discountScope || "").toUpperCase() === "STAFF_STUDENT");
+  return { early, sibling, staff };
 }
 
 function isFullAcademicYearSelection(lines = [], allLines = []) {
@@ -15771,16 +24187,22 @@ function calculateClientDiscountPreview(selectedLines, allLines, assignedDiscoun
   let siblingDiscount = 0;
   let earlyDiscount = 0;
 
+  // Preview only — uses the discount's own configured value/cap
+  // (never a hardcoded number) so it matches what the server will apply.
   if (sibling) {
     const admissionLines = selectedLines.filter((l) => String(l.category || "").toUpperCase() === "ADMISSION");
-    siblingDiscount = Math.min(5000, admissionLines.reduce((sum, l) => sum + Math.max(Number(l.balance ?? l.payable ?? l.monthly ?? 0), 0), 0));
+    const admissionGross = admissionLines.reduce((sum, l) => sum + Math.max(Number(l.balance ?? l.payable ?? l.monthly ?? 0), 0), 0);
+    const configuredValue = Number(sibling.discount_value ?? sibling.value ?? 0);
+    const cap = Number(sibling.max_discount_cap ?? sibling.maxDiscount ?? 0);
+    siblingDiscount = cap > 0 ? Math.min(cap, admissionGross, configuredValue || admissionGross) : Math.min(admissionGross, configuredValue || admissionGross);
   }
 
   if (early && isFullAcademicYearSelection(selectedLines, allLines)) {
     const tuitionGross = selectedLines
       .filter((l) => String(l.category || "").toUpperCase() === "TUITION")
       .reduce((sum, l) => sum + Math.max(Number(l.balance ?? l.payable ?? l.monthly ?? 0), 0), 0);
-    earlyDiscount = Math.max(0, tuitionGross * 0.05);
+    const pct = Number(early.discount_value ?? early.value ?? 0);
+    earlyDiscount = Math.max(0, tuitionGross * (pct / 100));
   }
 
   return { siblingDiscount, earlyDiscount, total: siblingDiscount + earlyDiscount };
@@ -15827,10 +24249,13 @@ function CustomCollectDialog({ open, onOpenChange, students, onCollected }) {
       })
       .catch((err) => {
         console.error(err);
-        toast.error(err?.response?.data?.detail || "Failed to load dues");
+        toast.error(getErrorMessage(err, "Failed to load dues"));
         setDues({ lines: [], totalDue: 0, totalLate: 0, assignmentUuid: undefined });
       })
-      .finally(() => setLoadingDues(false));
+      .finally(() => {
+        setLoadingDues(false);
+        setLoadingDiscountsForStudent(false);
+      });
   };
 
   useEffect(() => {
@@ -15865,8 +24290,7 @@ const pendingLines = dues.lines.filter((l) => !l.paid && !l.advanceReceived);
   const discountAmount = Math.max(serverDiscountAmount, preview.total);
   const finalTotal = Math.max(grossAmount + lateFee - discountAmount, 0);
   const fullYearSelected = isFullAcademicYearSelection(selectedLines, dues.lines);
-  const hasEarlyRule = !!getSelectedDiscountRule(assignedDiscounts).early;
-  const hasSiblingRule = !!getSelectedDiscountRule(assignedDiscounts).sibling;
+  const { early: earlyRule, sibling: siblingRule, staff: staffRule } = getSelectedDiscountRule(assignedDiscounts);
 
   const canSubmit = () => {
     if (!selectedStudent) { toast.error("Pick a student first"); return false; }
@@ -15954,7 +24378,7 @@ const pendingLines = dues.lines.filter((l) => !l.paid && !l.advanceReceived);
               onOpenChange(false);
             } catch (err) {
               console.error(err);
-              toast.error(err?.response?.data?.detail || "Payment verification failed");
+              toast.error(getErrorMessage(err, "Payment verification failed"));
             } finally {
               setSubmitting(false);
             }
@@ -15970,7 +24394,7 @@ const pendingLines = dues.lines.filter((l) => !l.paid && !l.advanceReceived);
         rzp.open();
       } catch (err) {
         console.error(err);
-        toast.error(err?.response?.data?.detail || "Could not start payment");
+        toast.error(getErrorMessage(err, "Could not start payment"));
         setSubmitting(false);
       }
       return; // submitting is cleared inside the handler/ondismiss/catch above
@@ -16005,7 +24429,7 @@ const pendingLines = dues.lines.filter((l) => !l.paid && !l.advanceReceived);
       onOpenChange(false);
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.detail || "Payment failed");
+      toast.error(getErrorMessage(err, "Payment failed"));
     } finally {
       setSubmitting(false);
     }
@@ -16090,12 +24514,21 @@ const pendingLines = dues.lines.filter((l) => !l.paid && !l.advanceReceived);
                       {d.discount_name || d.name} · {String(d.discount_type || "").toUpperCase().startsWith("PERC") ? `${d.discount_value}%` : inr(d.discount_value)}
                     </Badge>
                   ))}
-                  {hasEarlyRule && (
+                  {earlyRule && (
                     <Badge variant={fullYearSelected ? "default" : "secondary"} className="text-xs">
-                      {fullYearSelected ? "5% full-year rule eligible" : "5% requires full-year selection"}
+                      {fullYearSelected
+                        ? `${earlyRule.discount_value ?? earlyRule.value}% full-year rule eligible`
+                        : "Full-year rule requires full-year selection"}
                     </Badge>
                   )}
-                  {hasSiblingRule && <Badge variant="secondary" className="text-xs">Sibling: ₹5,000 Admission only</Badge>}
+                  {siblingRule && (
+                    <Badge variant="secondary" className="text-xs">
+                      Sibling: {String(siblingRule.discount_type || "").toUpperCase().startsWith("PERC")
+                        ? `${siblingRule.discount_value}%`
+                        : inr(siblingRule.discount_value ?? siblingRule.value)} · Admission only
+                    </Badge>
+                  )}
+                  {staffRule && <Badge variant="secondary" className="text-xs">Staff student discount active</Badge>}
                 </div>
               )}
               <div className="rounded-lg border border-border/60 overflow-hidden">
@@ -16232,7 +24665,6 @@ const pendingLines = dues.lines.filter((l) => !l.paid && !l.advanceReceived);
     </Dialog>
   );
 }
-// Lazily injects Razorpay's checkout.js once and reuses it after that.
 
 /* ================================================================== */
 /*  SHARED FIELD HELPERS                                                */

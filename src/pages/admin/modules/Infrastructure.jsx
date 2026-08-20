@@ -57,7 +57,7 @@ import {
   X,
   AlertCircle,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { KpiCard } from "../../../components/kpi-card";
 // import { CrudDialog } from "../../../components/crud-dialog";
 import {
@@ -225,6 +225,65 @@ function StatusBadge({ status }) {
   );
 }
 
+// ── Facilities Multi-Select (checkbox dropdown that stays open) ───────────
+function FacilitiesMultiSelect({ value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const toggle = (fac) => {
+    onChange(
+      value.includes(fac)
+        ? value.filter((x) => x !== fac)
+        : [...value, fac],
+    );
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="h-8 w-full text-[10px] flex items-center justify-between rounded-md border border-input bg-background px-2 hover:bg-muted/40"
+      >
+        <span className="truncate text-left">
+          {value.length === 0
+            ? "Add facilities…"
+            : value.slice(0, 2).join(", ") +
+              (value.length > 2 ? ` +${value.length - 2}` : "")}
+        </span>
+        <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-56 rounded-md border bg-popover p-2 shadow-md grid grid-cols-2 gap-1.5">
+          {options.map((fac) => (
+            <div key={fac} className="flex items-center gap-1.5">
+              <Checkbox
+                id={`msf-${fac}-${value.join("")}`}
+                checked={value.includes(fac)}
+                onCheckedChange={() => toggle(fac)}
+              />
+              <label
+                onClick={() => toggle(fac)}
+                className="text-[10px] cursor-pointer select-none"
+              >
+                {fac}
+              </label>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 export default function Infrastructure() {
   const [tree, setTree] = useState([]);
   const [expanded, setExpanded] = useState(new Set(["Main Academic Block"]));
@@ -481,8 +540,7 @@ export default function Infrastructure() {
 
             const res = await createBuilding(payload);
 
-            toast.success(res.message);
-
+           toast.success(res?.message || "Building created successfully");
             await fetchInfrastructure();
 
             setAddBuilding(false);
@@ -2426,36 +2484,13 @@ function UnifiedBuildingDialog({ open, onOpenChange, onSubmit, existingBuildings
                         />
                       </div>
                       {/* Facilities mini-picker */}
-                      <div className="col-span-3">
-                        <Select
-                          onValueChange={(v) =>
-                            toggleRoomFacility(bi, fi, ri, v)
-                          }
-                        >
-                          <SelectTrigger className="h-8 text-[10px]">
-                            <span className="truncate">
-                              {r.facilities.length === 0
-                                ? "Add facilities…"
-                                : r.facilities.slice(0, 2).join(", ") +
-                                  (r.facilities.length > 2
-                                    ? ` +${r.facilities.length - 2}`
-                                    : "")}
-                            </span>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {FACILITIES_LIST.map((fac) => (
-                              <SelectItem key={fac} value={fac}>
-                                <span className="flex items-center gap-2">
-                                  <span
-                                    className={`w-2 h-2 rounded-full ${r.facilities.includes(fac) ? "bg-primary" : "bg-muted-foreground/30"}`}
-                                  />
-                                  {fac}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+<div className="col-span-3">
+  <FacilitiesMultiSelect
+    value={r.facilities}
+    onChange={(facilities) => patchRoom(bi, fi, ri, { facilities })}
+    options={FACILITIES_LIST}
+  />
+</div>
                       <div className="col-span-1">
                         <Select
                           value={r.status}

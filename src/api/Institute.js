@@ -9,6 +9,8 @@ export const createInstituteDraft = async (formData) => {
       headers: {
         "Content-Type": "multipart/form-data",
       },
+      // The onboarding wizard advances its own step after this response.
+      skipDataRefresh: true,
     }
   );
 
@@ -19,7 +21,8 @@ export const createInstituteDraft = async (formData) => {
 export const updateInstituteDraftStep2 = async (draftUuid, payload) => {
   const response = await api.put(
     `/superadmin/institute/draft/${draftUuid}`,
-    payload
+    payload,
+    { skipDataRefresh: true }
   );
 
   return response.data;
@@ -29,7 +32,8 @@ export const updateInstituteDraftStep2 = async (draftUuid, payload) => {
 export const updateInstituteDraftStep3 = async (draftUuid, payload) => {
   const response = await api.put(
     `/superadmin/institute/draft/${draftUuid}/step3`,
-    payload
+    payload,
+    { skipDataRefresh: true }
   );
 
   return response.data;
@@ -38,7 +42,8 @@ export const updateInstituteDraftStep3 = async (draftUuid, payload) => {
 export const updateInstituteDraftStep4 = async (draftUuid, payload) => {
   const response = await api.put(
     `/superadmin/institute/draft/${draftUuid}/step4`,
-    payload
+    payload,
+    { skipDataRefresh: true }
   );
 
   return response.data;
@@ -52,6 +57,7 @@ export const uploadInstituteDocuments = async (draftUuid, formData) => {
       headers: {
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 
@@ -68,7 +74,9 @@ export const getInstituteDraftReview = async (draftUuid) => {
 // Final Submit
 export const submitInstituteDraft = async (draftUuid) => {
   const response = await api.post(
-    `/superadmin/institute/draft/${draftUuid}/submit`
+    `/superadmin/institute/draft/${draftUuid}/submit`,
+    undefined,
+    { skipDataRefresh: true }
   );
 
   return response.data;

@@ -1,6 +1,5 @@
 import api from "./axios";
 import useAuthStore from "../store/authStore";
-
 const getHeaders = () => {
   const { instituteUUID } = useAuthStore.getState();
 

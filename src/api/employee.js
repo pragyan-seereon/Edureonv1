@@ -33,6 +33,7 @@ export const createEmployeeDraft = async (data) => {
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
   return response.data;
@@ -50,6 +51,7 @@ export const updateEmployeeJob = async (draftUuid, data) => {
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 
@@ -68,6 +70,7 @@ export const updateEmployeeSalary = async (draftUuid, data) => {
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 
@@ -86,6 +89,7 @@ export const updateEmployeeLegal = async (draftUuid, data) => {
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 
@@ -104,6 +108,7 @@ export const updateEmployeeBank = async (draftUuid, data) => {
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 
@@ -122,6 +127,7 @@ export const updateEmployeeAssignment = async (draftUuid, data) => {
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 
@@ -196,6 +202,7 @@ export const uploadEmployeeDocuments = async (
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 
@@ -210,6 +217,7 @@ export const reviewEmployeeDraft = async (draftUuid) => {
     `/employee-drafts/${draftUuid}/review`,
     {
       headers: getHeaders(),
+      skipDataRefresh: true,
     }
   );
 
@@ -225,6 +233,7 @@ export const submitEmployeeDraft = async (draftUuid) => {
     {},
     {
       headers: getHeaders(),
+      skipDataRefresh: true,
     }
   );
 
@@ -284,6 +293,7 @@ export const updateEmployee = async (employeeUUID, data) => {
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 
@@ -377,6 +387,7 @@ export const updateEmployeePersonal = async (draftUuid, data) => {
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 
@@ -394,6 +405,7 @@ export const deleteEmployeeDraft = async (draftUuid) => {
     `/employee-drafts/${draftUuid}`,
     {
       headers: getHeaders(),
+      skipDataRefresh: true,
     }
   );
 

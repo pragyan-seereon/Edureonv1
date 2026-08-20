@@ -1,4 +1,3 @@
-
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import {
@@ -12,7 +11,6 @@ import {
   Search,
   Trash2,
   RotateCcw,
-
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageContainer, PageHeader } from "../../../components/page-shell";
@@ -49,9 +47,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../../../components/ui/alert-dialog";
-import { getInstitutes,  deleteInstitute,   restoreInstitute,} from "../../../api/Institute";
+import {
+  getInstitutes,
+  deleteInstitute,
+  restoreInstitute,
+} from "../../../api/Institute";
 import useAuthStore from "../../../store/authStore";
-const STATUS_OPTIONS = ["All", "Active", "Archived",  "Suspended"];
+const STATUS_OPTIONS = ["All", "Active", "Archived", "Suspended"];
 const TYPE_OPTIONS = ["All", "SCHOOL", "COLLEGE", "COACHING", "UNIVERSITY"];
 // const PLAN_OPTIONS = ["All", "Trial", "Basic", "Professional", "Enterprise"];
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -126,7 +128,8 @@ const exportRows = (rows) => {
     "Admin Name",
     "Created Date",
   ];
-  const escapeCell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+  const escapeCell = (value) =>
+    `"${String(value ?? "").replaceAll('"', '""')}"`;
   const csv = [
     columns.join(","),
     ...rows.map((item) =>
@@ -159,12 +162,12 @@ const exportRows = (rows) => {
 };
 
 export default function Institutes() {
-const [institutes, setInstitutes] = useState([]);
-const [loading, setLoading] = useState(false);
-const [total, setTotal] = useState(0);
-const [instituteDraft, setInstituteDraft] = useState(readInstituteDraft);
-const [confirmation, setConfirmation] = useState(null);
-const [isConfirming, setIsConfirming] = useState(false);
+  const [institutes, setInstitutes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [instituteDraft, setInstituteDraft] = useState(readInstituteDraft);
+  const [confirmation, setConfirmation] = useState(null);
+  const [isConfirming, setIsConfirming] = useState(false);
   const navigate = useNavigate();
   // const auth = useAuth();
   const [search, setSearch] = useState("");
@@ -179,8 +182,8 @@ const [isConfirming, setIsConfirming] = useState(false);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState([]);
   const [sort, setSort] = useState({ key: "createdAt", dir: "desc" });
- const activeInstitute = useAuthStore((state) => state.instituteUUID);
-const { setInstituteUUID, clearInstituteUUID } = useAuthStore();
+  const activeInstitute = useAuthStore((state) => state.instituteUUID);
+  const { setInstituteUUID, clearInstituteUUID } = useAuthStore();
 
   useEffect(() => {
     const syncDraft = (event) => {
@@ -204,95 +207,79 @@ const { setInstituteUUID, clearInstituteUUID } = useAuthStore();
   }, [search]);
 
   useEffect(() => {
-  const fetchInstitutes = async () => {
-    try {
-      setLoading(true);
+    const fetchInstitutes = async () => {
+      try {
+        setLoading(true);
 
-      const response = await getInstitutes({
-        search: debouncedSearch || undefined,
-        status: status !== "All" ? status.toUpperCase() : undefined,
-        type: type !== "All" ? type : undefined,
-        plan: plan !== "All" ? plan.toUpperCase() : undefined,
-        from_date: from || undefined,
-        to_date: to || undefined,
-        page,
-        limit: Number(rowsPerPage),
-        sort: "created_date",
-        order: sort.dir,
-      });
+        const response = await getInstitutes({
+          search: debouncedSearch || undefined,
+          status: status !== "All" ? status.toUpperCase() : undefined,
+          type: type !== "All" ? type : undefined,
+          plan: plan !== "All" ? plan.toUpperCase() : undefined,
+          from_date: from || undefined,
+          to_date: to || undefined,
+          page,
+          limit: Number(rowsPerPage),
+          sort: "created_date",
+          order: sort.dir,
+        });
 
-     setInstitutes(
-  response.data.map((item) => ({
-    id: item.uuid,
-    code: item.code,
-    logo: item.logo_url
-      ? item.logo_url
-      : `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(
-          item.name
-        )}`,
-    name: item.name,
-    type: item.type,
-    board: item.board,
-    city: item.city,
-    plan: item.plan,
-    status: item.status,
-    adminName: item.admin_name,
-    createdAt: item.created_date,
-    students: 0,
-  }))
-);
+        setInstitutes(
+          response.data.map((item) => ({
+            id: item.uuid,
+            code: item.code,
+            logo: item.logo_url
+              ? item.logo_url
+              : `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(
+                  item.name,
+                )}`,
+            name: item.name,
+            type: item.type,
+            board: item.board,
+            city: item.city,
+            plan: item.plan,
+            status: item.status,
+            adminName: item.admin_name,
+            createdAt: item.created_date,
+            students: 0,
+          })),
+        );
 
-      setTotal(response.total);
-    } catch (error) {
-      console.error(error);
-      toast.error("Failed to load institutes");
-    } finally {
-      setLoading(false);
-    }
-  };
+        setTotal(response.total);
+      } catch (error) {
+        console.error(error);
+        toast.error("Failed to load institutes");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  fetchInstitutes();
-}, [
-  debouncedSearch,
-  status,
-  type,
-  plan,
-  from,
-  to,
-  page,
-  rowsPerPage,
-  sort,
-]);
+    fetchInstitutes();
+  }, [debouncedSearch, status, type, plan, from, to, page, rowsPerPage, sort]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(1);
     setSelected([]);
   }, [debouncedSearch, status, type, plan, from, to, rowsPerPage]);
 
-  
-
-const handleInstituteToggle = (item, checked) => {
-  if (checked) {
-    setInstituteUUID(item.id);
-    console.log("New store value:", useAuthStore.getState().instituteUUID);
-  } else {
-    clearInstituteUUID();
-  }
-};
+  const handleInstituteToggle = (item, checked) => {
+    if (checked) {
+      setInstituteUUID(item.id);
+      console.log("New store value:", useAuthStore.getState().instituteUUID);
+    } else {
+      clearInstituteUUID();
+    }
+  };
   const dateError = from && to && from > to;
- 
-
-
 
   const pageSize = Number(rowsPerPage);
   const sorted = institutes;
-const maxPage = Math.max(
-  1,
-  Math.ceil(total / Number(rowsPerPage))
-);  const currentPage = Math.min(page, maxPage);
-const pageRows = institutes;
+  const maxPage = Math.max(1, Math.ceil(total / Number(rowsPerPage)));
+  const currentPage = Math.min(page, maxPage);
+  const pageRows = institutes;
   const pageIds = pageRows.map((item) => item.id);
-  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.includes(id));
+  const allPageSelected =
+    pageIds.length > 0 && pageIds.every((id) => selected.includes(id));
   const somePageSelected = pageIds.some((id) => selected.includes(id));
 
   const setSortKey = (key) => {
@@ -312,105 +299,99 @@ const pageRows = institutes;
 
   const toggleOne = (id, checked) => {
     setSelected((current) =>
-      checked ? [...new Set([...current, id])] : current.filter((x) => x !== id),
+      checked
+        ? [...new Set([...current, id])]
+        : current.filter((x) => x !== id),
     );
   };
 
- const remove = async (item) => {
-  try {
-    await deleteInstitute(
-      item.id,          // uuid
-      item.name,        // confirmation_name
-      "Deleted by Super Admin"
-    );
+  const remove = async (item) => {
+    try {
+      await deleteInstitute(
+        item.id, // uuid
+        item.name, // confirmation_name
+        "Deleted by Super Admin",
+      );
 
-    setInstitutes((prev) =>
-      prev.filter((inst) => inst.id !== item.id)
-    );
+      setInstitutes((prev) => prev.filter((inst) => inst.id !== item.id));
 
-    setSelected((prev) =>
-      prev.filter((id) => id !== item.id)
-    );
+      setSelected((prev) => prev.filter((id) => id !== item.id));
 
-    setTotal((prev) => prev - 1);
+      setTotal((prev) => prev - 1);
 
-    toast.success("Institute deleted successfully");
-    setConfirmation(null);
-  } catch (error) {
-    console.error(error);
+      toast.success("Institute deleted successfully");
+      setConfirmation(null);
+    } catch (error) {
+      console.error(error);
 
-    toast.error(
-      error?.response?.data?.message ||
-      "Failed to delete institute"
-    );
-  }
-};
-const restore = async (item) => {
-  try {
-    await restoreInstitute(
-      item.id,
-      item.name // confirmation_name
-    );
-
-    toast.success("Institute restored successfully");
-
-    // refresh list
-    setInstitutes((prev) =>
-      prev.map((inst) =>
-        inst.id === item.id
-          ? { ...inst, status: "ACTIVE" }
-          : inst
-      )
-    );
-    setConfirmation(null);
-  } catch (error) {
-    console.error(error);
-
-    toast.error(
-      error?.response?.data?.message ||
-      "Failed to restore institute"
-    );
-  }
-};
-
-const confirmInstituteAction = async () => {
-  if (!confirmation?.item) return;
-  setIsConfirming(true);
-  try {
-    if (confirmation.type === "delete") {
-      await remove(confirmation.item);
-    } else {
-      await restore(confirmation.item);
+      toast.error(
+        error?.response?.data?.message || "Failed to delete institute",
+      );
     }
-  } finally {
-    setIsConfirming(false);
-  }
-};
-// const openInstitute = async (item) => {
-//   const currentUser = auth.user;
+  };
+  const restore = async (item) => {
+    try {
+      await restoreInstitute(
+        item.id,
+        item.name, // confirmation_name
+      );
 
-//   if (currentUser) {
-//     sessionStorage.setItem(
-//       SUPER_ADMIN_SESSION_KEY,
-//       JSON.stringify(currentUser)
-//     );
-//   }
+      toast.success("Institute restored successfully");
 
-//   await auth.completeLogin({
-//     id: item.id,
-//     name: item.adminName,
-//     email: "",
-//     role: "admin",
-//     designation: "Institute Admin",
-//     institute: item.name,
-//     instituteId: item.id,
-//     joinedAt: item.createdAt,
-//     switchedFrom: "super_admin",
-//   });
+      // refresh list
+      setInstitutes((prev) =>
+        prev.map((inst) =>
+          inst.id === item.id ? { ...inst, status: "ACTIVE" } : inst,
+        ),
+      );
+      setConfirmation(null);
+    } catch (error) {
+      console.error(error);
 
-//   toast.success(`Opened ${item.name} as institute admin`);
-//   navigate("/");
-// };
+      toast.error(
+        error?.response?.data?.message || "Failed to restore institute",
+      );
+    }
+  };
+
+  const confirmInstituteAction = async () => {
+    if (!confirmation?.item) return;
+    setIsConfirming(true);
+    try {
+      if (confirmation.type === "delete") {
+        await remove(confirmation.item);
+      } else {
+        await restore(confirmation.item);
+      }
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+  // const openInstitute = async (item) => {
+  //   const currentUser = auth.user;
+
+  //   if (currentUser) {
+  //     sessionStorage.setItem(
+  //       SUPER_ADMIN_SESSION_KEY,
+  //       JSON.stringify(currentUser)
+  //     );
+  //   }
+
+  //   await auth.completeLogin({
+  //     id: item.id,
+  //     name: item.adminName,
+  //     email: "",
+  //     role: "admin",
+  //     designation: "Institute Admin",
+  //     institute: item.name,
+  //     instituteId: item.id,
+  //     joinedAt: item.createdAt,
+  //     switchedFrom: "super_admin",
+  //   });
+
+  //   toast.success(`Opened ${item.name} as institute admin`);
+  //   navigate("/");
+  // };
   return (
     <PageContainer>
       <PageHeader
@@ -431,7 +412,10 @@ const confirmInstituteAction = async () => {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold">Institute drafts</h2>
-                <p className="text-sm text-muted-foreground">Continue an institute setup that was cancelled before submission.</p>
+                <p className="text-sm text-muted-foreground">
+                  Continue an institute setup that was cancelled before
+                  submission.
+                </p>
               </div>
               <Badge variant="secondary">1 draft</Badge>
             </div>
@@ -450,7 +434,9 @@ const confirmInstituteAction = async () => {
                 </TableHeader>
                 <TableBody>
                   <TableRow>
-                    <TableCell className="font-medium">{instituteDraft.form?.name || "Untitled institute"}</TableCell>
+                    <TableCell className="font-medium">
+                      {instituteDraft.form?.name || "Untitled institute"}
+                    </TableCell>
                     <TableCell>{instituteDraft.form?.type || "-"}</TableCell>
                     <TableCell>{instituteDraft.form?.board || "-"}</TableCell>
                     <TableCell>{instituteDraft.form?.city || "-"}</TableCell>
@@ -458,10 +444,17 @@ const confirmInstituteAction = async () => {
                     <TableCell>{formatDate(instituteDraft.savedAt)}</TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-2">
-                        <Button size="sm" onClick={() => navigate("/super/institutes/create")}>
+                        <Button
+                          size="sm"
+                          onClick={() => navigate("/super/institutes/create")}
+                        >
                           Resume
                         </Button>
-                        <Button size="sm" variant="outline" onClick={discardDraft}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={discardDraft}
+                        >
                           Discard
                         </Button>
                       </div>
@@ -476,8 +469,8 @@ const confirmInstituteAction = async () => {
 
       <Card className="max-w-full overflow-hidden border-border/60">
         <CardContent className="p-4 space-y-4">
-<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <Field label="Search">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Search">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -489,10 +482,18 @@ const confirmInstituteAction = async () => {
               </div>
             </Field>
             <Field label="Status">
-              <FilterSelect value={status} onValueChange={setStatus} values={STATUS_OPTIONS} />
+              <FilterSelect
+                value={status}
+                onValueChange={setStatus}
+                values={STATUS_OPTIONS}
+              />
             </Field>
             <Field label="Type">
-              <FilterSelect value={type} onValueChange={setType} values={TYPE_OPTIONS} />
+              <FilterSelect
+                value={type}
+                onValueChange={setType}
+                values={TYPE_OPTIONS}
+              />
             </Field>
             {/* <Field label="Plan">
               <FilterSelect value={plan} onValueChange={setPlan} values={PLAN_OPTIONS} />
@@ -507,10 +508,18 @@ const confirmInstituteAction = async () => {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
-            <DateField label="Date Created From" value={from} onChange={setFrom} />
+            <DateField
+              label="Date Created From"
+              value={from}
+              onChange={setFrom}
+            />
             <DateField label="Date Created To" value={to} onChange={setTo} />
             <div className="flex items-end">
-              <Button variant="outline" className="w-full" onClick={() => exportRows(sorted)}>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => exportRows(sorted)}
+              >
                 <Download className="h-4 w-4" />
                 Export Excel
               </Button>
@@ -525,11 +534,17 @@ const confirmInstituteAction = async () => {
 
           {selected.length > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
-              <div className="text-sm font-medium">{selected.length} selected</div>
+              <div className="text-sm font-medium">
+                {selected.length} selected
+              </div>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => exportRows(sorted.filter((item) => selected.includes(item.id)))}
+                onClick={() =>
+                  exportRows(
+                    sorted.filter((item) => selected.includes(item.id)),
+                  )
+                }
               >
                 <Download className="h-4 w-4" />
                 Export
@@ -543,35 +558,84 @@ const confirmInstituteAction = async () => {
                 <TableRow>
                   <TableHead className="w-10">
                     <Checkbox
-                      checked={allPageSelected || (somePageSelected && "indeterminate")}
-                      onCheckedChange={(checked) => togglePage(Boolean(checked))}
+                      checked={
+                        allPageSelected || (somePageSelected && "indeterminate")
+                      }
+                      onCheckedChange={(checked) =>
+                        togglePage(Boolean(checked))
+                      }
                       aria-label="Select current page"
                     />
                   </TableHead>
                   <TableHead className="w-14">Logo</TableHead>
-                  <SortableHead className="w-56" label="Institute Name" sortKey="name" sort={sort} onSort={setSortKey} />
-                  <SortableHead className="w-28" label="Type" sortKey="type" sort={sort} onSort={setSortKey} />
-                  <SortableHead className="w-24" label="Board" sortKey="board" sort={sort} onSort={setSortKey} />
-                  <SortableHead className="w-28" label="City" sortKey="city" sort={sort} onSort={setSortKey} />
+                  <SortableHead
+                    className="w-56"
+                    label="Institute Name"
+                    sortKey="name"
+                    sort={sort}
+                    onSort={setSortKey}
+                  />
+                  <SortableHead
+                    className="w-28"
+                    label="Type"
+                    sortKey="type"
+                    sort={sort}
+                    onSort={setSortKey}
+                  />
+                  <SortableHead
+                    className="w-24"
+                    label="Board"
+                    sortKey="board"
+                    sort={sort}
+                    onSort={setSortKey}
+                  />
+                  <SortableHead
+                    className="w-28"
+                    label="City"
+                    sortKey="city"
+                    sort={sort}
+                    onSort={setSortKey}
+                  />
                   {/* <SortableHead className="w-28" label="Plan" sortKey="plan" sort={sort} onSort={setSortKey} /> */}
-                  <SortableHead className="w-28" label="Status" sortKey="status" sort={sort} onSort={setSortKey} />
+                  <SortableHead
+                    className="w-28"
+                    label="Status"
+                    sortKey="status"
+                    sort={sort}
+                    onSort={setSortKey}
+                  />
                   {/* <SortableHead className="w-28" label="Students" sortKey="students" sort={sort} onSort={setSortKey} /> */}
-                  <SortableHead className="w-36" label="Admin Name" sortKey="adminName" sort={sort} onSort={setSortKey} />
-                  <SortableHead className="w-32" label="Created Date" sortKey="createdAt" sort={sort} onSort={setSortKey} />
-                  <TableHead className="w-24 text-center"> Active</TableHead>
+                  <SortableHead
+                    className="w-36"
+                    label="Admin Name"
+                    sortKey="adminName"
+                    sort={sort}
+                    onSort={setSortKey}
+                  />
+                  <SortableHead
+                    className="w-32"
+                    label="Created Date"
+                    sortKey="createdAt"
+                    sort={sort}
+                    onSort={setSortKey}
+                  />
+                  {/* <TableHead className="w-24 text-center"> Active</TableHead> */}
                   <TableHead className="w-40 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-{loading ? (
-  <TableRow>
-    <TableCell colSpan={12} className="text-center py-8">
-      Loading institutes...
-    </TableCell>
-  </TableRow>
-) : pageRows.length === 0 ? (
-                    <TableRow>
-                    <TableCell colSpan={12} className="h-28 text-center text-sm text-muted-foreground">
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={12} className="text-center py-8">
+                      Loading institutes...
+                    </TableCell>
+                  </TableRow>
+                ) : pageRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={12}
+                      className="h-28 text-center text-sm text-muted-foreground"
+                    >
                       No institutes match the current filters.
                     </TableCell>
                   </TableRow>
@@ -581,7 +645,9 @@ const confirmInstituteAction = async () => {
                       <TableCell>
                         <Checkbox
                           checked={selected.includes(item.id)}
-                          onCheckedChange={(checked) => toggleOne(item.id, Boolean(checked))}
+                          onCheckedChange={(checked) =>
+                            toggleOne(item.id, Boolean(checked))
+                          }
                           aria-label={`Select ${item.name}`}
                         />
                       </TableCell>
@@ -595,9 +661,11 @@ const confirmInstituteAction = async () => {
                       <TableCell>
                         <button
                           className="max-w-full truncate text-left font-medium hover:text-primary"
-                          onClick={() => navigate(`/super/institutes/${item.id}`)}
+                          onClick={() =>
+                            navigate(`/super/institutes/${item.id}`)
+                          }
                         >
-                        {item.name?.toUpperCase()}
+                          {item.name?.toUpperCase()}
                         </button>
                         {/* <div className="text-[10px] font-mono text-muted-foreground">{item.id}</div> */}
                       </TableCell>
@@ -608,44 +676,64 @@ const confirmInstituteAction = async () => {
                         <Badge variant={planVariant(item.plan)}>{item.plan}</Badge>
                       </TableCell> */}
                       <TableCell>
-                        <Badge variant={statusVariant(item.status)}>{item.status}</Badge>
+                        <Badge variant={statusVariant(item.status)}>
+                          {item.status}
+                        </Badge>
                       </TableCell>
                       {/* <TableCell className="tabular-nums">{item.students.toLocaleString("en-IN")}</TableCell> */}
-                      <TableCell className="truncate">{item.adminName}</TableCell>
+                      <TableCell className="truncate">
+                        {item.adminName}
+                      </TableCell>
                       <TableCell>{formatDate(item.createdAt)}</TableCell>
-    <TableCell className="text-center">
-<Switch
-  checked={activeInstitute === item.id}
-  onCheckedChange={(checked) => handleInstituteToggle(item, checked)}
-/>
-</TableCell>
+                      {/* <TableCell className="text-center">
+                        <Switch
+                          checked={activeInstitute === item.id}
+                          onCheckedChange={(checked) =>
+                            handleInstituteToggle(item, checked)
+                          }
+                        />
+                      </TableCell> */}
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
-                          <IconButton label="View" onClick={() => navigate(`/super/institutes/${item.id}`)}>
+                          <IconButton
+                            label="View"
+                            onClick={() =>
+                              navigate(`/super/institutes/${item.id}`)
+                            }
+                          >
                             <Eye className="h-4 w-4" />
                           </IconButton>
                           {/* <IconButton label="Open Institute" onClick={() => openInstitute(item)}>
                             <LogIn className="h-4 w-4" />
                           </IconButton> */}
-                          <IconButton label="Edit" onClick={() => navigate(`/super/institutes/${item.id}/edit`)}>
+                          <IconButton
+                            label="Edit"
+                            onClick={() =>
+                              navigate(`/super/institutes/${item.id}/edit`)
+                            }
+                          >
                             <FilePenLine className="h-4 w-4" />
                           </IconButton>
-                         {item.status?.toUpperCase() === "ARCHIVED" ? (
-  <IconButton
-    label="Restore"
-    onClick={() => setConfirmation({ type: "restore", item })}
-  >
-    <RotateCcw className="h-4 w-4" />
-  </IconButton>
-) : (
-  <IconButton
-    label="Delete"
-    danger
-    onClick={() => setConfirmation({ type: "delete", item })}
-  >
-    <Trash2 className="h-4 w-4" />
-  </IconButton>
-)}
+                          {item.status?.toUpperCase() === "ARCHIVED" ? (
+                            <IconButton
+                              label="Restore"
+                              onClick={() =>
+                                setConfirmation({ type: "restore", item })
+                              }
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </IconButton>
+                          ) : (
+                            <IconButton
+                              label="Delete"
+                              danger
+                              onClick={() =>
+                                setConfirmation({ type: "delete", item })
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </IconButton>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -691,7 +779,9 @@ const confirmInstituteAction = async () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmation?.type === "delete" ? "Delete institute?" : "Restore institute?"}
+              {confirmation?.type === "delete"
+                ? "Delete institute?"
+                : "Restore institute?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmation?.type === "delete"
@@ -700,14 +790,20 @@ const confirmInstituteAction = async () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isConfirming}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isConfirming}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               disabled={isConfirming}
               onClick={(event) => {
                 event.preventDefault();
                 confirmInstituteAction();
               }}
-              className={confirmation?.type === "delete" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
+              className={
+                confirmation?.type === "delete"
+                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  : ""
+              }
             >
               {isConfirming
                 ? "Please wait..."
@@ -735,7 +831,11 @@ function DateField({ label, value, onChange }) {
   return (
     <Field label={label}>
       <div className="flex gap-2">
-        <Input type="date" value={value} onChange={(event) => onChange(event.target.value)} />
+        <Input
+          type="date"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
         {value && (
           <Button variant="outline" size="sm" onClick={() => onChange("")}>
             Clear
@@ -767,7 +867,10 @@ function SortableHead({ label, sortKey, sort, onSort, className = "" }) {
   const active = sort.key === sortKey;
   return (
     <TableHead className={`whitespace-nowrap ${className}`}>
-      <button className="inline-flex items-center gap-1 hover:text-primary" onClick={() => onSort(sortKey)}>
+      <button
+        className="inline-flex items-center gap-1 hover:text-primary"
+        onClick={() => onSort(sortKey)}
+      >
         {label}
         {active ? (
           sort.dir === "asc" ? (

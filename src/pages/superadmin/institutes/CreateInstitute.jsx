@@ -1226,10 +1226,10 @@ const confirmSubmit = async () => {
             {/* ── Step 4: Financial ── */}
             {step === 4 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label={<>GST Number <span className="text-red-500">*</span></>} error={errors.gst}>
+                <Field label="GST Number">
                   <Input value={form.gst} onChange={(e) => set("gst", e.target.value.toUpperCase())} placeholder="22AAAAA0000A1Z5" maxLength={15} />
                 </Field>
-                <Field label={<>PAN Number <span className="text-red-500">*</span></>} error={errors.pan}>
+                <Field label="PAN Number">
                   <Input value={form.pan} onChange={(e) => set("pan", e.target.value.toUpperCase())} placeholder="AAAPL1234C" maxLength={10} />
                 </Field>
                 <Field label="TAN Number" error={errors.tan}>
@@ -1310,10 +1310,10 @@ const confirmSubmit = async () => {
     disabled={isFetchingIFSC}
   />
 </Field>
-                <Field label={<>Account Holder Name <span className="text-red-500">*</span></>} error={errors.accountHolderName}>
+                <Field label="Account Holder Name">
                   <Input value={form.accountHolderName} onChange={(e) => set("accountHolderName", e.target.value)} placeholder="Enter account holder name" maxLength={150} />
                 </Field>
-                <Field label={<>Account Type <span className="text-red-500">*</span></>} error={errors.accountType}>
+                <Field label="Account Type">
                   <select value={form.accountType} onChange={(e) => set("accountType", e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
                     <option value="">Select Account Type</option>
                     {ACCOUNT_TYPES.map((t) => (

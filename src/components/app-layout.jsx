@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
@@ -38,6 +39,13 @@ const ready = true;
   const { pathname } = useLocation();
   const activeInstituteId = useInstituteStore((state) => state.activeInstituteId);
   const sessionYear = useSessionStore((state) => state.sessionYear);
+  const [dataVersion, setDataVersion] = useState(0);
+
+  useEffect(() => {
+    const refreshPageData = () => setDataVersion((version) => version + 1);
+    window.addEventListener("edureon:data-refresh", refreshPageData);
+    return () => window.removeEventListener("edureon:data-refresh", refreshPageData);
+  }, []);
 
   const isPublic = publicPaths.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`),
@@ -80,7 +88,7 @@ const ready = true;
           <main className="min-w-0 flex-1 pb-16 md:pb-0">
             {/* Recreate the active page when the global institute or session
                 changes so every page reruns its initial data loaders. */}
-            <div key={`${activeInstituteId}:${sessionYear}`} className="min-h-full">
+            <div key={`${activeInstituteId}:${sessionYear}:${dataVersion}`} className="min-h-full">
               <Outlet />
             </div>
           </main>

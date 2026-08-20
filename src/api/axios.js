@@ -1,4 +1,5 @@
 import axios from "axios";
+import { refreshCurrentPageData } from "../lib/data-refresh";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
@@ -24,7 +25,16 @@ api.interceptors.request.use(
 
 // Refresh token on 401
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = response.config?.method?.toLowerCase();
+    const isDataMutation = ["post", "put", "patch", "delete"].includes(method);
+
+    if (isDataMutation && !response.config?.skipDataRefresh) {
+      refreshCurrentPageData();
+    }
+
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
 

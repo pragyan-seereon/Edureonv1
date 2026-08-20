@@ -222,43 +222,6 @@ export function validateStep3(form) {
 export function validateStep4(form) {
   const e = {};
 
-  // GST (Optional)
-  if (!form.gst?.trim()) {
-  e.gst = "GST Number is required.";
-} else {
-  const gst = form.gst.toUpperCase();
-
-  if (gst.length !== 15) {
-    e.gst = "GST Number must be 15 characters.";
-  } else if (!GST_PATTERN.test(gst)) {
-    e.gst = "Invalid GST Number.";
-  }
-}
-
-  // PAN (Required)
-  if (!form.pan?.trim()) {
-    e.pan = "PAN Number is required.";
-  } else {
-    const pan = form.pan.toUpperCase();
-    if (pan.length !== 10) {
-      e.pan = "PAN Number must be 10 characters.";
-    } else if (!PAN_PATTERN.test(pan)) {
-      e.pan = "Invalid PAN Number.";
-    }
-  }
-
- // TAN (Required)
-  if (!form.tan?.trim()) {
-    e.tan = "TAN Number is required.";
-  } else {
-    const tan = form.tan.toUpperCase();
-    if (tan.length !== 10) {
-      e.tan = "TAN Number must be 10 characters.";
-    } else if (!TAN_PATTERN.test(tan)) {
-      e.tan = "Invalid TAN Number.";
-    }
-  }
-
   // Account Number (Required)
   if (!form.accountNumber?.trim()) {
     e.accountNumber = "Account Number is required.";
@@ -283,23 +246,6 @@ export function validateStep4(form) {
     e.ifscCode = "IFSC Code is required.";
   } else if (!IFSC_PATTERN.test(form.ifscCode.toUpperCase())) {
     e.ifscCode = "Invalid IFSC Code.";
-  }
-
-  // Account Holder Name (Required)
-  if (!form.accountHolderName?.trim()) {
-    e.accountHolderName = "Account Holder Name is required.";
-  } else if (form.accountHolderName.length > 150) {
-    e.accountHolderName =
-      "Account Holder Name cannot exceed 150 characters.";
-  } else if (!ACCOUNT_HOLDER_PATTERN.test(form.accountHolderName)) {
-    e.accountHolderName = "Invalid Account Holder Name.";
-  }
-
-  // Account Type (Required)
-  if (!form.accountType) {
-    e.accountType = "Account Type is required.";
-  } else if (!ACCOUNT_TYPES.includes(form.accountType)) {
-    e.accountType = "Invalid Account Type.";
   }
 
   return e;

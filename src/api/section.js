@@ -23,7 +23,7 @@ export const getRooms = async () => {
 
 // api/class.js
 
-export const getClasse = async () => {
+export const getClasses = async () => {
   const { data } = await api.get("/classes", {
     headers: getHeaders(),
   });

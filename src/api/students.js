@@ -292,13 +292,25 @@ export const getRejectedStudentDocuments = () => {
 // ==========================
 // Get All Students
 // ==========================
-export const getAllStudents = () => {
-  return api.get(
-    "/students",
-    {
-      headers: getHeaders(),
-    }
-  );
+// export const getAllStudents = () => {
+//   return api.get(
+//     "/students",
+//     {
+//       headers: getHeaders(),
+//     }
+//   );
+// };
+
+// ==========================
+// Get All Students
+// ==========================
+export const getAllStudents = (sessionYear = "") => {
+  return api.get("/students", {
+    params: {
+      session_year: sessionYear,
+    },
+    headers: getHeaders(),
+  });
 };
 
 // ==========================
@@ -416,13 +428,20 @@ export const getStudentActivity = (
   );
 };
 
-export const getStudentDashboard = async () => {
+// export const getStudentDashboard = async () => {
+//   return api.get("/students/dashboard", {
+//     headers: getHeaders(),
+//   });
+// };
+
+export const getStudentDashboard = async (sessionYear = "") => {
   return api.get("/students/dashboard", {
+    params: {
+      session_year: sessionYear,
+    },
     headers: getHeaders(),
   });
 };
-
-
 
 export const getArchivedStudents = (sessionYear = "") => {
   return api.get("/students/archived", {

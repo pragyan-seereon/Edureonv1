@@ -42,7 +42,7 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { getClasses } from "../../../api/class";
+import { getClasses } from "../../../api/Class";
 import { getSections } from "../../../api/section";
 import {
   downloadSampleTimetable,

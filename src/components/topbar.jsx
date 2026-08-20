@@ -89,7 +89,6 @@ export function Topbar() {
       setInstituteUUID(value === "__all__" ? null : value);
       const institute = availableInstitutes.find((item) => getInstituteId(item) === value);
       toast.success(value === "__all__" ? "Viewing global data — all schools" : `Switched to ${getInstituteName(institute)}`);
-      window.location.reload();
       return;
     }
 
@@ -157,7 +156,6 @@ export function Topbar() {
         onValueChange={(year) => {
           console.log("Selected Session:", year);
           setSessionYear(year);
-          window.location.reload();
         }}
       >
       <SelectTrigger className="hidden h-9 w-[170px] md:flex">

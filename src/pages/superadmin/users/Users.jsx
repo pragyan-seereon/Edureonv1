@@ -684,8 +684,13 @@ function IconButton({ label, children, onClick, danger = false }) {
 
 export default function Users() {
   const [rawUsers, setRawUsers] = useState([]);
+  const [totalUsers, setTotalUsers] = useState(0);
   const [institutes, setInstitutes] = useState([]);
   const instMap = Object.fromEntries(institutes.map((i) => [i.id, i.name]));
+  const activeInstitutes = useMemo(
+  () => institutes.filter((i) => i.status !== "ARCHIVED"),
+  [institutes],
+);
 
   // Filters
   const [q, setQ] = useState("");
@@ -724,11 +729,12 @@ export default function Users() {
           order: "desc",
         });
 
-        const normalized = (response.data || []).map((i) => ({
-          id: i.id ?? i.institute_uuid ?? i.uuid,
-          name: i.name ?? i.institute_name ?? i.title ?? "Unnamed Institute",
-          city: i.city ?? i.city_name ?? "",
-        }));
+       const normalized = (response.data || []).map((i) => ({
+  id: i.id ?? i.institute_uuid ?? i.uuid,
+  name: i.name ?? i.institute_name ?? i.title ?? "Unnamed Institute",
+  city: i.city ?? i.city_name ?? "",
+  status: i.status ?? i.institute_status ?? "ACTIVE",
+}));
 
         setInstitutes(normalized);
       } catch (err) {
@@ -761,19 +767,10 @@ export default function Users() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        let allUsers = [];
-        let page = 1;
-        let hasMore = true;
-
-        while (hasMore) {
-          const response = await getUsers({ page, page_size: 100 });
-          const items = response.items || [];
-          allUsers = [...allUsers, ...items];
-          hasMore = items.length === 100;
-          page += 1;
-        }
-
-        setRawUsers(allUsers);
+        const response = await getUsers({ page, page_size: pageSize });
+        const items = response.items ?? response.data ?? [];
+        setRawUsers(items);
+        setTotalUsers(response.total ?? response.total_count ?? items.length);
       } catch (err) {
         console.error(err);
         toast.error("Unable to fetch users");
@@ -781,7 +778,7 @@ export default function Users() {
     };
 
     fetchUsers();
-  }, []);
+  }, [page, pageSize]);
 
   const users = useMemo(
     () => rawUsers.map((u) => normalizeUser(u, roles)),
@@ -854,9 +851,9 @@ export default function Users() {
     });
   }, [filtered, sort]);
 
-  const maxPage = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const maxPage = Math.max(1, Math.ceil(totalUsers / pageSize));
   const curPage = Math.min(page, maxPage);
-  const paginated = sorted.slice((curPage - 1) * pageSize, curPage * pageSize);
+  const paginated = sorted;
   const pageIds = paginated.map((u) => u.id);
 
   const allPageSelected =
@@ -998,8 +995,8 @@ export default function Users() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Institutes</SelectItem>
-                  {institutes.map((i) => (
-                    <SelectItem key={i.id} value={i.id}>
+                 {activeInstitutes.map((i) => (
+                      <SelectItem key={i.id} value={i.id}>
                       {i.name}
                     </SelectItem>
                   ))}
@@ -1434,7 +1431,7 @@ export default function Users() {
             <span>
               {sorted.length === 0
                 ? "No results"
-                : `Showing ${(curPage - 1) * pageSize + 1}–${Math.min(curPage * pageSize, sorted.length)} of ${sorted.length}`}
+                : `Showing ${(curPage - 1) * pageSize + 1}–${(curPage - 1) * pageSize + sorted.length} of ${totalUsers}`}
             </span>
             <div className="flex items-center gap-2">
               <Button
@@ -1464,7 +1461,7 @@ export default function Users() {
       {/* ─── Modals & Panels ─────────────────────────────────────────────────── */}
 
      {showCreate && <CreateUserModal
-  institutes={institutes}
+ institutes={activeInstitutes}
   roles={roles}
   users={rawUsers}
   onClose={() => setShowCreate(false)}
@@ -1472,7 +1469,7 @@ export default function Users() {
       {editUser && (
         <EditUserModal
           user={editUser}
-          institutes={institutes}
+          institutes={activeInstitutes}
           roles={roles}
           onClose={() => setEditUser(null)}
         />
@@ -1505,7 +1502,7 @@ export default function Users() {
           <ViewUserPanel
             user={viewUser}
             instMap={instMap}
-            institutes={institutes}
+           institutes={activeInstitutes}
             roles={roles}
             onEdit={() => {
               setEditUser(viewUser);

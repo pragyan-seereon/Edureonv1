@@ -267,7 +267,6 @@ useEffect(() => {
             });
 
             toast.success("Payment successful");
-            window.location.reload();
           } catch (err) {
             const detail = err?.response?.data?.detail;
             toast.error(

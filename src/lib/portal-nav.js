@@ -92,7 +92,7 @@ const adminGroups = [
       { title: "Communication", url: "/communication", icon: MessageSquare },
       { title: "Class maintenance", url: "/classroom-maintenance", icon: GraduationCap },
       { title: "Id Cards", url: "/id-cards", icon: IdCard },
-      { title: "Get Pass", url: "/gate-pass", icon: ShieldCheck },
+      { title: "Gate Pass", url: "/gate-pass", icon: ShieldCheck },
 
 
 
@@ -187,7 +187,7 @@ const superGroups = [
       { title: "Notices", url: "/notices", icon: Megaphone },
       // { title: "Communication", url: "/communication", icon: MessageSquare },
       // { title: "Class maintenance", url: "/classroom-maintenance", icon: GraduationCap },
-      { title: "Id Cards", url: "/id-cards", icon: IdCard },
+      // { title: "Id Cards", url: "/id-cards", icon: IdCard },
       { title: "Get Pass", url: "/gate-pass", icon: ShieldCheck },
 
 
@@ -195,13 +195,13 @@ const superGroups = [
     ],
   },
 
-  {
-    label: "Account",
-    items: [
-      { title: "My Profile", url: "/profile", icon: UserIcon },
-      { title: "Platform Settings", url: "/super/settings", icon: Settings },
-    ],
-  },
+  // {
+  //   label: "Account",
+  //   items: [
+  //     { title: "My Profile", url: "/profile", icon: UserIcon },
+  //     { title: "Platform Settings", url: "/super/settings", icon: Settings },
+  //   ],
+  // },
 ];
 const teacherGroups = [
   {

@@ -130,7 +130,6 @@ import {
 } from "../../../lib/subjectValidation";
 import {
   getRooms,
-  getClasse,
   getClassFaculty,
   getSections,
   createSection,
@@ -279,7 +278,7 @@ export default function Classes() {
         // raw fields kept for validation
         class_uuid: s.class_uuid,
         section_name: s.section_name,
-        class_teacher_user_id: s.class_teacher_user_id,
+        class_teacher_employee_uuid: s.class_teacher_employee_uuid,
         room_uuid: s.room_uuid ?? s.room?.room_uuid,
         // display fields
         name: `${s.class_name}-${s.section_name}`,
@@ -1740,9 +1739,9 @@ function ClassesTab({
         streamNotes: isKnownStream ? "" : c.stream || "",
         status: c.status || "Active",
         subjectsOffered: (c.subjects || []).map((subject) => ({
-          subject_uuid: subject.subject_uuid,
-          faculty_user_ids: subject.faculty_user_ids || [],
-        })),
+        subject_uuid: subject.subject_uuid,
+        faculty_user_ids: subject.faculty_employee_uuids || [],    
+      })),
       });
       setOpen(true);
     } catch (err) {
@@ -1773,12 +1772,12 @@ function ClassesTab({
       class_name: form.name,
       stream: form.stream,
       custom_stream:
-        form.stream === "Other" ? form.streamNotes.trim() : undefined,
+      form.stream === "Other" ? form.streamNotes.trim() : undefined,
       status: form.status,
       subjects: form.subjectsOffered.map((item) => ({
-        subject_uuid: item.subject_uuid,
-        faculty_user_ids: item.faculty_user_ids,
-      })),
+      subject_uuid: item.subject_uuid,
+      faculty_employee_uuids: item.faculty_user_ids,
+        })),
     };
 
     setSubmitting(true);
@@ -2047,7 +2046,7 @@ function ClassesTab({
                       </Select>
                     </div>
 
-                    <div className="space-y-1">
+                                      <div className="space-y-1">
                       <Label className="text-[10px] text-muted-foreground">
                         Teacher(s)
                       </Label>
@@ -2063,7 +2062,7 @@ function ClassesTab({
                                   .map(
                                     (id) =>
                                       selectedSubject?.faculty?.find(
-                                        (f) => f.employee_id === id,
+                                        (f) => f.employee_uuid === id,
                                       )?.name,
                                   )
                                   .filter(Boolean)
@@ -2080,21 +2079,21 @@ function ClassesTab({
                             )}
                            {selectedSubject?.faculty?.map((faculty) => (
                               <label
-                                key={faculty.employee_id}
+                                key={faculty.employee_uuid}
                                 className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1"
                               >
                                 <Checkbox
                                   checked={row.faculty_user_ids.includes(
-                                    faculty.employee_id,
+                                    faculty.employee_uuid,
                                   )}
                                   onCheckedChange={(checked) => {
                                     const next = checked
                                       ? [
                                           ...row.faculty_user_ids,
-                                          faculty.employee_id,
+                                          faculty.employee_uuid,
                                         ]
                                       : row.faculty_user_ids.filter(
-                                          (id) => id !== faculty.employee_id,
+                                          (id) => id !== faculty.employee_uuid,
                                         );
                                     updateSubjectRow(i, {
                                       faculty_user_ids: next,
@@ -2111,7 +2110,7 @@ function ClassesTab({
                         <div className="flex flex-wrap gap-1 pt-1">
                           {row.faculty_user_ids.map((id) => {
                             const f = selectedSubject?.faculty?.find(
-                              (x) => x.employee_id === id,
+                              (x) => x.employee_uuid === id,
                             );
                             return (
                               <Badge
@@ -3669,9 +3668,7 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
     setForm({
       name: edit?.section_name ?? "",
       class_uuid: edit?.class_uuid ?? "",
-      teacher: edit?.class_teacher_user_id
-        ? String(edit.class_teacher_user_id)
-        : "",
+      teacher: edit?.class_teacher_employee_uuid ?? "",
       room_uuid: edit?.room_uuid ?? "",
       room: edit?.room ?? "",
       present: edit?.current_students ?? 0,
@@ -3747,7 +3744,7 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
   const payload = {
   section_name: form.name.trim(),
   class_uuid: form.class_uuid,
-  class_teacher_user_id: form.teacher ? Number(form.teacher) : null,
+  class_teacher_employee_uuid: form.teacher || null,
   room_uuid: form.room_uuid,
   students: form.present,
   capacity: form.total,
@@ -3855,16 +3852,16 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
               >
                 <SelectValue placeholder="Pick teacher" />
               </SelectTrigger>
-              <SelectContent>
-                {teacherOptions.map((teacher) => (
-                  <SelectItem
-                    key={teacher.faculty_user_id}
-                    value={String(teacher.faculty_user_id)}
-                  >
-                    {teacher.faculty_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+          <SelectContent>
+  {teacherOptions.map((teacher) => (
+    <SelectItem
+      key={teacher.employee_uuid}
+      value={teacher.employee_uuid}
+    >
+      {teacher.faculty_name}
+    </SelectItem>
+  ))}
+</SelectContent>
             </Select>
             {errors.teacher && (
               <p className="text-xs text-destructive flex items-center gap-1">

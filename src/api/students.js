@@ -42,6 +42,7 @@ export const deleteStudentDraft = (
     `/student-drafts/${draftUuid}`,
     {
       headers: getHeaders(),
+      skipDataRefresh: true,
     }
   );
 };
@@ -58,6 +59,7 @@ export const createStudentStep1 = (data) => {
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 };
@@ -77,6 +79,7 @@ export const updateStudentStep1 = (
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 };
@@ -96,6 +99,7 @@ export const updateStudentStep2 = (
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 };
@@ -115,6 +119,7 @@ export const updateStudentStep3 = (
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 };
@@ -134,6 +139,7 @@ export const updateStudentStep4 = (
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 };
@@ -153,6 +159,7 @@ export const updateStudentStep5 = (
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 };
@@ -172,6 +179,7 @@ export const uploadStudentDocuments = (
         ...getHeaders(),
         "Content-Type": "multipart/form-data",
       },
+      skipDataRefresh: true,
     }
   );
 };
@@ -186,6 +194,8 @@ export const getStudentDocuments = (
     `/students/draft/${draftUuid}/documents`,
     {
       headers: getHeaders(),
+      skipDataRefresh: true,
+      skipDataRefresh: true,
     }
   );
 };
@@ -202,6 +212,7 @@ export const reviewStudentDraft = (
     `/students/draft/${draftUuid}/review`,
     {
       headers: getHeaders(),
+      skipDataRefresh: true,
     }
   );
 };
@@ -217,6 +228,7 @@ export const submitStudentDraft = (
     {},
     {
       headers: getHeaders(),
+      skipDataRefresh: true,
     }
   );
 };
@@ -292,13 +304,25 @@ export const getRejectedStudentDocuments = () => {
 // ==========================
 // Get All Students
 // ==========================
-export const getAllStudents = () => {
-  return api.get(
-    "/students",
-    {
-      headers: getHeaders(),
-    }
-  );
+// export const getAllStudents = () => {
+//   return api.get(
+//     "/students",
+//     {
+//       headers: getHeaders(),
+//     }
+//   );
+// };
+
+// ==========================
+// Get All Students
+// ==========================
+export const getAllStudents = (sessionYear = "") => {
+  return api.get("/students", {
+    params: {
+      session_year: sessionYear,
+    },
+    headers: getHeaders(),
+  });
 };
 
 // ==========================
@@ -416,13 +440,20 @@ export const getStudentActivity = (
   );
 };
 
-export const getStudentDashboard = async () => {
+// export const getStudentDashboard = async () => {
+//   return api.get("/students/dashboard", {
+//     headers: getHeaders(),
+//   });
+// };
+
+export const getStudentDashboard = async (sessionYear = "") => {
   return api.get("/students/dashboard", {
+    params: {
+      session_year: sessionYear,
+    },
     headers: getHeaders(),
   });
 };
-
-
 
 export const getArchivedStudents = (sessionYear = "") => {
   return api.get("/students/archived", {

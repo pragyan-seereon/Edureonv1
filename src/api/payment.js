@@ -48,6 +48,9 @@ export const createOfflinePayment = (data) =>
 export const createRazorpayOrder = (data) =>
   api.post("/payments/razorpay/create-order", data, {
     headers: getHeaders(),
+    // Creating an order only prepares the payment popup; it does not alter
+    // page data. The verification request will trigger the refresh instead.
+    skipDataRefresh: true,
   });
 
 // -----------------------------------------------------

@@ -186,7 +186,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <Tabs defaultValue="all">
+      {/* <Tabs defaultValue="all">
         <TabsList>
           <TabsTrigger value="all">All Institutes</TabsTrigger>
           <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
@@ -349,7 +349,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
+      </Tabs> */}
     </PageContainer>
   );
 }

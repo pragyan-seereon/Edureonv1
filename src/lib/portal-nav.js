@@ -188,7 +188,7 @@ const superGroups = [
       // { title: "Communication", url: "/communication", icon: MessageSquare },
       // { title: "Class maintenance", url: "/classroom-maintenance", icon: GraduationCap },
       // { title: "Id Cards", url: "/id-cards", icon: IdCard },
-      { title: "Get Pass", url: "/gate-pass", icon: ShieldCheck },
+      { title: "Gate Pass", url: "/gate-pass", icon: ShieldCheck },
 
 
 

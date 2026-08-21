@@ -105,7 +105,7 @@ export const getAssignments = async ({ page = 1, pageSize = 10, status, subjectU
   return data; // { total, page, page_size, data: [...] }
 };
 
-// Fetch single assignment (for pre-filling the edit form)
+
 export const getAssignmentDetail = async (assignmentUuid) => {
   const { instituteUUID } = useAuthStore.getState();
 
@@ -114,28 +114,23 @@ export const getAssignmentDetail = async (assignmentUuid) => {
     headers: getHeaders(),
   });
 
-  return {
-    ...data.data.assignment,
-    attachments: data.data.attachments || [],
-  };
+  // data.data already has the assignment fields flat, plus `attachments`
+  return data.data;
 };
 
 
 // Update assignment (multipart/form-data)
-export const updateAssignment = async (assignmentUuid, formData) => {
+// Update assignment (application/json)
+export const updateAssignment = async (assignmentUuid, payload) => {
   const { instituteUUID } = useAuthStore.getState();
 
-  const { data } = await api.put(`/assignments/${assignmentUuid}`, formData, {
+  const { data } = await api.put(`/assignments/${assignmentUuid}`, payload, {
     params: { institute_uuid: instituteUUID },
-    headers: {
-      "X-Institute-UUID": instituteUUID,
-      "Content-Type": undefined, // let the browser set multipart/form-data + boundary
-    },
+    headers: getHeaders(), // JSON content-type is axios's default, no override needed
   });
 
   return data;
 };
-
 // Delete assignment
 export const deleteAssignment = async (assignmentUuid) => {
   const { instituteUUID } = useAuthStore.getState();
@@ -146,4 +141,18 @@ export const deleteAssignment = async (assignmentUuid) => {
   });
 
   return data;
+};
+
+// Fetch classes
+export const getClasses = async () => {
+  const { instituteUUID } = useAuthStore.getState();
+
+  const { data } = await api.get("/classes", {
+    params: {
+      institute_uuid: instituteUUID,
+    },
+    headers: getHeaders(),
+  });
+
+  return data.data;
 };

@@ -236,7 +236,7 @@ export default function AdmissionsDetails() {
           title="Inquiry not found"
           description="It may have been deleted."
         />
-        <Link to="/admin/admissions">
+        <Link to="/admissions">
           <Button variant="outline">
             <ChevronLeft className="h-4 w-4" />
             Back to pipeline
@@ -287,7 +287,7 @@ export default function AdmissionsDetails() {
       <PageHeader
         eyebrow={
           <Link
-            to="/admin/admissions"
+            to="/admissions"
             className="hover:text-primary inline-flex items-center"
           >
             <ChevronLeft className="h-3.5 w-3.5" />

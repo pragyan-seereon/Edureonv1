@@ -33,6 +33,7 @@ import {
   Building2,
   Eye,
   FilePenLine,
+  // eslint-disable-next-line no-unused-vars
   KeyRound,
   Trash2,
   UserX,
@@ -684,6 +685,7 @@ function IconButton({ label, children, onClick, danger = false }) {
 
 export default function Users() {
   const [rawUsers, setRawUsers] = useState([]);
+  // eslint-disable-next-line no-unused-vars
   const [totalUsers, setTotalUsers] = useState(0);
   const [institutes, setInstitutes] = useState([]);
   const instMap = Object.fromEntries(institutes.map((i) => [i.id, i.name]));
@@ -764,26 +766,49 @@ export default function Users() {
 
     fetchRoles();
   }, []);
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const response = await getUsers({ page, page_size: pageSize });
+useEffect(() => {
+  const fetchUsers = async () => {
+    try {
+      const pageSize = 100; // backend max
+      let currentPage = 1;
+      let allItems = [];
+      let total = Infinity;
+
+      while (allItems.length < total) {
+        const response = await getUsers({
+          page: currentPage,
+          page_size: pageSize,
+        });
         const items = response.items ?? response.data ?? [];
-        setRawUsers(items);
-        setTotalUsers(response.total ?? response.total_count ?? items.length);
-      } catch (err) {
-        console.error(err);
-        toast.error("Unable to fetch users");
+        allItems = allItems.concat(items);
+
+        // Prefer a real total count from the API if it provides one;
+        // otherwise stop once a page comes back short (last page).
+        total = response.total ?? response.count ?? (
+          items.length < pageSize ? allItems.length : total
+        );
+
+        if (items.length === 0) break; // safety net against infinite loop
+        currentPage += 1;
       }
-    };
 
-    fetchUsers();
-  }, [page, pageSize]);
+      setRawUsers(allItems);
+    } catch (err) {
+      console.error(err);
+      toast.error("Unable to fetch users");
+    }
+  };
 
-  const users = useMemo(
-    () => rawUsers.map((u) => normalizeUser(u, roles)),
-    [rawUsers, roles],
-  );
+  fetchUsers();
+}, []);
+
+ const users = useMemo(
+  () =>
+    rawUsers
+      .map((u) => normalizeUser(u, roles))
+      .filter((u) => !getUserRoles(u).some((r) => r.toLowerCase() === "student")),
+  [rawUsers, roles],
+);
 
   const removeUserLocally = (id) => {
     setRawUsers((prev) => prev.filter((u) => u.id !== id));
@@ -851,10 +876,13 @@ export default function Users() {
     });
   }, [filtered, sort]);
 
-  const maxPage = Math.max(1, Math.ceil(totalUsers / pageSize));
-  const curPage = Math.min(page, maxPage);
-  const paginated = sorted;
-  const pageIds = paginated.map((u) => u.id);
+  const maxPage = Math.max(1, Math.ceil(sorted.length / pageSize));
+const curPage = Math.min(page, maxPage);
+const paginated = useMemo(
+  () => sorted.slice((curPage - 1) * pageSize, curPage * pageSize),
+  [sorted, curPage, pageSize],
+);
+const pageIds = paginated.map((u) => u.id);
 
   const allPageSelected =
     pageIds.length > 0 && pageIds.every((id) => selected.includes(id));
@@ -1360,12 +1388,12 @@ export default function Users() {
                             >
                               <FilePenLine className="h-4 w-4" />
                             </IconButton>
-                            <IconButton
+                            {/* <IconButton
                               label="Reset Password"
                               onClick={() => setResetUser(u)}
                             >
                               <KeyRound className="h-4 w-4" />
-                            </IconButton>
+                            </IconButton> */}
                             <IconButton
                               label={
                                 isLocked
@@ -1428,11 +1456,11 @@ export default function Users() {
 
           {/* ── Pagination ── */}
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-            <span>
-              {sorted.length === 0
-                ? "No results"
-                : `Showing ${(curPage - 1) * pageSize + 1}–${(curPage - 1) * pageSize + sorted.length} of ${totalUsers}`}
-            </span>
+          <span>
+  {sorted.length === 0
+    ? "No results"
+    : `Showing ${(curPage - 1) * pageSize + 1}–${Math.min(curPage * pageSize, sorted.length)} of ${sorted.length}`}
+</span>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"

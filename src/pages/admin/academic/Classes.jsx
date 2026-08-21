@@ -157,6 +157,11 @@ import { cn } from "../../../lib/utils";
 import { format } from "date-fns";
 import useSessionStore from "../../../store/sessionStore";
 import useAuthStore from "../../../store/authStore"; 
+import { usePagination } from "../../../lib/use-pagination";
+import {
+  PaginationBar,
+  RowsPerPageSelect,
+} from "../../../components/pagination-controls";
 
 export default function Classes() {
   const navigate = useNavigate();
@@ -411,6 +416,8 @@ const classOptions = useMemo(
   [students, stuQ, stuClass],
 );
 
+  const studentsPage = usePagination(filteredStudents, 10);
+
   const allStuSelected =
     filteredStudents.length > 0 &&
     filteredStudents.every((s) => stuSelected.has(s.id));
@@ -507,6 +514,12 @@ const performAssign = async () => {
       setSubLoading(false);
     }
   };
+
+  // pagination for the Subjects table
+  const subjectsPage = usePagination(subjects, 10);
+  // pagination for the Sections grid
+  const sectionsPage = usePagination(sections, 9);
+
   return (
     <PageContainer>
       <PageHeader
@@ -573,20 +586,23 @@ const performAssign = async () => {
                 Manage class sections, capacity and class teachers.
               </p> */}
             </div>
-            <Button
-              size="sm"
-              className="gradient-primary border-0"
-              onClick={() => {
-                setSecEdit(null);
-                setSecOpen(true);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              New Section
-            </Button>
+            <div className="flex items-center gap-2">
+              <RowsPerPageSelect {...sectionsPage} />
+              <Button
+                size="sm"
+                className="gradient-primary border-0"
+                onClick={() => {
+                  setSecEdit(null);
+                  setSecOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                New Section
+              </Button>
+            </div>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sections.map((s) => {
+            {sectionsPage.pageItems.map((s) => {
               const pct = Math.round((s.students / s.cap) * 100);
               return (
                 <Card
@@ -697,6 +713,7 @@ const performAssign = async () => {
               );
             })}
           </div>
+          <PaginationBar {...sectionsPage} itemLabel="sections" showPageSize={false} />
         </TabsContent>
           <TabsContent value="departments" className="mt-4">
           <DepartmentsTab />
@@ -709,17 +726,20 @@ const performAssign = async () => {
                 <CardTitle className="text-base">Subjects</CardTitle>
                 {/* <CardDescription>Catalog of subjects offered across classes.</CardDescription> */}
               </div>
-              <Button
-                size="sm"
-                className="gradient-primary border-0"
-                onClick={() => {
-                  setSubEdit(null);
-                  setSubOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                New Subject
-              </Button>
+              <div className="flex items-center gap-2">
+                <RowsPerPageSelect {...subjectsPage} />
+                <Button
+                  size="sm"
+                  className="gradient-primary border-0"
+                  onClick={() => {
+                    setSubEdit(null);
+                    setSubOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  New Subject
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -735,7 +755,7 @@ const performAssign = async () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {subjects.map((s) => (
+                  {subjectsPage.pageItems.map((s) => (
                     <TableRow
                       key={s.id}
                       className="cursor-pointer"
@@ -812,6 +832,11 @@ const performAssign = async () => {
                   ))}
                 </TableBody>
               </Table>
+              <PaginationBar
+                {...subjectsPage}
+                itemLabel="subjects"
+                showPageSize={false}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -1090,6 +1115,7 @@ const performAssign = async () => {
                     ))}
                   </SelectContent>
                 </Select> */}
+                <RowsPerPageSelect {...studentsPage} />
                 <Button
                   size="sm"
                   className="gradient-primary border-0"
@@ -1141,7 +1167,7 @@ const performAssign = async () => {
                       </TableCell>
                     </TableRow>
                   )}
-                  {filteredStudents.slice(0, 200).map((s) => (
+                  {studentsPage.pageItems.map((s) => (
                     <TableRow
                       key={s.id}
                       className="cursor-pointer"
@@ -1174,12 +1200,7 @@ const performAssign = async () => {
                   ))}
                 </TableBody>
               </Table>
-              {filteredStudents.length > 200 && (
-                <div className="p-3 text-xs text-muted-foreground border-t">
-                  Showing first 200 of {filteredStudents.length}. Refine filters
-                  to narrow down.
-                </div>
-              )}
+              <PaginationBar {...studentsPage} itemLabel="students" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -1703,6 +1724,8 @@ function ClassesTab({
     fetchClasses();
   }, []);
 
+  const classesPage = usePagination(list, 10);
+
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(null);
   const [form, setForm] = useState({
@@ -1834,13 +1857,16 @@ function ClassesTab({
         <div>
           <CardTitle className="text-base">Classes</CardTitle>
         </div>
-        <Button
-          size="sm"
-          className="gradient-primary border-0"
-          onClick={openNew}
-        >
-          <Plus className="h-4 w-4" /> Add New Class
-        </Button>
+        <div className="flex items-center gap-2">
+          <RowsPerPageSelect {...classesPage} />
+          <Button
+            size="sm"
+            className="gradient-primary border-0"
+            onClick={openNew}
+          >
+            <Plus className="h-4 w-4" /> Add New Class
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="p-0 overflow-x-auto">
         <Table>
@@ -1854,7 +1880,7 @@ function ClassesTab({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {list.map((c) => (
+            {classesPage.pageItems.map((c) => (
               <TableRow key={c.id}>
                 <TableCell className="font-medium">{c.class_name}</TableCell>
                 <TableCell>
@@ -1919,6 +1945,7 @@ function ClassesTab({
             ))}
           </TableBody>
         </Table>
+        <PaginationBar {...classesPage} itemLabel="classes" showPageSize={false} />
       </CardContent>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -2234,6 +2261,8 @@ const sessionYear = useSessionStore((state) => state.sessionYear);
     [students, fromClass, fromSection],
   );
 
+  const candidatesPage = usePagination(candidates, 10);
+
 const fetchPromotionStudents = async () => {
   try {
     setLoadingStudents(true);
@@ -2515,6 +2544,7 @@ const promote = async () => {
               <span className="font-semibold">{selected.size}</span> of{" "}
               {candidates.length} selected
             </div>
+            <RowsPerPageSelect {...candidatesPage} />
             {/* <div className="text-[11px] text-muted-foreground">
               Uncheck any student who should not be promoted (e.g. failed).
             </div> */}
@@ -2547,7 +2577,7 @@ const promote = async () => {
                     </TableCell>
                   </TableRow>
                 )}
-                {candidates.map((s) => (
+                {candidatesPage.pageItems.map((s) => (
                   <TableRow
                     key={s.id}
                     className="cursor-pointer"
@@ -2575,6 +2605,7 @@ const promote = async () => {
               </TableBody>
             </Table>
           </div>
+          <PaginationBar {...candidatesPage} itemLabel="students" showPageSize={false} />
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 bg-muted/30">
@@ -2605,6 +2636,7 @@ function TransfersTab() {
   // const students = useStudents();
   const [students, setStudents] = useState([]);
   const secFiltered = students;
+  const secPage = usePagination(secFiltered, 10);
   const requests = useSectionChangeRequests();
   const activeStudents = useMemo(
     () => students.filter((s) => !s.archived),
@@ -2840,6 +2872,7 @@ const handleSecNewClassChange = (v) => {
       ),
     [streamStudents, strQ],
   );
+  const strPage = usePagination(strFiltered, 10);
   const toggleStr = (id) =>
     setStrSelected((p) => {
       const n = new Set(p);
@@ -2917,6 +2950,8 @@ const handleSecNewClassChange = (v) => {
     [students],
   );
 
+  const archPage = usePagination(archivedList, 10);
+
   const sectionOptions = ["A", "B", "C", "D", "E"];
 
   return (
@@ -2931,7 +2966,8 @@ const handleSecNewClassChange = (v) => {
         </CardHeader>
         <CardContent className="space-y-3">
           
-          <div className="relative">
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
             <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
             <Input
               value={secQ}
@@ -2939,6 +2975,8 @@ const handleSecNewClassChange = (v) => {
               placeholder="Search student…"
               className="pl-8"
             />
+            </div>
+            <RowsPerPageSelect {...secPage} />
           </div>
  
           <div className="max-h-[240px] overflow-y-auto rounded-md border">
@@ -2952,7 +2990,7 @@ const handleSecNewClassChange = (v) => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {secFiltered.slice(0, 100).map((s) => (
+                {secPage.pageItems.map((s) => (
                   <TableRow
                     key={s.id}
                     className="cursor-pointer"
@@ -2976,6 +3014,7 @@ const handleSecNewClassChange = (v) => {
               </TableBody>
             </Table>
           </div>
+          <PaginationBar {...secPage} itemLabel="students" showPageSize={false} />
                    <div className="grid grid-cols-2 gap-3">
   <div className="space-y-1.5">
     <Label className="text-xs">New Class (optional)</Label>
@@ -3038,7 +3077,8 @@ const handleSecNewClassChange = (v) => {
           <Badge variant="secondary">{strSelected.size} selected</Badge>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="relative">
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
             <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
             <Input
               value={strQ}
@@ -3046,6 +3086,8 @@ const handleSecNewClassChange = (v) => {
               placeholder="Search student…"
               className="pl-8"
             />
+            </div>
+            <RowsPerPageSelect {...strPage} />
           </div>
           <div className="max-h-[240px] overflow-y-auto rounded-md border">
             <Table>
@@ -3058,7 +3100,7 @@ const handleSecNewClassChange = (v) => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {strFiltered.slice(0, 100).map((s) => (
+                {strPage.pageItems.map((s) => (
                   <TableRow
                     key={s.id}
                     className="cursor-pointer"
@@ -3084,6 +3126,7 @@ const handleSecNewClassChange = (v) => {
               </TableBody>
             </Table>
           </div>
+          <PaginationBar {...strPage} itemLabel="students" showPageSize={false} />
           <div className="space-y-1.5">
             <Label className="text-xs">New Stream</Label>
             <Select value={strNew} onValueChange={(v) => setStrNew(v)}>
@@ -3122,13 +3165,16 @@ const handleSecNewClassChange = (v) => {
               Archived students are hidden from active lists.
             </CardDescription> */}
           </div>
-          <Button
-            size="sm"
-            className="gradient-primary border-0"
-            onClick={() => setArchOpen(true)}
-          >
-            <Plus className="h-4 w-4" /> Archive Student
-          </Button>
+          <div className="flex items-center gap-2">
+            <RowsPerPageSelect {...archPage} />
+            <Button
+              size="sm"
+              className="gradient-primary border-0"
+              onClick={() => setArchOpen(true)}
+            >
+              <Plus className="h-4 w-4" /> Archive Student
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           <Table>
@@ -3154,7 +3200,7 @@ const handleSecNewClassChange = (v) => {
                   </TableCell>
                 </TableRow>
               )}
-              {archivedList.map((s) => (
+              {archPage.pageItems.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell>
@@ -3193,6 +3239,7 @@ const handleSecNewClassChange = (v) => {
               ))}
             </TableBody>
           </Table>
+          <PaginationBar {...archPage} itemLabel="archived students" showPageSize={false} />
         </CardContent>
       </Card>
 
@@ -3418,6 +3465,8 @@ function DepartmentsTab() {
       .catch((err) => console.error(err));
   }, []);
 
+  const departmentsPage = usePagination(departments, 10);
+
   const reset = () => {
     setName("");
     setDescription("");
@@ -3518,9 +3567,12 @@ function DepartmentsTab() {
             <CardTitle className="text-base">Departments</CardTitle>
            
           </div>
-          <Button size="sm" className="gradient-primary border-0" onClick={openNew}>
-            <Plus className="h-4 w-4" /> New Department
-          </Button>
+          <div className="flex items-center gap-2">
+            <RowsPerPageSelect {...departmentsPage} />
+            <Button size="sm" className="gradient-primary border-0" onClick={openNew}>
+              <Plus className="h-4 w-4" /> New Department
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -3540,7 +3592,7 @@ function DepartmentsTab() {
                   </TableCell>
                 </TableRow>
               )}
-              {departments.map((d) => {
+              {departmentsPage.pageItems.map((d) => {
                 const subs = subjectsForDept(d);
                 return (
                   <TableRow key={d.department_uuid}>
@@ -3574,6 +3626,7 @@ function DepartmentsTab() {
               })}
             </TableBody>
           </Table>
+          <PaginationBar {...departmentsPage} itemLabel="departments" showPageSize={false} />
         </CardContent>
       </Card>
 
@@ -3768,8 +3821,8 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
           <DialogTitle>
             {edit ? "Edit Section" : "Create New Section"}
           </DialogTitle>

@@ -60,6 +60,11 @@ import {
   getRegularTimetables,
   getSummerTimetables,
 } from "../../../api/timetable";
+import {
+  PaginationBar,
+  RowsPerPageSelect,
+} from "../../../components/pagination-controls";
+import { usePagination } from "../../../lib/use-pagination";
 
 const DAY_ORDER = [
   "Monday",
@@ -158,6 +163,7 @@ export default function TimeTable() {
   const [deleting, setDeleting] = useState(false);
   const [timetableRows, setTimetableRows] = useState([]);
   const [reloadKey, setReloadKey] = useState(0);
+  const timetablePage = usePagination(timetableRows, 10);
 
   // ---- Import dialog state (separate from page state until confirmed) ----
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -767,8 +773,9 @@ export default function TimeTable() {
         <CardContent className="p-0 overflow-auto">
           {!viewingTimetable ? (
             <div className="min-w-[720px]">
-              <div className="border-b bg-slate-50 px-5 py-4 dark:bg-slate-900/40">
+              <div className="flex items-center justify-between border-b bg-slate-50 px-5 py-4 dark:bg-slate-900/40">
                 <h2 className="text-base font-semibold">Timetables</h2>
+                <RowsPerPageSelect {...timetablePage} />
               </div>
               <table className="w-full text-sm">
                 <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -783,7 +790,7 @@ export default function TimeTable() {
                 <tbody>
                   {loadingTimetable ? (
                     <tr><td colSpan="5" className="px-5 py-10 text-center text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading timetable...</td></tr>
-                  ) : timetableRows.length ? timetableRows.map((item) => (
+                  ) : timetableRows.length ? timetablePage.pageItems.map((item) => (
                     <tr key={item.timetable_uuid || item.uuid} className="border-b last:border-0">
                       <td className="px-5 py-4 font-medium">{item.class_name || item.class?.name || labelFor(classes, item.class_uuid, ["name", "class_name"]) || "—"}</td>
                       <td className="px-5 py-4">{item.section_name || item.section?.name || labelFor(allSections, item.section_uuid, ["name", "section_name"]) || "—"}</td>
@@ -796,6 +803,7 @@ export default function TimeTable() {
                   )}
                 </tbody>
               </table>
+              <PaginationBar {...timetablePage} itemLabel="timetables" showPageSize={false} />
             </div>
           ) : loadingTimetable ? (
             <div className="p-10 flex flex-col items-center gap-2 text-sm text-muted-foreground">

@@ -36,6 +36,7 @@ import {
   TableRow,
 } from "../../../components/ui/table";
 // import { useAuth } from "../../../lib/auth";
+// eslint-disable-next-line no-unused-vars
 import { Switch } from "../../../components/ui/switch";
 import {
   AlertDialog,
@@ -117,16 +118,11 @@ const statusVariant = (status) => {
 
 const exportRows = (rows) => {
   const columns = [
-    "Institute ID",
     "Institute Name",
     "Type",
     "Board",
     "City",
-    "Plan",
-    "Status",
-    "Students Count",
     "Admin Name",
-    "Created Date",
   ];
   const escapeCell = (value) =>
     `"${String(value ?? "").replaceAll('"', '""')}"`;
@@ -134,16 +130,11 @@ const exportRows = (rows) => {
     columns.join(","),
     ...rows.map((item) =>
       [
-        item.id,
         item.name,
         item.type,
         item.board,
         item.city,
-        item.plan,
-        item.status,
-        item.students,
         item.adminName,
-        item.createdAt,
       ]
         .map(escapeCell)
         .join(","),
@@ -151,12 +142,12 @@ const exportRows = (rows) => {
   ].join("\n");
 
   const blob = new Blob([csv], {
-    type: "application/vnd.ms-excel;charset=utf-8;",
+    type: "text/csv;charset=utf-8;",
   });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `institutes-export-${new Date().toISOString().slice(0, 10)}.xls`;
+  link.download = `institutes-export-${new Date().toISOString().slice(0, 10)}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 };
@@ -182,6 +173,7 @@ export default function Institutes() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState([]);
   const [sort, setSort] = useState({ key: "createdAt", dir: "desc" });
+  // eslint-disable-next-line no-unused-vars
   const activeInstitute = useAuthStore((state) => state.instituteUUID);
   const { setInstituteUUID, clearInstituteUUID } = useAuthStore();
 
@@ -262,6 +254,7 @@ export default function Institutes() {
     setSelected([]);
   }, [debouncedSearch, status, type, plan, from, to, rowsPerPage]);
 
+  // eslint-disable-next-line no-unused-vars
   const handleInstituteToggle = (item, checked) => {
     if (checked) {
       setInstituteUUID(item.id);
@@ -498,7 +491,7 @@ export default function Institutes() {
             {/* <Field label="Plan">
               <FilterSelect value={plan} onValueChange={setPlan} values={PLAN_OPTIONS} />
             </Field> */}
-            <Field label=" pagination">
+            <Field label="pagination">
               <FilterSelect
                 value={rowsPerPage}
                 onValueChange={setRowsPerPage}

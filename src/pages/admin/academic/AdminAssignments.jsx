@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useNavigate } from "react-router-dom";
 import { PageContainer, PageHeader } from "../../../components/page-shell";
@@ -15,6 +16,7 @@ import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
 import {
   Tabs,
+  // eslint-disable-next-line no-unused-vars
   TabsList,
   TabsTrigger,
   TabsContent,
@@ -67,6 +69,7 @@ import { assignmentsApi, useSubmissions } from "../../../lib/store";
 import {
   getSubjects,
   getSections,
+  getClasses, 
   getStudentsBySection,
   saveDraftAssignment,
   publishAssignment,
@@ -76,6 +79,10 @@ import {
   deleteAssignment,
 } from "../../../api/assignment";
 import useSessionStore from "../../../store/sessionStore";
+import {
+  PaginationBar,
+  RowsPerPageSelect,
+} from "../../../components/pagination-controls";
 
 const ASSIGNMENT_TYPES = ["Homework", "Project", "Group Assignment", "Classwork"];
 const ASSIGN_TO_OPTIONS = ["Entire Class", "Selected Students", "Custom Group"];
@@ -115,6 +122,7 @@ const emptyForm = {
   videoFile: null,
   resourceLink: "",
   draftUuid: null,
+  existingAttachments: [],
 };
 
 // Maps a raw API assignment object to the shape this component's UI expects
@@ -154,6 +162,7 @@ export default function AdminAssignments() {
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
 
   // Edit / delete state
   const [editingUuid, setEditingUuid] = useState(null);
@@ -164,7 +173,7 @@ export default function AdminAssignments() {
   const [itemsLoading, setItemsLoading] = useState(false);
   // eslint-disable-next-line no-unused-vars
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(10);
   // eslint-disable-next-line no-unused-vars
   const [total, setTotal] = useState(0);
 
@@ -184,6 +193,14 @@ export default function AdminAssignments() {
     () => classes.map((c) => c.class_name),
     [classes],
   );
+    const existingPdf = useMemo(
+    () => (form.existingAttachments || []).find((att) => att.attachment_type === "PDF"),
+    [form.existingAttachments],
+  );
+  const existingVideo = useMemo(
+    () => (form.existingAttachments || []).find((att) => att.attachment_type === "VIDEO"),
+    [form.existingAttachments],
+  );
 
   const fetchAssignments = async () => {
     setItemsLoading(true);
@@ -201,7 +218,7 @@ export default function AdminAssignments() {
 
   useEffect(() => {
     fetchAssignments();
-  }, [page]);
+  }, [page, pageSize]);
 
   const filtered = useMemo(
     () =>
@@ -250,29 +267,24 @@ export default function AdminAssignments() {
       return { ...f, studentIds: n };
     });
 
-  useEffect(() => {
-    if (!open) return; // only fetch when dialog opens
-    if (subjects.length && sections.length) return; // already loaded, skip refetch
+ useEffect(() => {
+    if (!open) return;
+    if (subjects.length && sections.length && classes.length) return;
 
     const load = async () => {
       try {
-        const [subjectRes, sectionRes] = await Promise.all([
+        const [subjectRes, sectionRes, classRes] = await Promise.all([
           getSubjects(),
           getSections(),
+          getClasses(),
         ]);
 
         setSubjects(subjectRes);
         setSections(sectionRes);
-
-        const cls = [];
-        sectionRes.forEach((s) => {
-          if (!cls.find((c) => c.class_uuid === s.class_uuid)) {
-            cls.push({ class_uuid: s.class_uuid, class_name: s.class_name });
-          }
-        });
-        setClasses(cls);
+        setClasses(classRes || []);
       } catch (err) {
         console.log(err);
+        toast.error("Failed to load classes");
       }
     };
 
@@ -298,7 +310,7 @@ export default function AdminAssignments() {
         ...prev,
         teacher:
           subject.faculty?.length > 0
-            ?  String(subject.faculty[0].employee_id)
+            ? String(subject.faculty[0].employee_uuid)
             : "",
       }));
     }
@@ -363,15 +375,32 @@ export default function AdminAssignments() {
     return fd;
   };
 
+ const validateAssignmentForm = () => {
+  const errors = {};
+  if (!form.title.trim()) errors.title = "Title is required.";
+    if (!form.subject) errors.subject = "Select a subject.";
+    if (!form.classNum) errors.classNum = "Select a class.";
+    if (!form.section) errors.section = "Select a section.";
+    if (!form.due) errors.due = "Select the assignment date.";
+    if (!form.endDate) errors.endDate = "Select the end date.";
+    if (form.due && form.endDate && form.endDate < form.due) {
+      errors.endDate = "End date cannot be before the assignment date.";
+    }
+  if (!form.due) errors.due = "Date is required.";
+  if (!form.endDate) errors.endDate = "End date is required.";
+  if (form.due && form.endDate && new Date(form.endDate) < new Date(form.due)) {
+    errors.endDate = "End date cannot be before the start date.";
+  }
+  setFormErrors(errors);
+  return Object.keys(errors).length === 0;
+};
+
+  // eslint-disable-next-line no-unused-vars
   const handleSaveDraft = async () => {
-    if (!form.title.trim()) return toast.error("Title required");
-    if (!form.subject) return toast.error("Subject is required");
-    if (!form.classNum || !form.section) return toast.error("Class & section are required");
+    if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
 
     const fd = buildFormData();
     fd.append("status", "DRAFT");
-
-    // if this draft was already saved once, send its uuid so backend updates instead of duplicating
     if (form.draftUuid) fd.append("draft_uuid", form.draftUuid);
 
     setSavingDraft(true);
@@ -379,7 +408,6 @@ export default function AdminAssignments() {
       const res = await saveDraftAssignment(fd);
       if (res?.success) {
         toast.success(res.message || "Draft saved");
-        // keep dialog open + keep form values, just remember the draft uuid
         setForm((f) => ({ ...f, draftUuid: res.data?.draft_uuid || f.draftUuid }));
         fetchAssignments();
       } else {
@@ -394,9 +422,7 @@ export default function AdminAssignments() {
   };
 
   const handlePublish = async () => {
-    if (!form.title.trim()) return toast.error("Title required");
-    if (!form.subject) return toast.error("Subject is required");
-    if (!form.classNum || !form.section) return toast.error("Class & section are required");
+    if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
 
     const fd = buildFormData();
     fd.append("status", "PUBLISHED");
@@ -425,63 +451,95 @@ export default function AdminAssignments() {
   };
 
   // Load an existing assignment into the form and open the dialog in "edit" mode
-  const handleEdit = async (a) => {
-    try {
-      const detail = await getAssignmentDetail(a.uuid);
-      setForm({
-        title: detail.title || "",
-        subject: detail.subject_uuid || "",
-        classNum: detail.class_uuid || "",
-        section: detail.section_uuid || "",
-        teacher: detail.teacher_user_id ? String(detail.teacher_user_id) : "",
-        type: TYPE_REVERSE_MAP[detail.assignment_type] || "Homework",
-        assignTo: ASSIGN_TO_REVERSE_MAP[detail.assign_to] || "Entire Class",
-        groupName: detail.group_name || "",
-        studentIds: new Set(detail.selected_student_uuids || []),
-        instructions: detail.instructions || "",
-        due: detail.assignment_date || "",
-        endDate: detail.due_date || "",
-        duration: detail.duration_minutes ? String(detail.duration_minutes) : "",
-        maxMarks: detail.max_marks ?? 20,
-        pdfFile: null,
-        videoFile: null,
-        resourceLink: detail.resource_url || "",
-        draftUuid: null,
-      });
-      setEditingUuid(detail.assignment_uuid);
-      setOpen(true);
-    } catch (err) {
-      console.log(err);
-      toast.error("Failed to load assignment for editing");
+// Load an existing assignment into the form and open the dialog in "edit" mode
+const handleEdit = async (a) => {
+  try {
+    const detail = await getAssignmentDetail(a.uuid);
+
+    // Backend may return the selected students under different keys/shapes.
+    // Normalize whatever we get into a flat array of student_uuid strings.
+    const rawSelected =
+      detail.selected_student_uuids ??
+      detail.selected_students ??
+      detail.assigned_student_uuids ??
+      detail.student_uuids ??
+      [];
+
+    const normalizedSelectedIds = rawSelected.map((s) =>
+      typeof s === "string" ? s : s.student_uuid ?? s.id ?? s.uuid
+    );
+
+    setForm({
+      title: detail.title || "",
+      subject: detail.subject_uuid || "",
+      classNum: detail.class_uuid || "",
+      section: detail.section_uuid || "",
+      teacher: detail.teacher_user_id ? String(detail.teacher_user_id) : "",
+      type: TYPE_REVERSE_MAP[detail.assignment_type] || "Homework",
+      assignTo: ASSIGN_TO_REVERSE_MAP[detail.assign_to] || "Entire Class",
+      groupName: detail.group_name || "",
+      studentIds: new Set(normalizedSelectedIds),
+      instructions: detail.instructions || "",
+      due: detail.assignment_date || "",
+      endDate: detail.due_date || "",
+      duration: detail.duration_minutes ? String(detail.duration_minutes) : "",
+      maxMarks: detail.max_marks ?? 20,
+      pdfFile: null,
+      videoFile: null,
+      resourceLink: detail.resource_url || "",
+      draftUuid: null,
+      existingAttachments: detail.attachments || [],
+    });
+    setEditingUuid(detail.assignment_uuid);
+    setOpen(true);
+  } catch (err) {
+    console.log(err);
+    toast.error("Failed to load assignment for editing");
+  }
+};
+
+ const buildUpdatePayload = () => ({
+  title: form.title,
+  subject_uuid: form.subject,
+  class_uuid: form.classNum,
+  section_uuid: form.section,
+  teacher_user_id: form.teacher,
+  assignment_type: form.type.toUpperCase().replace(/\s+/g, "_"),
+  assign_to: ASSIGN_TO_MAP[form.assignTo] || "ENTIRE_CLASS",
+  ...(form.assignTo === "Custom Group" ? { group_name: form.groupName } : {}),
+  ...(form.assignTo !== "Entire Class"
+    ? { selected_student_uuids: [...form.studentIds] }
+    : {}),
+  instructions: form.instructions,
+  assignment_date: form.due,
+  due_date: form.endDate,
+  duration_minutes: form.duration,
+  max_marks: form.maxMarks,
+  ...(form.resourceLink ? { resource_url: form.resourceLink } : {}),
+});
+
+const handleUpdate = async () => {
+  if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
+
+  setPublishing(true);
+  try {
+    const res = await updateAssignment(editingUuid, buildUpdatePayload());
+    if (res?.success) {
+      toast.success(res.message || "Assignment updated");
+      setOpen(false);
+      setForm(emptyForm);
+      setEditingUuid(null);
+      fetchAssignments();
+    } else {
+      toast.error(res?.message || "Failed to update assignment");
     }
-  };
-
-  const handleUpdate = async () => {
-    if (!form.title.trim()) return toast.error("Title required");
-    if (!form.subject) return toast.error("Subject is required");
-    if (!form.classNum || !form.section) return toast.error("Class & section are required");
-
-    const fd = buildFormData();
-
-    setPublishing(true);
-    try {
-      const res = await updateAssignment(editingUuid, fd);
-      if (res?.success) {
-        toast.success(res.message || "Assignment updated");
-        setOpen(false);
-        setForm(emptyForm);
-        setEditingUuid(null);
-        fetchAssignments();
-      } else {
-        toast.error(res?.message || "Failed to update assignment");
-      }
-    } catch (err) {
-      console.log(err);
-      toast.error(err?.response?.data?.message || "Failed to update assignment");
-    } finally {
-      setPublishing(false);
-    }
-  };
+  } catch (err) {
+    console.log(err);
+    toast.error(err?.response?.data?.message || "Failed to update assignment");
+  } finally {
+    setPublishing(false);
+  }
+};
 
   const handleDelete = async (a) => {
     if (!window.confirm(`Delete assignment "${a.title}"? This cannot be undone.`)) return;
@@ -590,26 +648,32 @@ export default function AdminAssignments() {
                   {/* Title */}
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                      Title
+                      Title <span className="text-destructive">*</span>
                     </label>
                     <Input
                       placeholder="Title (e.g. Chapter 5 — Trigonometry)"
                       value={form.title}
-                      onChange={(e) =>
-                        setForm({ ...form, title: e.target.value })
-                      }
+                      aria-invalid={Boolean(formErrors.title)}
+                      onChange={(e) => {
+                        setForm({ ...form, title: e.target.value });
+                        setFormErrors((errors) => ({ ...errors, title: "" }));
+                      }}
                     />
+                    {formErrors.title && <p className="text-xs text-destructive">{formErrors.title}</p>}
                   </div>
 
                   {/* Subject + Teacher */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                        Subject
+                        Subject <span className="text-destructive">*</span>
                       </label>
                       <Select
                         value={form.subject}
-                        onValueChange={(v) => setForm({ ...form, subject: v })}
+                        onValueChange={(v) => {
+                          setForm({ ...form, subject: v });
+                          setFormErrors((errors) => ({ ...errors, subject: "" }));
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select Subject" />
@@ -625,6 +689,7 @@ export default function AdminAssignments() {
                           ))}
                         </SelectContent>
                       </Select>
+                      {formErrors.subject && <p className="text-xs text-destructive">{formErrors.subject}</p>}
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -638,14 +703,14 @@ export default function AdminAssignments() {
                           <SelectValue placeholder="Teacher" />
                         </SelectTrigger>
                         <SelectContent>
-                          {teachers.map((teacher) => (
-                            <SelectItem
-                              key={teacher.employee_id}
-                              value={String(teacher.employee_id)}
-                            >
-                              {teacher.name}
-                            </SelectItem>
-                          ))}
+                         {teachers.map((teacher) => (
+  <SelectItem
+    key={teacher.employee_uuid}
+    value={String(teacher.employee_uuid)}   
+  >
+    {teacher.name}
+  </SelectItem>
+))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -655,13 +720,14 @@ export default function AdminAssignments() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                        Class
+                        Class <span className="text-destructive">*</span>
                       </label>
                       <Select
                         value={form.classNum}
-                        onValueChange={(v) =>
-                          setForm({ ...form, classNum: v })
-                        }
+                        onValueChange={(v) => {
+                          setForm({ ...form, classNum: v });
+                          setFormErrors((errors) => ({ ...errors, classNum: "", section: "" }));
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Class" />
@@ -677,14 +743,18 @@ export default function AdminAssignments() {
                           ))}
                         </SelectContent>
                       </Select>
+                      {formErrors.classNum && <p className="text-xs text-destructive">{formErrors.classNum}</p>}
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                        Section
+                        Section <span className="text-destructive">*</span>
                       </label>
                       <Select
                         value={form.section}
-                        onValueChange={(v) => setForm({ ...form, section: v })}
+                        onValueChange={(v) => {
+                          setForm({ ...form, section: v });
+                          setFormErrors((errors) => ({ ...errors, section: "" }));
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Section" />
@@ -700,6 +770,7 @@ export default function AdminAssignments() {
                           ))}
                         </SelectContent>
                       </Select>
+                      {formErrors.section && <p className="text-xs text-destructive">{formErrors.section}</p>}
                     </div>
                   </div>
 
@@ -814,27 +885,34 @@ export default function AdminAssignments() {
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                        Date
+                        Date <span className="text-destructive">*</span>
                       </label>
                       <Input
                         type="date"
                         value={form.due}
-                        onChange={(e) =>
-                          setForm({ ...form, due: e.target.value })
-                        }
+                        aria-invalid={Boolean(formErrors.due)}
+                        onChange={(e) => {
+                          setForm({ ...form, due: e.target.value });
+                          setFormErrors((errors) => ({ ...errors, due: "" }));
+                        }}
                       />
+                      {formErrors.due && <p className="text-xs text-destructive">{formErrors.due}</p>}
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                        End Date
+                        End Date <span className="text-destructive">*</span>
                       </label>
                       <Input
                         type="date"
                         value={form.endDate}
-                        onChange={(e) =>
-                          setForm({ ...form, endDate: e.target.value })
-                        }
+                        min={form.due || undefined}
+                        aria-invalid={Boolean(formErrors.endDate)}
+                        onChange={(e) => {
+                          setForm({ ...form, endDate: e.target.value });
+                          setFormErrors((errors) => ({ ...errors, endDate: "" }));
+                        }}
                       />
+                      {formErrors.endDate && <p className="text-xs text-destructive">{formErrors.endDate}</p>}
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -891,6 +969,17 @@ export default function AdminAssignments() {
                           }
                         />
                       </div>
+                      {existingPdf && !form.pdfFile && (
+                        <a
+                          href={existingPdf.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 pl-1 text-xs text-primary hover:underline truncate"
+                        >
+                          <FileText className="h-3 w-3 shrink-0" />
+                          {existingPdf.original_file_name}
+                        </a>
+                      )}
 
                       {/* Video file upload */}
                       <div className="relative">
@@ -913,6 +1002,17 @@ export default function AdminAssignments() {
                           }
                         />
                       </div>
+                      {existingVideo && !form.videoFile && (
+                        <a
+                          href={existingVideo.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 pl-1 text-xs text-primary hover:underline truncate"
+                        >
+                          <Video className="h-3 w-3 shrink-0" />
+                          {existingVideo.original_file_name}
+                        </a>
+                      )}
 
                       {/* Resource link (unchanged, still text input) */}
                       <div className="relative">
@@ -926,6 +1026,16 @@ export default function AdminAssignments() {
                           }
                         />
                       </div>
+                      {form.resourceLink && (
+                        <a
+                          href={form.resourceLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block pl-1 text-xs text-primary hover:underline truncate"
+                        >
+                          {form.resourceLink}
+                        </a>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -937,15 +1047,15 @@ export default function AdminAssignments() {
                     </Button>
                   ) : (
                     <>
-                      <Button
+                      {/* <Button
                         variant="outline"
                         onClick={handleSaveDraft}
                         disabled={savingDraft || publishing}
                       >
                         {savingDraft ? "Saving..." : "Save Draft"}
-                      </Button>
+                      </Button> */}
                       <Button onClick={handlePublish} disabled={publishing || savingDraft}>
-                        {publishing ? "Publishing..." : "Publish"}
+                        {publishing ? "Publishing..." : "create assignment"}
                       </Button>
                     </>
                   )}
@@ -1076,15 +1186,24 @@ export default function AdminAssignments() {
       </Card>
 
       <Tabs defaultValue="table">
-        <TabsList>
+        {/* <TabsList>
           <TabsTrigger value="table">All Assignments</TabsTrigger>
           <TabsTrigger value="cards">Card View</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
+        </TabsList> */}
 
         <TabsContent value="table" className="mt-4">
           <Card className="border-border/60">
             <CardContent className="p-0">
+              <div className="flex justify-end border-b px-4 py-3">
+                <RowsPerPageSelect
+                  pageSize={pageSize}
+                  onPageSizeChange={(value) => {
+                    setPageSize(value);
+                    setPage(1);
+                  }}
+                />
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1103,8 +1222,8 @@ export default function AdminAssignments() {
                     <TableHead>Class</TableHead>
                     <TableHead>Teacher</TableHead>
                     <TableHead>Due</TableHead>
-                    <TableHead>Submissions</TableHead>
-                    <TableHead>Status</TableHead>
+                    {/* <TableHead>Submissions</TableHead> */}
+                    {/* <TableHead>Status</TableHead> */}
                     <TableHead className="w-20">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1123,6 +1242,7 @@ export default function AdminAssignments() {
                     filtered.map((a) => {
                       const subs = a.submitted,
                         tot = a.totalStudents,
+                        // eslint-disable-next-line no-unused-vars
                         pct = Math.round((subs / tot) * 100);
                       return (
                         <TableRow
@@ -1149,15 +1269,15 @@ export default function AdminAssignments() {
                           <TableCell>{a.klass}</TableCell>
                           <TableCell className="text-xs">{a.teacher}</TableCell>
                           <TableCell className="text-xs">{a.due}</TableCell>
-                          <TableCell>
+                          {/* <TableCell>
                             <div className="flex items-center gap-2 w-40">
                               <Progress value={pct} className="h-1.5" />
                               <span className="text-xs tabular-nums">
                                 {subs}/{tot}
                               </span>
                             </div>
-                          </TableCell>
-                          <TableCell>
+                          </TableCell> */}
+                          {/* <TableCell>
                             <Badge
                               variant={
                                 a.status === "Published"
@@ -1169,7 +1289,7 @@ export default function AdminAssignments() {
                             >
                               {a.status}
                             </Badge>
-                          </TableCell>
+                          </TableCell> */}
                           <TableCell data-no-row>
                             <div className="flex items-center gap-1">
                               <Button
@@ -1206,6 +1326,16 @@ export default function AdminAssignments() {
                   )}
                 </TableBody>
               </Table>
+              <PaginationBar
+                rangeStart={items.length ? (page - 1) * pageSize + 1 : 0}
+                rangeEnd={(page - 1) * pageSize + items.length}
+                totalItems={total}
+                page={page}
+                totalPages={Math.max(1, Math.ceil(total / pageSize))}
+                onPageChange={setPage}
+                showPageSize={false}
+                itemLabel="assignments"
+              />
             </CardContent>
           </Card>
         </TabsContent>

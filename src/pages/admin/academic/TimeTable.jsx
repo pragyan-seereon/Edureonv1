@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/immutability */
 /* eslint-disable react-hooks/set-state-in-effect */
 import { PageContainer, PageHeader } from "../../../components/page-shell";
 import {
@@ -158,10 +159,12 @@ export default function TimeTable() {
   const [schedule, setSchedule] = useState([]); // array of period rows
 
   const [activeView, setActiveView] = useState("class");
-  const [timetableType, setTimetableType] = useState("regular");
-  const [viewingTimetable, setViewingTimetable] = useState(false);
+  const [timetableType, setTimetableType] = useState(
+    () => sessionStorage.getItem("tt_active_type") || "regular"
+  );  const [viewingTimetable, setViewingTimetable] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [timetableRows, setTimetableRows] = useState([]);
+  // eslint-disable-next-line no-unused-vars
   const [reloadKey, setReloadKey] = useState(0);
   const timetablePage = usePagination(timetableRows, 10);
 
@@ -197,6 +200,9 @@ export default function TimeTable() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+   useEffect(() => {
+    sessionStorage.setItem("tt_active_type", timetableType);
+  }, [timetableType]);
   const loadSectionsForClass = async (classUUID, setList, setLoading) => {
     if (!classUUID) {
       setList([]);
@@ -252,30 +258,16 @@ export default function TimeTable() {
 
   // Load the full list for the active type first. A timetable is only opened
   // into the grid when its View action is selected.
-  useEffect(() => {
+ useEffect(() => {
     setViewingTimetable(false);
     setSchedule([]);
     setTimetableMeta(null);
     if (!academicYear.trim()) return;
-    (async () => {
-      setLoadingTimetable(true);
-      try {
-        const fetchByType = {
-          regular: getRegularTimetables,
-          summer: getSummerTimetables,
-          examination: getExaminationTimetables,
-          additional: getAdditionalTimetables,
-        };
-        const response = await fetchByType[timetableType](academicYear.trim());
-        setTimetableRows(Array.isArray(response) ? response : response?.data ?? []);
-      } catch {
-        setTimetableRows([]);
-        toast.error(`Could not load ${timetableType} timetables`);
-      } finally {
-        setLoadingTimetable(false);
-      }
-    })();
-  }, [academicYear, timetableType, reloadKey]);
+    setLoadingTimetable(true);
+    fetchTimetableList(timetableType, academicYear).finally(() =>
+      setLoadingTimetable(false),
+    );
+  }, [academicYear, timetableType]);
 
   const labelFor = (list, uuid, keys) => {
     const item = list.find((x) =>
@@ -284,6 +276,22 @@ export default function TimeTable() {
     if (!item) return "";
     for (const k of keys) if (item[k]) return item[k];
     return "";
+  };
+
+    const fetchTimetableList = async (type = timetableType, year = academicYear) => {
+    if (!year.trim()) return;
+    try {
+      const fetchByType = {
+        regular: getRegularTimetables,
+        summer: getSummerTimetables,
+        examination: getExaminationTimetables,
+        additional: getAdditionalTimetables,
+      };
+      const response = await fetchByType[type](year.trim());
+      setTimetableRows(Array.isArray(response) ? response : response?.data ?? []);
+    } catch {
+      toast.error(`Could not load ${type} timetables`);
+    }
   };
 
   const selectedClassLabel = labelFor(classes, selectedClassUUID, [
@@ -415,9 +423,9 @@ export default function TimeTable() {
           teacher: row.teacher || row.Teacher,
         })),
       );
-      setTimetableMeta(meta);
+           setTimetableMeta(meta);
       setViewingTimetable(false);
-      setReloadKey((key) => key + 1);
+      await fetchTimetableList(importTimetableType, importYear.trim());
 
       toast.success(`Imported ${meta.file_name || file.name}`);
       setImportDialogOpen(false);
@@ -513,7 +521,7 @@ export default function TimeTable() {
     setViewingTimetable(true);
   };
 
-  const handleDeleteTimetable = async (item) => {
+    const handleDeleteTimetable = async (item) => {
     const timetableUUID = item?.timetable_uuid || item?.uuid || timetableMeta?.timetable_uuid || timetableMeta?.uuid;
     if (!timetableUUID) return;
     if (!window.confirm("Delete this timetable? This cannot be undone.")) return;
@@ -521,10 +529,18 @@ export default function TimeTable() {
     setDeleting(true);
     try {
       await deleteTimetable(timetableUUID, timetableType);
-      setSchedule([]);
-      setTimetableMeta(null);
-      setViewingTimetable(false);
-      setReloadKey((key) => key + 1);
+
+      const wasViewingThis =
+        viewingTimetable &&
+        (timetableMeta?.timetable_uuid === timetableUUID || timetableMeta?.uuid === timetableUUID);
+
+      if (wasViewingThis) {
+        setSchedule([]);
+        setTimetableMeta(null);
+        setViewingTimetable(false);
+      }
+
+      await fetchTimetableList();
       toast.success("Timetable deleted");
     } catch {
       toast.error("Could not delete the timetable");

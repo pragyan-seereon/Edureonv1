@@ -5,7 +5,7 @@ const getHeaders = () => {
   const { instituteUUID } = useAuthStore.getState();
 
   return {
-    "X-Institute_UUID": instituteUUID,
+    "X-Institute-UUID": instituteUUID,
   };
 };
 

@@ -145,7 +145,7 @@ export function Topbar() {
             <SelectValue placeholder={loadingInstitutes ? "Loading..." : "Select institute"} />
           </SelectTrigger>
           <SelectContent align="end">
-            {isSuperAdmin && <SelectItem value="__all__" className="text-xs">All schools</SelectItem>}
+            {isSuperAdmin && <SelectItem value="__all__" className="text-xs">--Select Institute--</SelectItem>}
             {availableInstitutes.map((item) => (
               <SelectItem key={getInstituteId(item)} value={getInstituteId(item)} className="text-xs">{getInstituteName(item)}</SelectItem>
             ))}

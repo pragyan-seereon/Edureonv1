@@ -27,6 +27,7 @@ import {
 } from "../../../components/ui/dialog";
 import {
   CalendarDays,
+  // eslint-disable-next-line no-unused-vars
   Download,
   // eslint-disable-next-line no-unused-vars
   Printer,
@@ -47,7 +48,6 @@ import { getSections } from "../../../api/section";
 import {
   downloadSampleTimetable,
   deleteTimetable,
-  getSectionTimetable,
   uploadTimetable,
   downloadSummerTimetableSample,
   uploadSummerTimetable,
@@ -55,7 +55,16 @@ import {
   downloadAdditionalTimetableSample,
   uploadExaminationTimetable,
   uploadAdditionalTimetable,
+  getExaminationTimetables,
+  getAdditionalTimetables,
+  getRegularTimetables,
+  getSummerTimetables,
 } from "../../../api/timetable";
+import {
+  PaginationBar,
+  RowsPerPageSelect,
+} from "../../../components/pagination-controls";
+import { usePagination } from "../../../lib/use-pagination";
 
 const DAY_ORDER = [
   "Monday",
@@ -132,6 +141,8 @@ export default function TimeTable() {
 
   // Sections for whichever class is currently selected on the page.
   const [sections, setSections] = useState([]);
+  const [allSections, setAllSections] = useState([]);
+  // eslint-disable-next-line no-unused-vars
   const [loadingSections, setLoadingSections] = useState(false);
 
   const [selectedClassUUID, setSelectedClassUUID] = useState("");
@@ -150,10 +161,9 @@ export default function TimeTable() {
   const [timetableType, setTimetableType] = useState("regular");
   const [viewingTimetable, setViewingTimetable] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [timetableRows] = useState([]);
-  const [tablePage, setTablePage] = useState(1);
-  const tableTotal = 0;
-  const tablePageSize = 10;
+  const [timetableRows, setTimetableRows] = useState([]);
+  const [reloadKey, setReloadKey] = useState(0);
+  const timetablePage = usePagination(timetableRows, 10);
 
   // ---- Import dialog state (separate from page state until confirmed) ----
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -170,9 +180,10 @@ export default function TimeTable() {
     (async () => {
       setLoadingOptions(true);
       try {
-        const classRes = await getClasses();
+        const [classRes, sectionRes] = await Promise.all([getClasses(), getSections()]);
         const list = classRes?.data ?? classRes ?? [];
         setClasses(list);
+        setAllSections(sectionRes?.data ?? sectionRes ?? []);
         if (list.length && !selectedClassUUID) {
           const first = list[0];
           setSelectedClassUUID(first.class_uuid || first.uuid || first.id);
@@ -239,36 +250,32 @@ export default function TimeTable() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClassUUID]);
 
-  // Whenever section or academic year changes, pull the existing
-  // timetable straight from the API (GET /regular-timetable/section/{uuid}).
+  // Load the full list for the active type first. A timetable is only opened
+  // into the grid when its View action is selected.
   useEffect(() => {
     setViewingTimetable(false);
-    if (timetableType !== "regular") return;
-    if (!selectedSectionUUID || !academicYear.trim()) {
-      setSchedule([]);
-      setTimetableMeta(null);
-      return;
-    }
+    setSchedule([]);
+    setTimetableMeta(null);
+    if (!academicYear.trim()) return;
     (async () => {
       setLoadingTimetable(true);
       try {
-        const res = await getSectionTimetable(
-          selectedSectionUUID,
-          academicYear.trim(),
-        );
-        const { timetable, ...meta } = res || {};
-        setSchedule(timetable || []);
-        setTimetableMeta(meta?.timetable_uuid ? meta : null);
+        const fetchByType = {
+          regular: getRegularTimetables,
+          summer: getSummerTimetables,
+          examination: getExaminationTimetables,
+          additional: getAdditionalTimetables,
+        };
+        const response = await fetchByType[timetableType](academicYear.trim());
+        setTimetableRows(Array.isArray(response) ? response : response?.data ?? []);
       } catch {
-        // No timetable imported yet for this class/section/year is the
-        // common case here — treat it as an empty state, not an error toast.
-        setSchedule([]);
-        setTimetableMeta(null);
+        setTimetableRows([]);
+        toast.error(`Could not load ${timetableType} timetables`);
       } finally {
         setLoadingTimetable(false);
       }
     })();
-  }, [selectedSectionUUID, academicYear, timetableType]);
+  }, [academicYear, timetableType, reloadKey]);
 
   const labelFor = (list, uuid, keys) => {
     const item = list.find((x) =>
@@ -287,6 +294,23 @@ export default function TimeTable() {
     "name",
     "section_name",
   ]);
+
+  // eslint-disable-next-line no-unused-vars
+  const handleClassFilterChange = (classUUID) => {
+    // A section belongs to one class only. Reset it while the matching
+    // sections for the new class are loading.
+    setSelectedClassUUID(classUUID);
+    setSelectedSectionUUID("");
+  };
+
+  // eslint-disable-next-line no-unused-vars
+  const clearTimetableFilters = () => {
+    setSelectedClassUUID("");
+    setSelectedSectionUUID("");
+    setSchedule([]);
+    setTimetableMeta(null);
+    setViewingTimetable(false);
+  };
 
   // ---- Sample download ----
   const handleDownloadSample = async () => {
@@ -392,6 +416,8 @@ export default function TimeTable() {
         })),
       );
       setTimetableMeta(meta);
+      setViewingTimetable(false);
+      setReloadKey((key) => key + 1);
 
       toast.success(`Imported ${meta.file_name || file.name}`);
       setImportDialogOpen(false);
@@ -441,6 +467,7 @@ export default function TimeTable() {
     return { teacherRows: rows, teacherCellMap: map };
   }, [schedule]);
 
+  // eslint-disable-next-line no-unused-vars
   const exportCsv = () => {
     if (!schedule.length) {
       toast.error("Nothing to export yet — import a timetable first");
@@ -463,12 +490,26 @@ export default function TimeTable() {
   };
 
   const hasSchedule = schedule.length > 0;
+  // eslint-disable-next-line no-unused-vars
   const maxTablePage = 1;
 
   const handleViewTimetable = (item) => {
     setSelectedClassUUID(item.class_uuid || item.classUUID || "");
     setSelectedSectionUUID(item.section_uuid || item.sectionUUID || "");
     setAcademicYear(item.academic_year || item.academicYear || "2026-27");
+    const { timetable, ...meta } = item;
+    setSchedule(
+      (timetable || []).map((row) => ({
+        ...row,
+        day: row.day || row.Day,
+        period: Number(row.period || row.Period),
+        start_time: row.start_time || row["Start Time"],
+        end_time: row.end_time || row["End Time"],
+        subject: row.subject || row.Subject,
+        teacher: row.teacher || row.Teacher,
+      })),
+    );
+    setTimetableMeta(meta);
     setViewingTimetable(true);
   };
 
@@ -479,10 +520,11 @@ export default function TimeTable() {
 
     setDeleting(true);
     try {
-      await deleteTimetable(timetableUUID);
+      await deleteTimetable(timetableUUID, timetableType);
       setSchedule([]);
       setTimetableMeta(null);
       setViewingTimetable(false);
+      setReloadKey((key) => key + 1);
       toast.success("Timetable deleted");
     } catch {
       toast.error("Could not delete the timetable");
@@ -529,10 +571,10 @@ export default function TimeTable() {
               )}
               {timetableType === "regular" ? "Import" : `Upload ${TIMETABLE_TYPES.find((type) => type.id === timetableType)?.label.replace(" Timetable", "")}`}
             </Button>
-            <Button variant="outline" size="sm" onClick={exportCsv}>
+            {/* <Button variant="outline" size="sm" onClick={exportCsv}>
               <Download className="h-4 w-4" />
               Export
-            </Button>
+            </Button> */}
           </>
         }
       />
@@ -560,7 +602,7 @@ export default function TimeTable() {
             </button>
           ))}
         </div>
-        {timetableType !== "regular" && (
+        {/* {timetableType !== "regular" && (
           <div className="border-t bg-sky-500/10 px-5 py-3 text-sm text-sky-800 dark:text-sky-200">
             {timetableType === "summer"
               ? "Summer timetable schedules will appear here."
@@ -568,17 +610,24 @@ export default function TimeTable() {
                 ? "Examination timetable schedules will appear here."
                 : "Additional timetable schedules will appear here."}
           </div>
-        )}
+        )} */}
       </Card>
 
       {(timetableType === "regular" || timetableType === "summer" || timetableType === "examination" || timetableType === "additional") && (
         <>
-      <div className="mb-5 flex flex-wrap items-end justify-end gap-3">
+      {/* <div className="mb-5 flex flex-wrap items-end justify-between gap-3 rounded-xl border border-border/70 bg-card p-4 shadow-sm">
+        <div>
+          <h2 className="text-sm font-semibold">Filter timetable</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Select a class and section to view its timetable.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1.5 w-48">
           <Label className="text-xs font-medium text-muted-foreground">Class</Label>
           <Select
             value={selectedClassUUID}
-            onValueChange={setSelectedClassUUID}
+            onValueChange={handleClassFilterChange}
             disabled={loadingOptions}
           >
             <SelectTrigger>
@@ -636,7 +685,17 @@ export default function TimeTable() {
             placeholder="2026-27"
           />
         </div>
-      </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={clearTimetableFilters}
+          disabled={!selectedClassUUID && !selectedSectionUUID}
+        >
+          Clear filters
+        </Button>
+        </div>
+      </div> */}
 
       <div className="hidden grid-cols-2 gap-4 md:grid-cols-4 mb-6">
         <StatTile
@@ -714,30 +773,9 @@ export default function TimeTable() {
         <CardContent className="p-0 overflow-auto">
           {!viewingTimetable ? (
             <div className="min-w-[720px]">
-              <div className="border-b bg-slate-50 px-5 py-4 dark:bg-slate-900/40">
+              <div className="flex items-center justify-between border-b bg-slate-50 px-5 py-4 dark:bg-slate-900/40">
                 <h2 className="text-base font-semibold">Timetables</h2>
-              </div>
-              <table className="hidden w-full text-sm">
-                <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr><th className="px-5 py-3 font-semibold">Class</th><th className="px-5 py-3 font-semibold">Section</th><th className="px-5 py-3 font-semibold">Academic Year</th><th className="px-5 py-3 font-semibold">Status</th><th className="px-5 py-3 text-right font-semibold">Action</th></tr>
-                </thead>
-                <tbody>
-                  {loadingTimetable ? (
-                    <tr><td colSpan="5" className="px-5 py-10 text-center text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading timetables...</td></tr>
-                  ) : timetableRows.length ? timetableRows.map((item) => (
-                    <tr key={item.timetable_uuid || item.uuid} className="border-b last:border-0">
-                      <td className="px-5 py-4 font-medium">{item.class_name || item.class?.name || labelFor(classes, item.class_uuid, ["name", "class_name"]) || "-"}</td>
-                      <td className="px-5 py-4">{item.section_name || item.section?.name || labelFor(sections, item.section_uuid, ["name", "section_name"]) || "-"}</td>
-                      <td className="px-5 py-4">{item.academic_year || item.academicYear || "-"}</td>
-                      <td className="px-5 py-4"><span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700">{item.status || "Active"}</span></td>
-                      <td className="px-5 py-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => handleViewTimetable(item)}><Eye className="h-4 w-4" />View</Button><Button size="sm" variant="destructive" onClick={() => handleDeleteTimetable(item)} disabled={deleting}><Trash2 className="h-4 w-4" />{deleting ? "Deleting..." : "Delete"}</Button></div></td>
-                    </tr>
-                  )) : <tr><td colSpan="5" className="px-5 py-10 text-center text-muted-foreground">No timetables found.</td></tr>}
-                </tbody>
-              </table>
-              <div className="hidden flex-wrap items-center justify-between gap-3 border-t px-5 py-4 text-sm text-muted-foreground">
-                <span>Showing {timetableRows.length ? (tablePage - 1) * tablePageSize + 1 : 0}-{(tablePage - 1) * tablePageSize + timetableRows.length} of {tableTotal}</span>
-                <div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={tablePage === 1} onClick={() => setTablePage((page) => Math.max(1, page - 1))}>Previous</Button><span className="text-xs">Page {tablePage} of {maxTablePage}</span><Button variant="outline" size="sm" disabled={tablePage === maxTablePage} onClick={() => setTablePage((page) => Math.min(maxTablePage, page + 1))}>Next</Button></div>
+                <RowsPerPageSelect {...timetablePage} />
               </div>
               <table className="w-full text-sm">
                 <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -752,24 +790,20 @@ export default function TimeTable() {
                 <tbody>
                   {loadingTimetable ? (
                     <tr><td colSpan="5" className="px-5 py-10 text-center text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading timetable...</td></tr>
-                  ) : timetableMeta || hasSchedule ? (
-                    <tr className="border-b last:border-0">
-                      <td className="px-5 py-4 font-medium">{selectedClassLabel || "—"}</td>
-                      <td className="px-5 py-4">{selectedSectionLabel || "—"}</td>
-                      <td className="px-5 py-4">{academicYear}</td>
-                      <td className="px-5 py-4"><span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700">{timetableMeta?.status || "Imported"}</span></td>
-                      <td className="px-5 py-4">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => setViewingTimetable(true)}><Eye className="h-4 w-4" />View</Button>
-                          <Button size="sm" variant="destructive" onClick={handleDeleteTimetable} disabled={deleting || !timetableMeta}><Trash2 className="h-4 w-4" />{deleting ? "Deleting..." : "Delete"}</Button>
-                        </div>
-                      </td>
+                  ) : timetableRows.length ? timetablePage.pageItems.map((item) => (
+                    <tr key={item.timetable_uuid || item.uuid} className="border-b last:border-0">
+                      <td className="px-5 py-4 font-medium">{item.class_name || item.class?.name || labelFor(classes, item.class_uuid, ["name", "class_name"]) || "—"}</td>
+                      <td className="px-5 py-4">{item.section_name || item.section?.name || labelFor(allSections, item.section_uuid, ["name", "section_name"]) || "—"}</td>
+                      <td className="px-5 py-4">{item.academic_year || item.academic_year_uuid || item.academicYear || academicYear}</td>
+                      <td className="px-5 py-4"><span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700">{item.status || "Active"}</span></td>
+                      <td className="px-5 py-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => handleViewTimetable(item)}><Eye className="h-4 w-4" />View</Button><Button size="sm" variant="destructive" onClick={() => handleDeleteTimetable(item)} disabled={deleting}><Trash2 className="h-4 w-4" />{deleting ? "Deleting..." : "Delete"}</Button></div></td>
                     </tr>
-                  ) : (
+                  )) : (
                     <tr><td colSpan="5" className="px-5 py-10 text-center text-muted-foreground">No timetable found for this class, section, and academic year.</td></tr>
                   )}
                 </tbody>
               </table>
+              <PaginationBar {...timetablePage} itemLabel="timetables" showPageSize={false} />
             </div>
           ) : loadingTimetable ? (
             <div className="p-10 flex flex-col items-center gap-2 text-sm text-muted-foreground">

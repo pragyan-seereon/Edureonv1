@@ -49,7 +49,7 @@ import {
   MoreHorizontal,
   AlertCircle,
 } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { getClasses } from "../../api/Class";
@@ -59,6 +59,11 @@ import { getNotices, saveNoticeDraft, publishNotice, updateNotice, deleteNotice 
 import {getEvents,saveEventDraft,publishEvent,getEventById,updateEvent,deleteEvent,publishEventById,unpublishEventById,} from "../../api/event";
 import { getHolidays, saveHolidayDraft, publishHoliday, getHolidayById, updateHoliday, deleteHoliday, publishHolidayById, unpublishHolidayById,} from "../../api/holidayCalendar";
 import {validateCalendarForm,isCalendarFormValid,validateNoticeForm,isNoticeFormValid,} from "../../lib/subjectValidation";
+import { usePagination } from "../../lib/use-pagination";
+import {
+  PaginationBar,
+  RowsPerPageSelect,
+} from "../../components/pagination-controls";
 
 const cats = ["Academic", "Events", "Fees", "Holiday", "Exam", "General"];
 const auds = ["All", "Teachers", "Students", "Parents", "Staff", "Class"];
@@ -1254,7 +1259,7 @@ const handleToggleHolidayPublish = async (item) => {
     holidays: "Holiday",
   }[activeTab];
 
-  const visibleNotices = notices.filter((notice) => {
+  const visibleNotices = useMemo(() => notices.filter((notice) => {
     const category = String(notice.category ?? "").toUpperCase();
     if (activeTab === "notices") {
       return true;
@@ -1263,7 +1268,7 @@ const handleToggleHolidayPublish = async (item) => {
       return ["HOLIDAY", "HOLIDAYS"].includes(category);
     }
     return category === String(tabCategory ?? "").toUpperCase();
-  });
+  }), [notices, activeTab, tabCategory]);
 
   const sectionLabel = {
     notices: "Notice",
@@ -1275,7 +1280,11 @@ const handleToggleHolidayPublish = async (item) => {
   const isAcademicTab = activeTab === "academic";
 const isEventsTab = activeTab === "events";
 const isHolidaysTab = activeTab === "holidays";
-const displayList = isAcademicTab ? academicItems : isEventsTab ? events : isHolidaysTab ? holidays : visibleNotices;
+const displayList = useMemo(
+  () => isAcademicTab ? academicItems : isEventsTab ? events : isHolidaysTab ? holidays : visibleNotices,
+  [academicItems, events, holidays, isAcademicTab, isEventsTab, isHolidaysTab, visibleNotices],
+);
+const noticesPage = usePagination(displayList, 10);
 
 const listLoading = isAcademicTab ? loadingCalendar : isEventsTab ? loadingEvents : isHolidaysTab ? loadingHolidays : loadingNotices;
 const getItemUUID = isAcademicTab ? getCalendarUUID : isEventsTab ? getEventUUID : isHolidaysTab ? getHolidayUUID : getNoticeUUID;
@@ -1793,6 +1802,9 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
         // ---------------- Notices / Events / Holidays: unchanged style ----------------
         <Card>
           <CardContent className="p-0 divide-y">
+            <div className="flex justify-end px-5 py-3">
+              <RowsPerPageSelect {...noticesPage} />
+            </div>
             {!listLoading && displayList.length === 0 && (
               <div className="p-8 text-center text-sm text-muted-foreground">
                 No {sectionLabel.toLowerCase()}s available yet.
@@ -1804,7 +1816,7 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
                 Loading {sectionLabel.toLowerCase()}s…
               </div>
             )}
-            {!listLoading && displayList.map((n) => (
+            {!listLoading && noticesPage.pageItems.map((n) => (
               <div key={getItemUUID(n)} className="p-3 hover:bg-muted/30">
                 <div className="flex items-start gap-3">
                   <div className="h-9 w-9 rounded-md flex items-center justify-center bg-info/10 text-info shrink-0">
@@ -1931,6 +1943,7 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
                 </div>
               </div>
             ))}
+            <PaginationBar {...noticesPage} itemLabel={sectionLabel.toLowerCase() + "s"} showPageSize={false} />
           </CardContent>
         </Card>
       )}

@@ -622,7 +622,7 @@ const subjectMappingStore = createStore(initMappings);
 const calendarStore = createStore(initCalendar);
 export const useSections = () => useStore(sectionStore);
 export const useSubjects = () => useStore(subjectStore);
-export const SUBJECT_TYPES = ["Core", "Elective", "Skill", "Language", "Co-Curricular"];
+export const SUBJECT_TYPES = ["Core", "Elective", "Skill", "Language", "Co-Curricular","Other"];
 export const useSubjectMappings = () => useStore(subjectMappingStore);
 export const useAcademicCalendar = () => useStore(calendarStore);
 let _secN = 100,

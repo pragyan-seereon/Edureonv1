@@ -166,3 +166,13 @@ export const getStudentDues = (
     }
   );
 };
+
+
+// =====================================
+// Students Available for STRUCTURE
+// =====================================
+export const getStudentsAvailableForStructure = (params = {}) =>
+  api.get("/fee-assignments/students/available-for-structure", {
+    headers: getHeaders(),
+    params,
+  });

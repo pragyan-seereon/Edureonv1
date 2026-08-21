@@ -5442,7 +5442,7 @@ const empty = {
   previousClass: "",
   board: "CBSE",
   lastPercent: "",
-  attendance: 95,
+  attendance: "",
 
   // guardian — matches backend StudentDraftStep3Update field-for-field
   employeeUuid: "",

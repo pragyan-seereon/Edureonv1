@@ -1,5 +1,4 @@
-
-
+                        
 
 // import * as XLSX from "xlsx";
 // import jsPDF from "jspdf";
@@ -29,6 +28,7 @@
 //   TableHead,
 //   TableHeader,
 //   TableRow,
+//   TableFooter,
 // } from "../../../components/ui/table";
 // import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 // import {
@@ -101,6 +101,7 @@
 // import { useEffect, useState, useMemo } from "react";
 // import useAuthStore from "../../../store/authStore";
 // import { FeeStructureDialog } from "../../../components/fee-structure-dialog";
+// import ReportsPanel from "./ReportsPanel";
 // import { toast } from "sonner";
 
 // import {
@@ -134,7 +135,7 @@
 // } from "../../../api/feeDiscount";
 
 // import { getAllStudents } from "../../../api/students";
-// import { getClasses } from "../../../api/class";
+// import { getClasses } from "../../../api/Class";
 // import { getSections } from "../../../api/section";
 
 // import {
@@ -163,12 +164,13 @@
 //   verifyRazorpayPayment,
 //   getPayments,
 //   getPaymentDashboard,
-//     openPaymentReceipt,
+//   openPaymentReceipt,
 //   downloadPaymentReceipt,
 // } from "../../../api/payment";
 
 // import {
-//  getStudentFeeReport
+//  getStudentFeeReport,
+//  getMonthlyFeeManagementReport,
 // } from "../../../api/feeReports";
 
 
@@ -1015,9 +1017,9 @@
 //       });
 //     } else {
 //       setF({
-//         name: "", code: "", type: "Percent", value: 10,
+//         name: "", code: "", type: "Percent", value: "",
 //         discountScope: "NORMAL", appliesTo: ["*"], classes: [],
-//         studentOverride: false, maxDiscount: undefined, status: "Active",
+//         studentOverride: false, maxDiscount: "", status: "Active",
 //         earlyPaymentMonth: null, earlyPaymentDay: null,
 //         requiresFullYearPayment: false, description: "",
 //       });
@@ -1167,7 +1169,21 @@
 //               </Select>
 //             </FF>
 //             <FF label={f.type === "Percent" ? "Value (%)" : "Value (₹)"}>
-//               <Input type="number" min={0} step={0.01} value={f.value} onChange={(e) => setF({ ...f, value: Number(e.target.value) || 0 })} />
+//               <Input
+//                 type="number"
+//                 min={0}
+//                 step="1"
+//                 value={f.value ?? ""}
+//                 onChange={(e) => {
+//                   const rawValue = e.target.value;
+
+//                   setF((prev) => ({
+//                     ...prev,
+//                     value: rawValue === "" ? "" : rawValue,
+//                   }));
+//                 }}
+//                 placeholder="0"
+//               />
 //             </FF>
 //           </Row>
 
@@ -1226,7 +1242,21 @@
 //           </FF>
 
 //           <FF label="Max Discount Cap (₹, optional)">
-//             <Input type="number" min={0} value={f.maxDiscount ?? 0} onChange={(e) => setF({ ...f, maxDiscount: Number(e.target.value) || undefined })} />
+//             <Input
+//               type="number"
+//               min={0}
+//               step="0.01"
+//               value={f.maxDiscount ?? ""}
+//               onChange={(e) => {
+//                 const rawValue = e.target.value;
+
+//                 setF((prev) => ({
+//                   ...prev,
+//                   maxDiscount: rawValue === "" ? "" : rawValue,
+//                 }));
+//               }}
+//               placeholder="0"
+//             />
 //           </FF>
 
 //           <Row>
@@ -1383,6 +1413,173 @@
 //   );
 // }
 
+// // function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editingStudent, onAssign, onUpdateStudent }) {
+// //   const [q, setQ] = useState("");
+// //   const [cls, setCls] = useState("");
+// //   const [picked, setPicked] = useState(new Set());
+// //   const [pickedDiscounts, setPickedDiscounts] = useState(new Set());
+// //   const [saving, setSaving] = useState(false);
+
+// //   const isEditingOne = !!editingStudent;
+
+// //   const classes = useMemo(() => Array.from(new Set(students.map((s) => s.class_name).filter(Boolean))).sort(), [students]);
+// //   const filtered = useMemo(
+// //     () =>
+// //       students.filter(
+// //         (s) =>
+// //           (!cls || s.class_name === cls) &&
+// //           (!q || s.full_name?.toLowerCase().includes(q.toLowerCase()) || s.student_no?.toLowerCase().includes(q.toLowerCase()))
+// //       ),
+// //     [students, cls, q]
+// //   );
+
+// //   useEffect(() => {
+// //     if (!open) return;
+// //     setQ("");
+// //     setCls("");
+// //     if (isEditingOne) {
+// //       setPicked(new Set([editingStudent.student_uuid]));
+// //       setPickedDiscounts(new Set((editingStudent.discounts || []).map((d) => d.discount_uuid)));
+// //     } else {
+// //       setPicked(new Set());
+// //       setPickedDiscounts(new Set());
+// //     }
+// //   }, [open, editingStudent, isEditingOne]);
+
+// //   const toggleStudent = (uuid) => {
+// //     if (isEditingOne) return; // locked to a single student when editing
+// //     setPicked((prev) => {
+// //       const next = new Set(prev);
+// //       if (next.has(uuid)) next.delete(uuid); else next.add(uuid);
+// //       return next;
+// //     });
+// //   };
+// //   const toggleDiscount = (uuid) => {
+// //     setPickedDiscounts((prev) => {
+// //       const next = new Set(prev);
+// //       if (next.has(uuid)) next.delete(uuid); else next.add(uuid);
+// //       return next;
+// //     });
+// //   };
+
+// //   const toggleSelectAllStudents = () => {
+// //   if (isEditingOne) return;
+
+// //   const visibleStudentUuids = filtered
+// //     .slice(0, 200)
+// //     .map((s) => s.student_uuid);
+
+// //   const allSelected =
+// //     visibleStudentUuids.length > 0 &&
+// //     visibleStudentUuids.every((uuid) => picked.has(uuid));
+
+// //   setPicked((prev) => {
+// //     const next = new Set(prev);
+
+// //     if (allSelected) {
+// //       visibleStudentUuids.forEach((uuid) => next.delete(uuid));
+// //     } else {
+// //       visibleStudentUuids.forEach((uuid) => next.add(uuid));
+// //     }
+
+// //     return next;
+// //   });
+// // };
+
+// //   const save = async () => {
+// //     if (picked.size === 0) { toast.error("Pick at least one student"); return; }
+// //     setSaving(true);
+// //     try {
+// //       if (isEditingOne) {
+// //         await onUpdateStudent(editingStudent.student_uuid, Array.from(pickedDiscounts));
+// //       } else {
+// //         await onAssign(Array.from(picked), Array.from(pickedDiscounts));
+// //       }
+// //       onOpenChange(false);
+// //     } finally {
+// //       setSaving(false);
+// //     }
+// //   };
+
+// //   return (
+// //     <Dialog open={open} onOpenChange={onOpenChange}>
+// //       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+// //         <DialogHeader>
+// //           <DialogTitle>{isEditingOne ? `Edit Discounts — ${editingStudent.student_name}` : "Assign Discount to Students"}</DialogTitle>
+// //           <DialogDescription>
+// //             {isEditingOne ? "This replaces the student's full discount set." : "Pick students, then pick one or more discount templates to attach."}
+// //             {" "}Scope rules (sibling eligibility, active employee link, full-year deadline) are checked by the server per student.
+// //           </DialogDescription>
+// //         </DialogHeader>
+
+// //         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+// //           <div className="space-y-2">
+// //             <Label className="text-xs text-muted-foreground">Students {isEditingOne && "(locked)"}</Label>
+// //             {!isEditingOne && (
+// //               <Row>
+// //                 <Select value={cls} onValueChange={setCls}>
+// //                   <SelectTrigger><SelectValue placeholder="Class" /></SelectTrigger>
+// //                   <SelectContent>{classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+// //                 </Select>
+// //                 <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search..." />
+// //               </Row>
+// //             )} 
+// //             <div className="border rounded-md max-h-72 overflow-y-auto">
+// //               <Table>
+// //                 <TableBody>
+// //                   {(isEditingOne ? students.filter((s) => s.student_uuid === editingStudent.student_uuid) : filtered.slice(0, 200)).map((s) => (
+// //                     <TableRow
+// //                       key={s.student_uuid}
+// //                       className={isEditingOne ? "" : "cursor-pointer"}
+// //                       onClick={() => toggleStudent(s.student_uuid)}
+// //                     >
+// //                       <TableCell className="w-8"><Checkbox checked={picked.has(s.student_uuid)} disabled={isEditingOne} /></TableCell>
+// //                       <TableCell className="text-sm">{s.full_name}</TableCell>
+// //                       <TableCell className="text-xs text-muted-foreground">{s.class_name}{s.section_name ? `-${s.section_name}` : ""}</TableCell>
+// //                     </TableRow>
+// //                   ))}
+// //                   {!isEditingOne && filtered.length === 0 && (
+// //                     <TableRow><TableCell className="text-center text-sm text-muted-foreground py-6">No matches</TableCell></TableRow>
+// //                   )}
+// //                 </TableBody>
+// //               </Table>
+// //             </div>
+// //             {!isEditingOne && <div className="text-xs text-muted-foreground">{picked.size} student{picked.size === 1 ? "" : "s"} selected</div>}
+// //           </div>
+
+// //           <div className="space-y-2">
+// //             <Label className="text-xs text-muted-foreground">Discount Templates</Label>
+// //             <div className="border rounded-md max-h-72 overflow-y-auto p-2 space-y-1.5">
+// //               {discounts.filter((d) => d.status === "Active").map((d) => (
+// //                 <label key={d.discount_uuid} className="flex items-center gap-2 text-sm rounded-md px-2 py-1.5 hover:bg-muted/50 cursor-pointer">
+// //                   <Checkbox checked={pickedDiscounts.has(d.discount_uuid)} onCheckedChange={() => toggleDiscount(d.discount_uuid)} />
+// //                   <span className="flex-1">{d.name}</span>
+// //                   {d.discountScope && d.discountScope !== "NORMAL" && (
+// //                     <Badge variant="outline" className="text-[10px]">{d.discountScope}</Badge>
+// //                   )}
+// //                   <Badge variant="outline" className="text-xs">{d.type === "Percent" ? `${d.value}%` : inr(d.value)}</Badge>
+// //                 </label>
+// //               ))}
+// //               {discounts.filter((d) => d.status === "Active").length === 0 && (
+// //                 <div className="text-xs text-muted-foreground text-center py-4">No active discount templates. Create one in the Discounts tab first.</div>
+// //               )}
+// //             </div>
+// //             <div className="text-xs text-muted-foreground">{pickedDiscounts.size} discount{pickedDiscounts.size === 1 ? "" : "s"} selected</div>
+// //           </div>
+// //         </div>
+
+// //         <DialogFooter>
+// //           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+// //           <Button onClick={save} className="gradient-primary border-0" disabled={saving}>
+// //             {saving ? "Saving…" : isEditingOne ? "Save changes" : "Assign"}
+// //           </Button>
+// //         </DialogFooter>
+// //       </DialogContent>
+// //     </Dialog>
+// //   );
+// // }
+
+
 // function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editingStudent, onAssign, onUpdateStudent }) {
 //   const [q, setQ] = useState("");
 //   const [cls, setCls] = useState("");
@@ -1424,10 +1621,35 @@
 //       return next;
 //     });
 //   };
+
 //   const toggleDiscount = (uuid) => {
 //     setPickedDiscounts((prev) => {
 //       const next = new Set(prev);
 //       if (next.has(uuid)) next.delete(uuid); else next.add(uuid);
+//       return next;
+//     });
+//   };
+
+//   const toggleSelectAllStudents = () => {
+//     if (isEditingOne) return;
+
+//     const visibleStudentUuids = filtered
+//       .slice(0, 200)
+//       .map((s) => s.student_uuid);
+
+//     const allSelected =
+//       visibleStudentUuids.length > 0 &&
+//       visibleStudentUuids.every((uuid) => picked.has(uuid));
+
+//     setPicked((prev) => {
+//       const next = new Set(prev);
+
+//       if (allSelected) {
+//         visibleStudentUuids.forEach((uuid) => next.delete(uuid));
+//       } else {
+//         visibleStudentUuids.forEach((uuid) => next.add(uuid));
+//       }
+
 //       return next;
 //     });
 //   };
@@ -1447,6 +1669,11 @@
 //     }
 //   };
 
+//   // Calculate if all visible students are selected
+//   const visibleStudentUuids = filtered.slice(0, 200).map((s) => s.student_uuid);
+//   const allVisibleSelected = visibleStudentUuids.length > 0 && 
+//     visibleStudentUuids.every((uuid) => picked.has(uuid));
+
 //   return (
 //     <Dialog open={open} onOpenChange={onOpenChange}>
 //       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -1459,16 +1686,37 @@
 //         </DialogHeader>
 
 //         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+//           {/* Students Section */}
 //           <div className="space-y-2">
-//             <Label className="text-xs text-muted-foreground">Students {isEditingOne && "(locked)"}</Label>
+//             <div className="flex items-center justify-between">
+//               <Label className="text-xs text-muted-foreground">Students {isEditingOne && "(locked)"}</Label>
+//               {!isEditingOne && filtered.length > 0 && (
+//                 <label className="flex items-center gap-1.5 text-xs cursor-pointer hover:text-primary">
+//                   <Checkbox 
+//                     checked={allVisibleSelected}
+//                     onCheckedChange={toggleSelectAllStudents}
+//                   />
+//                   Select All ({filtered.slice(0, 200).length} visible)
+//                 </label>
+//               )}
+//             </div>
 //             {!isEditingOne && (
-//               <Row>
+//               <div className="flex gap-2">
 //                 <Select value={cls} onValueChange={setCls}>
-//                   <SelectTrigger><SelectValue placeholder="Class" /></SelectTrigger>
-//                   <SelectContent>{classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+//                   <SelectTrigger className="flex-1">
+//                     <SelectValue placeholder="Class" />
+//                   </SelectTrigger>
+//                   <SelectContent>
+//                     {classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+//                   </SelectContent>
 //                 </Select>
-//                 <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search..." />
-//               </Row>
+//                 <Input 
+//                   value={q} 
+//                   onChange={(e) => setQ(e.target.value)} 
+//                   placeholder="Search..." 
+//                   className="flex-1"
+//                 />
+//               </div>
 //             )}
 //             <div className="border rounded-md max-h-72 overflow-y-auto">
 //               <Table>
@@ -1476,46 +1724,101 @@
 //                   {(isEditingOne ? students.filter((s) => s.student_uuid === editingStudent.student_uuid) : filtered.slice(0, 200)).map((s) => (
 //                     <TableRow
 //                       key={s.student_uuid}
-//                       className={isEditingOne ? "" : "cursor-pointer"}
+//                       className={isEditingOne ? "" : "cursor-pointer hover:bg-muted/50"}
 //                       onClick={() => toggleStudent(s.student_uuid)}
 //                     >
-//                       <TableCell className="w-8"><Checkbox checked={picked.has(s.student_uuid)} disabled={isEditingOne} /></TableCell>
+//                       <TableCell className="w-8">
+//                         <Checkbox 
+//                           checked={picked.has(s.student_uuid)} 
+//                           disabled={isEditingOne}
+//                           onCheckedChange={() => toggleStudent(s.student_uuid)}
+//                         />
+//                       </TableCell>
 //                       <TableCell className="text-sm">{s.full_name}</TableCell>
-//                       <TableCell className="text-xs text-muted-foreground">{s.class_name}{s.section_name ? `-${s.section_name}` : ""}</TableCell>
+//                       <TableCell className="text-xs text-muted-foreground">
+//                         {s.class_name}{s.section_name ? `-${s.section_name}` : ""}
+//                       </TableCell>
 //                     </TableRow>
 //                   ))}
 //                   {!isEditingOne && filtered.length === 0 && (
-//                     <TableRow><TableCell className="text-center text-sm text-muted-foreground py-6">No matches</TableCell></TableRow>
+//                     <TableRow>
+//                       <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-6">
+//                         {q || cls ? "No matches found" : "No students available"}
+//                       </TableCell>
+//                     </TableRow>
 //                   )}
 //                 </TableBody>
 //               </Table>
 //             </div>
-//             {!isEditingOne && <div className="text-xs text-muted-foreground">{picked.size} student{picked.size === 1 ? "" : "s"} selected</div>}
+//             {!isEditingOne && (
+//               <div className="text-xs text-muted-foreground">
+//                 {picked.size} student{picked.size === 1 ? "" : "s"} selected
+//                 {filtered.length > 200 && ` (showing first 200 of ${filtered.length})`}
+//               </div>
+//             )}
 //           </div>
 
+//           {/* Discount Templates Section */}
 //           <div className="space-y-2">
-//             <Label className="text-xs text-muted-foreground">Discount Templates</Label>
+//             <div className="flex items-center justify-between">
+//               <Label className="text-xs text-muted-foreground">Discount Templates</Label>
+//               {discounts.filter((d) => d.status === "Active").length > 0 && (
+//                 <label className="flex items-center gap-1.5 text-xs cursor-pointer hover:text-primary">
+//                   <Checkbox 
+//                     checked={
+//                       discounts.filter(d => d.status === "Active").length > 0 &&
+//                       discounts.filter(d => d.status === "Active").every(d => pickedDiscounts.has(d.discount_uuid))
+//                     }
+//                     onCheckedChange={() => {
+//                       const activeDiscounts = discounts.filter(d => d.status === "Active");
+//                       const allSelected = activeDiscounts.every(d => pickedDiscounts.has(d.discount_uuid));
+//                       setPickedDiscounts((prev) => {
+//                         const next = new Set(prev);
+//                         if (allSelected) {
+//                           activeDiscounts.forEach(d => next.delete(d.discount_uuid));
+//                         } else {
+//                           activeDiscounts.forEach(d => next.add(d.discount_uuid));
+//                         }
+//                         return next;
+//                       });
+//                     }}
+//                   />
+//                   Select All
+//                 </label>
+//               )}
+//             </div>
 //             <div className="border rounded-md max-h-72 overflow-y-auto p-2 space-y-1.5">
 //               {discounts.filter((d) => d.status === "Active").map((d) => (
 //                 <label key={d.discount_uuid} className="flex items-center gap-2 text-sm rounded-md px-2 py-1.5 hover:bg-muted/50 cursor-pointer">
-//                   <Checkbox checked={pickedDiscounts.has(d.discount_uuid)} onCheckedChange={() => toggleDiscount(d.discount_uuid)} />
+//                   <Checkbox 
+//                     checked={pickedDiscounts.has(d.discount_uuid)} 
+//                     onCheckedChange={() => toggleDiscount(d.discount_uuid)}
+//                   />
 //                   <span className="flex-1">{d.name}</span>
 //                   {d.discountScope && d.discountScope !== "NORMAL" && (
 //                     <Badge variant="outline" className="text-[10px]">{d.discountScope}</Badge>
 //                   )}
-//                   <Badge variant="outline" className="text-xs">{d.type === "Percent" ? `${d.value}%` : inr(d.value)}</Badge>
+//                   <Badge variant="outline" className="text-xs">
+//                     {d.type === "Percent" ? `${d.value}%` : inr(d.value)}
+//                   </Badge>
 //                 </label>
 //               ))}
 //               {discounts.filter((d) => d.status === "Active").length === 0 && (
-//                 <div className="text-xs text-muted-foreground text-center py-4">No active discount templates. Create one in the Discounts tab first.</div>
+//                 <div className="text-xs text-muted-foreground text-center py-4">
+//                   No active discount templates. Create one in the Discounts tab first.
+//                 </div>
 //               )}
 //             </div>
-//             <div className="text-xs text-muted-foreground">{pickedDiscounts.size} discount{pickedDiscounts.size === 1 ? "" : "s"} selected</div>
+//             <div className="text-xs text-muted-foreground">
+//               {pickedDiscounts.size} discount{pickedDiscounts.size === 1 ? "" : "s"} selected
+//             </div>
 //           </div>
 //         </div>
 
 //         <DialogFooter>
-//           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+//           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+//             Cancel
+//           </Button>
 //           <Button onClick={save} className="gradient-primary border-0" disabled={saving}>
 //             {saving ? "Saving…" : isEditingOne ? "Save changes" : "Assign"}
 //           </Button>
@@ -1646,75 +1949,576 @@
 //   toast.success("Exported");
 // }
 
-// function buildAuditReport(period, kpis, ledger) {
-//   const label = period === "week" ? "Weekly" : period === "month" ? "Monthly" : "Annual";
+// /* ================================================================== */
+// /* AUDIT REPORT — REAL PERIOD FILTERING                              */
+// /* ================================================================== */
+
+// function getAuditDateRange(period) {
+//   const now = new Date();
+
+//   // Remove time for reliable date comparison
+//   const today = new Date(
+//     now.getFullYear(),
+//     now.getMonth(),
+//     now.getDate()
+//   );
+
+//   let from;
+//   let to = today;
+
+//   if (period === "week") {
+//     // Monday -> today
+//     const day = today.getDay(); // 0 = Sunday
+//     const diff = day === 0 ? 6 : day - 1;
+
+//     from = new Date(today);
+//     from.setDate(today.getDate() - diff);
+//   }
+
+//   if (period === "month") {
+//     // 1st of current month -> today
+//     from = new Date(
+//       today.getFullYear(),
+//       today.getMonth(),
+//       1
+//     );
+//   }
+
+//   if (period === "year") {
+//     // Academic year: April -> March
+//     const currentYear = today.getFullYear();
+//     const currentMonth = today.getMonth() + 1;
+
+//     const academicStartYear =
+//       currentMonth >= 4
+//         ? currentYear
+//         : currentYear - 1;
+
+//     from = new Date(
+//       academicStartYear,
+//       3, // April
+//       1
+//     );
+//   }
+
+//   return { from, to };
+// }
+
+
+// function normalizePaymentForAudit(txn, students = []) {
+//   const student = students.find(
+//     (s) => s.student_uuid === txn.student_uuid
+//   );
+
+//   const status =
+//     String(txn.transaction_status || "").toUpperCase() === "SUCCESS"
+//       ? "Success"
+//       : txn.transaction_status || "Pending";
+
 //   return {
-//     reportTitle: `Fees & Finance Audit Report (${label})`,
-//     reportSubtitle: "Consolidated income, dues and late-fee position",
-//     reportCode: `AUD/F&F/${period.toUpperCase()}/${TODAY.getFullYear()}`,
-//     period: TODAY.toLocaleDateString("en-IN", { month: "long", year: "numeric" }),
-//     institute: "Mothers Public School — Edureon ERP",
-//     summary: [
-//       { label: "Today's Collection", value: kpis.todayColl, tone: "in" },
-//       { label: "Outstanding Dues", value: kpis.totalDue, tone: "out" },
-//       { label: "Late Fees Accrued", value: kpis.lateCollected, tone: "net" },
-//     ],
-//     ledger,
+//     id:
+//       txn.receipt_no ||
+//       txn.transaction_uuid ||
+//       `TXN-${Math.random().toString(36).slice(2)}`,
+
+//     transaction_uuid: txn.transaction_uuid,
+
+//     student_uuid: txn.student_uuid,
+
+//     student_name:
+//       txn.student_name ||
+//       student?.full_name ||
+//       "—",
+
+//     class_name:
+//       student?.class_name ||
+//       txn.class_name ||
+//       "—",
+
+//     section:
+//       student?.section_name ||
+//       txn.section_name ||
+//       "—",
+
+//     amount: Number(
+//       txn.total_amount ??
+//       txn.paid_amount ??
+//       txn.amount ??
+//       0
+//     ),
+
+//     discount: Number(
+//       txn.discount_amount ?? 0
+//     ),
+
+//     lateFee: Number(
+//       txn.late_fee ?? 0
+//     ),
+
+//     mode:
+//       txn.payment_mode ||
+//       "—",
+
+//     status,
+
+//     date: txn.created_at
+//       ? new Date(txn.created_at)
+//           .toISOString()
+//           .split("T")[0]
+//       : "",
+
+//     created_at: txn.created_at,
+
+//     receipt_no: txn.receipt_no,
+
+//     payment_type:
+//       txn.payment_type ||
+//       "PAYMENT",
 //   };
 // }
 
-// function openAuditReport({ period, kpis, ledger }) {
-//   const win = window.open("", "_blank");
-//   if (!win) {
-//     toast.error("Please allow pop-ups to view the report");
-//     return;
-//   }
-//   const label = period === "week" ? "Weekly" : period === "month" ? "Monthly" : "Annual";
-//   const today = TODAY.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
 
-//   win.document.write(`
-//     <html>
-//       <head>
-//         <title>Fees & Finance Audit Report — ${label}</title>
-//         <style>
-//           body { font-family: -apple-system, Segoe UI, sans-serif; padding: 40px; color: #1a1a1a; }
-//           h1 { font-size: 20px; margin-bottom: 4px; }
-//           h2 { font-size: 14px; margin-top: 28px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
-//           .muted { color: #666; font-size: 13px; }
-//           table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-//           td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
-//           .right { text-align: right; }
-//         </style>
-//       </head>
-//       <body>
-//         <h1>Fees & Finance Audit Report (${label})</h1>
-//         <p class="muted">Generated ${today} · Academic Year ${ACADEMIC_YEAR}</p>
-//         <h2>Summary</h2>
-//         <table>
-//           <tr><td>Today's Collection</td><td class="right">${inr(kpis.todayColl)}</td></tr>
-//           <tr><td>Pending Amount</td><td class="right">${inr(kpis.totalDue)}</td></tr>
-//           <tr><td>Overdue Students</td><td class="right">${kpis.overdueStudents}</td></tr>
-//           <tr><td>Future Collection</td><td class="right">${inr(kpis.future)}</td></tr>
-//           <tr><td>Total Discounts</td><td class="right">${inr(kpis.discountTotal)}</td></tr>
-//           <tr><td>Late Fee Collected</td><td class="right">${inr(kpis.lateCollected)}</td></tr>
-//         </table>
-//         <h2>Recent Ledger Entries</h2>
-//         <table>
-//           <tr><th>Student</th><th>Class</th><th class="right">Amount</th><th>Status</th><th>Date</th></tr>
-//           ${ledger
-//             .slice(0, 20)
-//             .map(
-//               (e) =>
-//                 `<tr><td>${e.student_name || ""}</td><td>${e.class_name || ""}</td><td class="right">${inr(
-//                   e.amount
-//                 )}</td><td>${e.status}</td><td>${e.date}</td></tr>`
-//             )
-//             .join("")}
-//         </table>
-//       </body>
-//     </html>
-//   `);
-//   win.document.close();
+// function isDateInsideRange(dateValue, from, to) {
+//   if (!dateValue) return false;
+
+//   const date = new Date(dateValue);
+
+//   if (Number.isNaN(date.getTime())) {
+//     return false;
+//   }
+
+//   const normalized = new Date(
+//     date.getFullYear(),
+//     date.getMonth(),
+//     date.getDate()
+//   );
+
+//   return normalized >= from && normalized <= to;
+// }
+
+
+// async function openAuditReport({
+//   period,
+//   kpis,
+//   students = [],
+// }) {
+//   try {
+//     const { from, to } =
+//       getAuditDateRange(period);
+
+//     /*
+//      * IMPORTANT:
+//      * Fetch actual payments here instead of using the page-level
+//      * `ledger`, because the page ledger can be empty.
+//      */
+//     const response = await getPayments({
+//       limit: 500,
+//     });
+
+//     const payments =
+//       response?.data?.data ??
+//       response?.data ??
+//       [];
+
+//     const auditPayments = payments
+//       .map((txn) =>
+//         normalizePaymentForAudit(
+//           txn,
+//           students
+//         )
+//       )
+//       .filter((txn) =>
+//         isDateInsideRange(
+//           txn.created_at,
+//           from,
+//           to
+//         )
+//       );
+
+//     /*
+//      * Collection must only count successful payments.
+//      */
+//     const successfulPayments =
+//       auditPayments.filter(
+//         (txn) =>
+//           txn.status === "Success"
+//       );
+
+//     const periodCollection =
+//       successfulPayments.reduce(
+//         (sum, txn) =>
+//           sum + Number(txn.amount || 0),
+//         0
+//       );
+
+//     const periodDiscount =
+//       successfulPayments.reduce(
+//         (sum, txn) =>
+//           sum + Number(txn.discount || 0),
+//         0
+//       );
+
+//     const periodLateFee =
+//       successfulPayments.reduce(
+//         (sum, txn) =>
+//           sum + Number(txn.lateFee || 0),
+//         0
+//       );
+
+//     /*
+//      * Keep current outstanding/future position from the dashboard.
+//      * These are current financial-position values rather than
+//      * historical payment-period values.
+//      */
+//     const auditKpis = {
+//       collection: periodCollection,
+
+//       totalDue:
+//         Number(kpis?.totalDue || 0),
+
+//       overdueStudents:
+//         Number(kpis?.overdueStudents || 0),
+
+//       future:
+//         Number(kpis?.future || 0),
+
+//       discountTotal:
+//         periodDiscount,
+
+//       lateCollected:
+//         periodLateFee,
+//     };
+
+//     const label =
+//       period === "week"
+//         ? "Weekly"
+//         : period === "month"
+//         ? "Monthly"
+//         : "Annual";
+
+//     const fromLabel =
+//       from.toLocaleDateString(
+//         "en-IN",
+//         {
+//           day: "2-digit",
+//           month: "short",
+//           year: "numeric",
+//         }
+//       );
+
+//     const toLabel =
+//       to.toLocaleDateString(
+//         "en-IN",
+//         {
+//           day: "2-digit",
+//           month: "short",
+//           year: "numeric",
+//         }
+//       );
+
+//     const today =
+//       new Date().toLocaleDateString(
+//         "en-IN",
+//         {
+//           day: "2-digit",
+//           month: "long",
+//           year: "numeric",
+//         }
+//       );
+
+//     const win =
+//       window.open("", "_blank");
+
+//     if (!win) {
+//       toast.error(
+//         "Please allow pop-ups to view the report"
+//       );
+//       return;
+//     }
+
+//     /*
+//      * Sort newest first.
+//      */
+//     const sortedLedger =
+//       [...auditPayments].sort(
+//         (a, b) =>
+//           new Date(b.created_at || 0) -
+//           new Date(a.created_at || 0)
+//       );
+
+//     win.document.write(`
+//       <html>
+//         <head>
+//           <title>
+//             Fees & Finance Audit Report — ${label}
+//           </title>
+
+//           <style>
+//             * {
+//               box-sizing: border-box;
+//             }
+
+//             body {
+//               font-family:
+//                 -apple-system,
+//                 BlinkMacSystemFont,
+//                 "Segoe UI",
+//                 sans-serif;
+
+//               padding: 40px;
+//               color: #111827;
+//               background: #ffffff;
+//             }
+
+//             h1 {
+//               font-size: 22px;
+//               margin: 0 0 6px;
+//               color: #0f172a;
+//             }
+
+//             h2 {
+//               font-size: 15px;
+//               margin-top: 30px;
+//               margin-bottom: 0;
+//               border-bottom: 1px solid #d1d5db;
+//               padding-bottom: 8px;
+//               color: #111827;
+//             }
+
+//             .muted {
+//               color: #64748b;
+//               font-size: 13px;
+//             }
+
+//             .period {
+//               margin-top: 8px;
+//               padding: 8px 12px;
+//               background: #f8fafc;
+//               border: 1px solid #e2e8f0;
+//               border-radius: 6px;
+//               font-size: 13px;
+//             }
+
+//             table {
+//               width: 100%;
+//               border-collapse: collapse;
+//               margin-top: 10px;
+//               font-size: 13px;
+//             }
+
+//             td,
+//             th {
+//               text-align: left;
+//               padding: 9px 10px;
+//               border-bottom: 1px solid #e5e7eb;
+//             }
+
+//             th {
+//               font-weight: 600;
+//               color: #111827;
+//               background: #f8fafc;
+//             }
+
+//             .right {
+//               text-align: right;
+//             }
+
+//             .center {
+//               text-align: center;
+//             }
+
+//             .success {
+//               color: #15803d;
+//               font-weight: 600;
+//             }
+
+//             .pending {
+//               color: #b45309;
+//               font-weight: 600;
+//             }
+
+//             .empty {
+//               text-align: center;
+//               padding: 30px;
+//               color: #64748b;
+//             }
+
+//             .footer {
+//               margin-top: 35px;
+//               font-size: 11px;
+//               color: #94a3b8;
+//             }
+
+//             @media print {
+//               body {
+//                 padding: 20px;
+//               }
+//             }
+//           </style>
+//         </head>
+
+//         <body>
+
+//           <h1>
+//             Fees & Finance Audit Report (${label})
+//           </h1>
+
+//           <div class="muted">
+//             Generated ${today}
+//             · Academic Year ${ACADEMIC_YEAR}
+//           </div>
+
+//           <div class="period">
+//             <strong>Audit Period:</strong>
+//             ${fromLabel} — ${toLabel}
+//           </div>
+
+//           <h2>Summary</h2>
+
+//           <table>
+//             <tr>
+//               <td>${label} Collection</td>
+//               <td class="right">
+//                 ${inr(auditKpis.collection)}
+//               </td>
+//             </tr>
+
+//             <tr>
+//               <td>Pending Amount</td>
+//               <td class="right">
+//                 ${inr(auditKpis.totalDue)}
+//               </td>
+//             </tr>
+
+//             <tr>
+//               <td>Overdue Students</td>
+//               <td class="right">
+//                 ${auditKpis.overdueStudents}
+//               </td>
+//             </tr>
+
+//             <tr>
+//               <td>Future Collection</td>
+//               <td class="right">
+//                 ${inr(auditKpis.future)}
+//               </td>
+//             </tr>
+
+//             <tr>
+//               <td>Total Discounts</td>
+//               <td class="right">
+//                 ${inr(auditKpis.discountTotal)}
+//               </td>
+//             </tr>
+
+//             <tr>
+//               <td>Late Fee Collected</td>
+//               <td class="right">
+//                 ${inr(auditKpis.lateCollected)}
+//               </td>
+//             </tr>
+//           </table>
+
+//           <h2>
+//             ${label} Ledger Entries
+//           </h2>
+
+//           <table>
+//             <thead>
+//               <tr>
+//                 <th>Student</th>
+//                 <th>Class</th>
+//                 <th>Section</th>
+//                 <th class="right">Amount</th>
+//                 <th>Mode</th>
+//                 <th>Status</th>
+//                 <th>Date</th>
+//               </tr>
+//             </thead>
+
+//             <tbody>
+
+//               ${
+//                 sortedLedger.length
+//                   ? sortedLedger
+//                       .slice(0, 100)
+//                       .map(
+//                         (e) => `
+//                           <tr>
+//                             <td>
+//                               ${e.student_name || "—"}
+//                             </td>
+
+//                             <td>
+//                               ${e.class_name || "—"}
+//                             </td>
+
+//                             <td>
+//                               ${e.section || "—"}
+//                             </td>
+
+//                             <td class="right">
+//                               ${inr(e.amount)}
+//                             </td>
+
+//                             <td>
+//                               ${e.mode || "—"}
+//                             </td>
+
+//                             <td class="${
+//                               e.status === "Success"
+//                                 ? "success"
+//                                 : "pending"
+//                             }">
+//                               ${e.status || "—"}
+//                             </td>
+
+//                             <td>
+//                               ${e.date || "—"}
+//                             </td>
+//                           </tr>
+//                         `
+//                       )
+//                       .join("")
+//                   : `
+//                     <tr>
+//                       <td
+//                         colspan="7"
+//                         class="empty"
+//                       >
+//                         No ledger entries found
+//                         for this audit period.
+//                       </td>
+//                     </tr>
+//                   `
+//               }
+
+//             </tbody>
+//           </table>
+
+//           <div class="footer">
+//             Fees & Finance · Edureon ERP
+//           </div>
+
+//         </body>
+//       </html>
+//     `);
+
+//     win.document.close();
+
+//   } catch (err) {
+//     console.error(
+//       "Audit report error:",
+//       err
+//     );
+
+//     toast.error(
+//       getErrorMessage(
+//         err,
+//         "Failed to generate audit report"
+//       )
+//     );
+//   }
 // }
 
 // /* ================================================================== */
@@ -2388,6 +3192,33 @@
 //     toast.success(`${rows.length} invoices generated`);
 //   };
 
+//   const handleExportLedger = async () => {
+//     try {
+//       const response = await getPayments({ limit: 500 });
+//       const data = response?.data?.data ?? response?.data ?? [];
+
+//       const rows = data.map((txn) => ({
+//         receipt_no: txn.receipt_no || txn.transaction_uuid,
+//         student_name: txn.student_name || "—",
+//         class_name:
+//           students.find((s) => s.student_uuid === txn.student_uuid)?.class_name || "—",
+//         amount: Number(txn.total_amount ?? txn.paid_amount ?? 0),
+//         mode: txn.payment_mode || "—",
+//         status:
+//           String(txn.transaction_status || "").toUpperCase() === "SUCCESS"
+//             ? "Success"
+//             : txn.transaction_status || "Pending",
+//         date: txn.created_at ? new Date(txn.created_at).toLocaleDateString("en-GB") : "",
+//       }));
+
+//       exportRowsCsv(rows, "fee-ledger.csv");
+//     } catch (err) {
+//       console.error(err);
+//       toast.error(getErrorMessage(err, "Failed to export ledger"));
+//     }
+//   };
+
+  
 //   return (
 //     <PageContainer>
 //       {/* Header actions mirror the .tsx page exactly: Export → Audit dropdown
@@ -2398,7 +3229,7 @@
 //         description="Structures, discounts, assignment, collection, dues, ledger and reports — all in one workspace."
 //         actions={
 //           <>
-//             <Button variant="outline" size="sm" onClick={() => exportRowsCsv(ledger, "fee-ledger.csv")}>
+//             <Button variant="outline" size="sm" onClick={handleExportLedger}>
 //               <Download className="h-4 w-4" />
 //               Export
 //             </Button>
@@ -2412,9 +3243,41 @@
 //                 </Button>
 //               </DropdownMenuTrigger>
 //               <DropdownMenuContent align="end">
-//                 <DropdownMenuItem onClick={() => openAuditReport({ period: "week", kpis, ledger })}>Weekly</DropdownMenuItem>
-//                 <DropdownMenuItem onClick={() => openAuditReport({ period: "month", kpis, ledger })}>Monthly</DropdownMenuItem>
-//                 <DropdownMenuItem onClick={() => openAuditReport({ period: "year", kpis, ledger })}>Annual</DropdownMenuItem>
+//               <DropdownMenuItem
+//                 onClick={() =>
+//                   openAuditReport({
+//                     period: "week",
+//                     kpis,
+//                     students,
+//                   })
+//                 }
+//               >
+//                 Weekly
+//               </DropdownMenuItem>
+
+//               <DropdownMenuItem
+//                 onClick={() =>
+//                   openAuditReport({
+//                     period: "month",
+//                     kpis,
+//                     students,
+//                   })
+//                 }
+//               >
+//                 Monthly
+//               </DropdownMenuItem>
+
+//               <DropdownMenuItem
+//                 onClick={() =>
+//                   openAuditReport({
+//                     period: "year",
+//                     kpis,
+//                     students,
+//                   })
+//                 }
+//               >
+//                 Annual
+//               </DropdownMenuItem>
 //               </DropdownMenuContent>
 //             </DropdownMenu>
 
@@ -2664,8 +3527,32 @@
 //   onRemoveComponent,
 // }) {
 //   const [sub, setSub] = useState("library");
+//   const [previewOpen, setPreviewOpen] = useState(false);
+//   const [previewStructure, setPreviewStructure] = useState(null);
+
+//   const openStructurePreview = () => {
+//     if (!structures?.length) {
+//       toast.info("No fee structure available to preview");
+//       return;
+//     }
+
+//     setPreviewStructure(structures[0]);
+//     setPreviewOpen(true);
+//   };
+
+//   const selectPreviewStructure = (uuid) => {
+//     const selected = structures.find(
+//       (s) => s.fee_structure_uuid === uuid
+//     );
+
+//     if (selected) {
+//       setPreviewStructure(selected);
+//     }
+//   };
+
 //   return (
-//     <Tabs value={sub} onValueChange={setSub} className="space-y-3">
+//     <>
+//       <Tabs value={sub} onValueChange={setSub} className="space-y-3">
 //       <TabsList>
 //         <TabsTrigger value="library">Components Library</TabsTrigger>
 //         <TabsTrigger value="builder">Structure Builder</TabsTrigger>
@@ -2691,7 +3578,15 @@
 //               <CardDescription>Combine components into class-level structures.</CardDescription>
 //             </div>
 //             <div className="flex gap-2">
-//               <Button size="sm" variant="outline" onClick={() => toast.success("Preview generated")}><Eye className="h-4 w-4" />Preview</Button>
+//               <Button
+//                 size="sm"
+//                 variant="outline"
+//                 onClick={openStructurePreview}
+//                 disabled={!structures?.length}
+//               >
+//                 <Eye className="h-4 w-4" />
+//                 Preview
+//               </Button>
 //               <Button size="sm" className="gradient-primary border-0" onClick={onNewStructure}><Plus className="h-4 w-4" />New Structure</Button>
 //             </div>
 //           </CardHeader>
@@ -2771,7 +3666,274 @@
 //           </CardContent>
 //         </Card>
 //       </TabsContent>
-//     </Tabs>
+//       </Tabs>
+
+//       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+//       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+//         <DialogHeader>
+//           <DialogTitle className="flex items-center gap-2">
+//             <Eye className="h-5 w-5" />
+//             Fee Structure Preview
+//           </DialogTitle>
+//           <DialogDescription>
+//             Review the complete fee structure before assigning it to students.
+//           </DialogDescription>
+//         </DialogHeader>
+
+//         {previewStructure ? (
+//           <div className="space-y-5">
+//             {structures.length > 1 && (
+//               <div className="space-y-2">
+//                 <Label className="text-xs text-muted-foreground">
+//                   Select Structure
+//                 </Label>
+//                 <Select
+//                   value={previewStructure.fee_structure_uuid}
+//                   onValueChange={selectPreviewStructure}
+//                 >
+//                   <SelectTrigger>
+//                     <SelectValue placeholder="Select a fee structure" />
+//                   </SelectTrigger>
+//                   <SelectContent>
+//                     {structures.map((s) => (
+//                       <SelectItem
+//                         key={s.fee_structure_uuid}
+//                         value={s.fee_structure_uuid}
+//                       >
+//                         {s.structure_name} — {s.class_name || "All Classes"}
+//                       </SelectItem>
+//                     ))}
+//                   </SelectContent>
+//                 </Select>
+//               </div>
+//             )}
+
+//             <div className="rounded-xl border bg-muted/20 p-4">
+//               <div className="flex items-start justify-between gap-4">
+//                 <div>
+//                   <h3 className="text-lg font-semibold">
+//                     {previewStructure.structure_name || "Fee Structure"}
+//                   </h3>
+//                   <p className="text-sm text-muted-foreground mt-1">
+//                     {previewStructure.class_name || "All Classes"}
+//                     {previewStructure.course_board
+//                       ? ` · ${previewStructure.course_board}`
+//                       : ""}
+//                   </p>
+//                 </div>
+
+//                 <Badge
+//                   variant={
+//                     previewStructure.is_active ? "default" : "secondary"
+//                   }
+//                 >
+//                   {previewStructure.is_active ? "Active" : "Inactive"}
+//                 </Badge>
+//               </div>
+//             </div>
+
+//             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+//               <div className="rounded-lg border p-3">
+//                 <div className="text-xs text-muted-foreground">
+//                   Monthly
+//                 </div>
+//                 <div className="text-lg font-semibold mt-1">
+//                   {inr(monthlyTotal(previewStructure))}
+//                 </div>
+//               </div>
+
+//               <div className="rounded-lg border p-3">
+//                 <div className="text-xs text-muted-foreground">
+//                   Annual
+//                 </div>
+//                 <div className="text-lg font-semibold mt-1">
+//                   {inr(annualTotal(previewStructure))}
+//                 </div>
+//               </div>
+
+//               <div className="rounded-lg border p-3">
+//                 <div className="text-xs text-muted-foreground">
+//                   Due Day
+//                 </div>
+//                 <div className="text-lg font-semibold mt-1">
+//                   {previewStructure.due_day_of_month ?? "—"}
+//                 </div>
+//               </div>
+
+//               <div className="rounded-lg border p-3">
+//                 <div className="text-xs text-muted-foreground">
+//                   Collection
+//                 </div>
+//                 <div className="text-lg font-semibold mt-1">
+//                   {String(
+//                     previewStructure.collection_type || "MONTHLY"
+//                   ).replace(/_/g, " ")}
+//                 </div>
+//               </div>
+//             </div>
+
+//             <div className="rounded-lg border overflow-hidden">
+//               <div className="px-4 py-3 border-b bg-muted/20">
+//                 <h4 className="font-semibold">Fee Components</h4>
+//               </div>
+
+//               <Table>
+//                 <TableHeader>
+//                   <TableRow>
+//                     <TableHead>Component</TableHead>
+//                     <TableHead>Frequency</TableHead>
+//                     <TableHead className="text-right">
+//                       Amount
+//                     </TableHead>
+//                     <TableHead className="text-right">
+//                       Annual
+//                     </TableHead>
+//                   </TableRow>
+//                 </TableHeader>
+
+//                 <TableBody>
+//                   {(previewStructure.components || []).map((component, index) => {
+//                     const amount = Number(component.amount || 0);
+//                     const frequency = String(
+//                       component.frequency ||
+//                         component.collection_type ||
+//                         "MONTHLY"
+//                     ).toUpperCase();
+
+//                     let annualAmount = amount;
+
+//                     if (frequency === "MONTHLY") {
+//                       annualAmount = amount * 12;
+//                     } else if (frequency === "QUARTERLY") {
+//                       annualAmount = amount * 4;
+//                     } else if (frequency === "HALF_YEARLY") {
+//                       annualAmount = amount * 2;
+//                     }
+
+//                     return (
+//                       <TableRow
+//                         key={
+//                           component.component_uuid ||
+//                           `${component.component_name || "component"}-${index}`
+//                         }
+//                       >
+//                         <TableCell className="font-medium">
+//                           {component.component_name ||
+//                             component.name ||
+//                             "Fee Component"}
+//                         </TableCell>
+//                         <TableCell className="text-xs">
+//                           {frequency.replace(/_/g, " ")}
+//                         </TableCell>
+//                         <TableCell className="text-right">
+//                           {inr(amount)}
+//                         </TableCell>
+//                         <TableCell className="text-right font-medium">
+//                           {inr(annualAmount)}
+//                         </TableCell>
+//                       </TableRow>
+//                     );
+//                   })}
+
+//                   {(!previewStructure.components ||
+//                     previewStructure.components.length === 0) && (
+//                     <TableRow>
+//                       <TableCell
+//                         colSpan={4}
+//                         className="text-center text-sm text-muted-foreground py-8"
+//                       >
+//                         No fee components configured.
+//                       </TableCell>
+//                     </TableRow>
+//                   )}
+//                 </TableBody>
+
+//                 <TableFooter>
+//                   <TableRow>
+//                     <TableCell colSpan={2} className="font-semibold">
+//                       Total
+//                     </TableCell>
+//                     <TableCell className="text-right font-semibold">
+//                       {inr(monthlyTotal(previewStructure))}
+//                     </TableCell>
+//                     <TableCell className="text-right font-semibold">
+//                       {inr(annualTotal(previewStructure))}
+//                     </TableCell>
+//                   </TableRow>
+//                 </TableFooter>
+//               </Table>
+//             </div>
+
+//             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+//               <div className="rounded-lg border p-4">
+//                 <div className="text-xs text-muted-foreground">
+//                   Late Fee
+//                 </div>
+//                 <div className="font-medium mt-1">
+//                   {inr(previewStructure.late_fee_per_month)}
+//                   {" / month"}
+//                 </div>
+//               </div>
+
+//               <div className="rounded-lg border p-4">
+//                 <div className="text-xs text-muted-foreground">
+//                   Grace Period
+//                 </div>
+//                 <div className="font-medium mt-1">
+//                   {previewStructure.grace_days_after_due ?? 0} days
+//                 </div>
+//               </div>
+
+//               <div className="rounded-lg border p-4">
+//                 <div className="text-xs text-muted-foreground">
+//                   Academic Year
+//                 </div>
+//                 <div className="font-medium mt-1">
+//                   {previewStructure.academic_year || ACADEMIC_YEAR}
+//                 </div>
+//               </div>
+
+//               <div className="rounded-lg border p-4">
+//                 <div className="text-xs text-muted-foreground">
+//                   Students Assigned
+//                 </div>
+//                 <div className="font-medium mt-1">
+//                   {students.filter(
+//                     (st) =>
+//                       st.class_name === previewStructure.class_name
+//                   ).length}
+//                 </div>
+//               </div>
+//             </div>
+
+//             {previewStructure.description && (
+//               <div className="rounded-lg border p-4">
+//                 <div className="text-xs text-muted-foreground">
+//                   Description
+//                 </div>
+//                 <div className="text-sm mt-1 whitespace-pre-wrap">
+//                   {previewStructure.description}
+//                 </div>
+//               </div>
+//             )}
+//           </div>
+//         ) : (
+//           <div className="py-10 text-center text-sm text-muted-foreground">
+//             No fee structure selected.
+//           </div>
+//         )}
+
+//         <DialogFooter>
+//           <Button
+//             variant="outline"
+//             onClick={() => setPreviewOpen(false)}
+//           >
+//             Close
+//           </Button>
+//         </DialogFooter>
+//       </DialogContent>
+//       </Dialog>
+//     </>
 //   );
 // }
 
@@ -3198,10 +4360,27 @@
 //               <div className="flex items-center justify-between gap-2 flex-wrap">
 //                 <Label className="text-sm font-semibold">Components</Label>
 //                 <div className="flex gap-2">
-//                   <Select onValueChange={(v) => addComponentRow(v)}>
-//                     <SelectTrigger className="h-8 w-52 text-xs"><SelectValue placeholder="Quick add from library..." /></SelectTrigger>
-//                     <SelectContent>{components.filter((c) => c.status === "Active").map((c) => <SelectItem key={c.component_uuid} value={c.component_uuid}>{c.name} · {inr(c.default_amount)}</SelectItem>)}</SelectContent>
-//                   </Select>
+// <Select
+//   value=""
+//   onValueChange={(v) => addComponentRow(v)}
+// >
+//   <SelectTrigger className="h-8 w-52 text-xs">
+//     <span>Add Component...</span>
+//   </SelectTrigger>
+
+//   <SelectContent>
+//     {components
+//       .filter((c) => c.status === "Active")
+//       .map((c) => (
+//         <SelectItem
+//           key={c.component_uuid}
+//           value={c.component_uuid}
+//         >
+//           {c.name} · {inr(c.default_amount)}
+//         </SelectItem>
+//       ))}
+//   </SelectContent>
+// </Select>
 //                 </div>
 //               </div>
 //               {adhoc.length === 0 && <div className="text-xs text-muted-foreground py-3 text-center">No components added. Pick from the library above.</div>}
@@ -3952,15 +5131,559 @@
 
 
 
+// // function DuesPanel({ students, onGenInvoices }) {
+// //   const [cls, setCls] = useState("");
+// //   const [sec, setSec] = useState("");
+// //   const [q, setQ] = useState("");
+// //   const [only, setOnly] = useState("overdue");
+// //   const [picked, setPicked] = useState(new Set());
+// //   const [selectedMonth, setSelectedMonth] = useState(() => {
+// //     const now = new Date();
+// //     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+// //   });
+
+// //   const [dueRows, setDueRows] = useState([]);
+// //   const [loadingDues, setLoadingDues] = useState(false);
+// //   const [allMonths, setAllMonths] = useState([]);
+// //   const [componentData, setComponentData] = useState([]);
+// //   const [summary, setSummary] = useState(null);
+// // const [detailsOpen, setDetailsOpen] = useState(false);
+// // const [selectedDueStudent, setSelectedDueStudent] = useState(null);
+// // const fetchDues = () => {
+// //   setLoadingDues(true);
+// //   getStudentDues({ academic_year: ACADEMIC_YEAR })
+// //     .then((res) => {
+// //       const body = res?.data ?? res ?? {};
+// //       const componentRows = Array.isArray(body.data) ? body.data : [];
+
+// //       setComponentData(componentRows);
+// //       setSummary(body.summary || null);
+
+// //       // normalize fee_month to "YYYY-MM" so it matches selectedMonth
+// //       const months = [
+// //         ...new Set(
+// //           componentRows
+// //             .map((item) => (item.fee_month ? item.fee_month.slice(0, 7) : null))
+// //             .filter(Boolean)
+// //         ),
+// //       ].sort();
+// //       setAllMonths(months);
+
+
+// //         const byStudent = new Map();
+// //         componentRows.forEach((row) => {
+// //           const key = row.student_uuid;
+// //           if (!byStudent.has(key)) {
+// //             byStudent.set(key, {
+// //               student_uuid: row.student_uuid,
+// //               student_no: row.student_no,
+// //               student_name: row.student_name,
+// //               class_uuid: row.class_uuid,
+// //               class_name: row.class_name,
+// //               structure_name: row.structure_name,
+// //               academic_year: row.academic_year,
+// //               components: [],
+// //               // Year totals - take from first row of this student
+// //               year_total_amount: Number(row.year_total_amount || 0),
+// //               year_total_paid: Number(row.year_total_paid || 0),
+// //               year_total_discount: Number(row.year_total_discount || 0),
+// //               year_total_late_fee: Number(row.year_total_late_fee || 0),
+// //               year_balance_amount: Number(row.year_balance_amount || 0),
+// //               // Month totals (sum of all components for this student)
+// //               total_amount: 0,
+// //               total_discount: 0,
+// //               total_late_fee: 0,
+// //               total_paid: 0,
+// //               total_balance: 0,
+// //               status: "PAID",
+// //             });
+// //           }
+// //           const student = byStudent.get(key);
+// //           student.components.push({
+// //             due_uuid: row.due_uuid,
+// //             fee_month: row.fee_month,
+// //             component_name: row.component_name,
+// //             amount: Number(row.amount || 0),
+// //             discount: Number(row.discount || 0),
+// //             late_fee: Number(row.late_fee || 0),
+// //             paid_amount: Number(row.paid_amount || 0),
+// //             balance_amount: Number(row.balance_amount || 0),
+// //             status: row.status || "PENDING",
+// //           });
+          
+// //           // Update month totals (sum of all components)
+// //           student.total_amount += Number(row.amount || 0);
+// //           student.total_discount += Number(row.discount || 0);
+// //           student.total_late_fee += Number(row.late_fee || 0);
+// //           student.total_paid += Number(row.paid_amount || 0);
+// //           student.total_balance += Number(row.balance_amount || 0);
+          
+// //           // Determine overall status based on year balance
+// //           const yearBalance = Number(row.year_balance_amount || 0);
+// //           if (yearBalance > 0) {
+// //             student.status = student.year_total_paid > 0 ? "PARTIAL" : "PENDING";
+// //           } else {
+// //             student.status = "PAID";
+// //           }
+// //         });
+        
+// //         setDueRows(Array.from(byStudent.values()));
+// //       })
+// //       .catch((err) => {
+// //         console.error(err);
+// //         toast.error(getErrorMessage(err, "Failed to load dues"));
+// //         setDueRows([]);
+// //         setComponentData([]);
+// //         setAllMonths([]);
+// //         setSummary(null);
+// //       })
+// //       .finally(() => { setLoadingDues(false); });
+// //   };
+
+// //   useEffect(fetchDues, []);
+
+// // // 2) filtering components for the selected month
+// // const filteredComponents = useMemo(() => {
+// //   if (!selectedMonth || selectedMonth === "all") return componentData;
+// //   return componentData.filter(
+// //     (item) => item.fee_month && item.fee_month.slice(0, 7) === selectedMonth
+// //   );
+// // }, [componentData, selectedMonth]);
+
+// //   // Group filtered components by student with month data
+// //   const filteredByMonth = useMemo(() => {
+// //     const byStudent = new Map();
+// //     filteredComponents.forEach((row) => {
+// //       const key = row.student_uuid;
+// //       if (!byStudent.has(key)) {
+// //         byStudent.set(key, {
+// //           student_uuid: row.student_uuid,
+// //           student_no: row.student_no,
+// //           student_name: row.student_name,
+// //           class_uuid: row.class_uuid,
+// //           class_name: row.class_name,
+// //           structure_name: row.structure_name,
+// //           fee_month: row.fee_month,
+// //           components: [],
+// //           // Month totals
+// //           month_amount: 0,
+// //           month_discount: 0,
+// //           month_late_fee: 0,
+// //           month_paid: 0,
+// //           month_balance: 0,
+// //           // Year totals from the row
+// //           year_total_amount: Number(row.year_total_amount || 0),
+// //           year_total_paid: Number(row.year_total_paid || 0),
+// //           year_total_discount: Number(row.year_total_discount || 0),
+// //           year_total_late_fee: Number(row.year_total_late_fee || 0),
+// //           year_balance_amount: Number(row.year_balance_amount || 0),
+// //           status: row.status || "PENDING",
+// //         });
+// //       }
+// //       const student = byStudent.get(key);
+// //       student.components.push({
+// //         due_uuid: row.due_uuid,
+// //         component_name: row.component_name,
+// //         amount: Number(row.amount || 0),
+// //         discount: Number(row.discount || 0),
+// //         late_fee: Number(row.late_fee || 0),
+// //         paid_amount: Number(row.paid_amount || 0),
+// //         balance_amount: Number(row.balance_amount || 0),
+// //         status: row.status || "PENDING",
+// //       });
+      
+// //       // Sum month totals
+// //       student.month_amount += Number(row.amount || 0);
+// //       student.month_discount += Number(row.discount || 0);
+// //       student.month_late_fee += Number(row.late_fee || 0);
+// //       student.month_paid += Number(row.paid_amount || 0);
+// //       student.month_balance += Number(row.balance_amount || 0);
+// //     });
+// //     return Array.from(byStudent.values());
+// //   }, [filteredComponents]);
+
+// //   const classes = useMemo(() => Array.from(new Set(students.map((s) => s.class_name).filter(Boolean))).sort(), [students]);
+// //   const sectionsFor = useMemo(
+// //     () => Array.from(new Set(students.filter((s) => !cls || s.class_name === cls).map((s) => s.section_name).filter(Boolean))).sort(),
+// //     [students, cls]
+// //   );
+
+// //   const rows = useMemo(() => {
+// //     // Use filteredByMonth for month view, or dueRows for all
+// //     const sourceData = selectedMonth && selectedMonth !== "all" ? filteredByMonth : dueRows;
+    
+// //     return students
+// //       .filter((s) => (!cls || s.class_name === cls) && (!sec || s.section_name === sec) && (!q || s.full_name?.toLowerCase().includes(q.toLowerCase()) || s.student_no?.toLowerCase().includes(q.toLowerCase())))
+// //       .map((s) => {
+// //         const due = sourceData.find(r => r.student_uuid === s.student_uuid);
+// //         if (!due) return null;
+// //         return {
+// //           ...due,
+// //           student_uuid: s.student_uuid,
+// //           student_name: s.full_name,
+// //           student_no: s.student_no,
+// //           class_name: s.class_name,
+// //           section_name: s.section_name,
+// //         };
+// //       })
+// //       .filter(Boolean)
+// //       .filter((r) => {
+// //         if (only === "all") return true;
+// //         const balance = (selectedMonth && selectedMonth !== "all") ? r.month_balance : r.year_balance_amount;
+// //         return balance > 0;
+// //       })
+// //       .sort((a, b) => {
+// //         const balA = (selectedMonth && selectedMonth !== "all") ? a.month_balance : a.year_balance_amount;
+// //         const balB = (selectedMonth && selectedMonth !== "all") ? b.month_balance : b.year_balance_amount;
+// //         return balB - balA;
+// //       });
+// //   }, [students, cls, sec, q, only, dueRows, filteredByMonth, selectedMonth]);
+
+// //   const formatMonthLabel = (monthStr) => {
+// //     if (!monthStr || monthStr === "all") return "All Months";
+// //     try {
+// //       const date = new Date(monthStr);
+// //       return date.toLocaleString("default", { month: "short", year: "numeric" });
+// //     } catch {
+// //       return monthStr;
+// //     }
+// //   };
+
+// //   const getStatusColor = (status) => {
+// //     switch (status?.toUpperCase()) {
+// //       case "PAID": return "bg-emerald-100 text-emerald-800 border-emerald-200";
+// //       case "PARTIAL": return "bg-amber-100 text-amber-800 border-amber-200";
+// //       case "PENDING": return "bg-red-100 text-red-800 border-red-200";
+// //       default: return "bg-gray-100 text-gray-800 border-gray-200";
+// //     }
+// //   };
+
+// //   const isMonthSelected = selectedMonth && selectedMonth !== "all";
+
+// //   const remind = () => {
+// //     if (picked.size === 0) { toast.error("Pick students first"); return; }
+// //     toast.success(`Reminder queued for ${picked.size} students`);
+// //     setPicked(new Set());
+// //   };
+  
+// //   const genInvoice = () => {
+// //     if (picked.size === 0) { toast.error("Pick students first"); return; }
+// //     onGenInvoices(
+// //       rows
+// //         .filter((r) => picked.has(r.student_uuid))
+// //         .map((r) => ({
+// //           student_uuid: r.student_uuid,
+// //           student_name: r.student_name,
+// //           class_name: r.class_name,
+// //           totalDue: isMonthSelected ? r.month_balance : r.year_balance_amount,
+// //           totalLate: isMonthSelected ? r.month_late_fee : r.year_total_late_fee,
+// //         }))
+// //     );
+// //     setPicked(new Set());
+// //   };
+
+// //   return (
+// //     <Card className="border-border/60">
+// //       <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
+// //         <div>
+// //           <CardTitle className="font-display text-base">Student Dues</CardTitle>
+// //           <CardDescription>
+// //             Live balances from the fee-dues API with component-wise breakdown.
+// //             {summary && (
+// //               <span className="ml-2 text-xs text-muted-foreground">
+// //                 · {summary.count} entries · Total Due: {inr(summary.total_due)}
+// //               </span>
+// //             )}
+// //           </CardDescription>
+// //         </div>
+// //         <div className="flex gap-2 flex-wrap">
+// //           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+// //             <SelectTrigger className="w-40 h-9 border-primary/30 bg-primary/5">
+// //               <CalendarRange className="h-4 w-4 mr-1 text-primary" />
+// //               <SelectValue>
+// //                 {selectedMonth ? formatMonthLabel(selectedMonth) : "All Months"}
+// //               </SelectValue>
+// //             </SelectTrigger>
+// //             <SelectContent>
+// //               <SelectItem value="all">All Months</SelectItem>
+// //               {allMonths.map((month) => (
+// //                 <SelectItem key={month} value={month}>
+// //                   {formatMonthLabel(month)}
+// //                 </SelectItem>
+// //               ))}
+// //             </SelectContent>
+// //           </Select>
+
+// //           <Select value={only} onValueChange={setOnly}>
+// //             <SelectTrigger className="w-32 h-9">
+// //               <SelectValue />
+// //             </SelectTrigger>
+// //             <SelectContent>
+// //               <SelectItem value="overdue">Overdue only</SelectItem>
+// //               <SelectItem value="all">All students</SelectItem>
+// //             </SelectContent>
+// //           </Select>
+          
+// //           <Select value={cls} onValueChange={setCls}>
+// //             <SelectTrigger className="w-24 h-9">
+// //               <SelectValue placeholder="Class" />
+// //             </SelectTrigger>
+// //             <SelectContent>
+// //               {classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+// //             </SelectContent>
+// //           </Select>
+          
+// //           <Select value={sec} onValueChange={setSec}>
+// //             <SelectTrigger className="w-24 h-9">
+// //               <SelectValue placeholder="Section" />
+// //             </SelectTrigger>
+// //             <SelectContent>
+// //               {sectionsFor.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+// //             </SelectContent>
+// //           </Select>
+          
+// //           <Input 
+// //             value={q} 
+// //             onChange={(e) => setQ(e.target.value)} 
+// //             placeholder="Search..." 
+// //             className="h-9 w-40" 
+// //           />
+          
+// //           <Button size="sm" variant="outline" onClick={fetchDues}>
+// //             <RefreshCcw className="h-4 w-4" />Refresh
+// //           </Button>
+          
+// //           <Button
+// //             size="sm"
+// //             variant="outline"
+// //             onClick={() =>
+// //               exportRowsCsv(
+// //                 rows.map((r) => ({
+// //                   student_name: r.student_name,
+// //                   student_no: r.student_no,
+// //                   class_name: r.class_name,
+// //                   fee_month: isMonthSelected ? formatMonthLabel(selectedMonth) : "All Months",
+// //                   // Month totals (only when month selected)
+// //                   month_amount: isMonthSelected ? r.month_amount : "—",
+// //                   month_discount: isMonthSelected ? r.month_discount : "—",
+// //                   month_late_fee: isMonthSelected ? r.month_late_fee : "—",
+// //                   month_paid: isMonthSelected ? r.month_paid : "—",
+// //                   month_balance: isMonthSelected ? r.month_balance : "—",
+// //                   // Year totals (always shown)
+// //                   year_total_amount: r.year_total_amount || "—",
+// //                   year_total_paid: r.year_total_paid || "—",
+// //                   year_total_discount: r.year_total_discount || "—",
+// //                   year_total_late_fee: r.year_total_late_fee || "—",
+// //                   year_balance_amount: r.year_balance_amount || "—",
+// //                   status: r.status,
+// //                   components: r.components?.map(c => `${c.component_name}(${c.status})`).join("; ") || "",
+// //                 })),
+// //                 `dues-${isMonthSelected ? selectedMonth : "all"}.csv`
+// //               )
+// //             }
+// //           >
+// //             <Download className="h-4 w-4" />Export
+// //           </Button>
+// //         </div>
+// //       </CardHeader>
+      
+// //       {picked.size > 0 && (
+// //         <div className="mx-4 mb-3 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+// //           <Badge>{picked.size} selected</Badge>
+// //           <Button size="sm" variant="outline" onClick={remind}>
+// //             <Send className="h-4 w-4" />Send Reminders
+// //           </Button>
+// //           <Button size="sm" variant="outline" onClick={genInvoice}>
+// //             <FileText className="h-4 w-4" />Generate Invoices
+// //           </Button>
+// //           <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())} className="ml-auto">
+// //             <X className="h-4 w-4" />Clear
+// //           </Button>
+// //         </div>
+// //       )}
+      
+// //       <CardContent className="p-0 overflow-x-auto">
+// //         <Table>
+// //           <TableHeader>
+// //             <TableRow className="bg-muted/30">
+// //               <TableHead className="w-8"></TableHead>
+// //               <TableHead>Student</TableHead>
+// //               <TableHead>Class</TableHead>
+// //               <TableHead>Structure</TableHead>
+// //               <TableHead>Components & Status</TableHead>
+              
+// //               {/* Month columns - shown when a month is selected */}
+// //               {isMonthSelected && (
+// //                 <>
+// //                   <TableHead className="text-right text-xs">Month Amount</TableHead>
+// //                   <TableHead className="text-right text-xs">Month Discount</TableHead>
+// //                   <TableHead className="text-right text-xs">Month Late Fee</TableHead>
+// //                   <TableHead className="text-right text-xs">Month Paid</TableHead>
+// //                   <TableHead className="text-right text-xs">Month Balance</TableHead>
+// //                 </>
+// //               )}
+              
+// //               {/* Year columns - always shown */}
+// //               <TableHead className="text-right text-xs">Year Amount</TableHead>
+// //               <TableHead className="text-right text-xs">Year Paid</TableHead>
+// //               <TableHead className="text-right text-xs">Year Discount</TableHead>
+// //               <TableHead className="text-right text-xs">Year Late Fee</TableHead>
+// //               <TableHead className="text-right text-xs font-bold text-primary">Year Balance</TableHead>
+// //               <TableHead>Status</TableHead>
+// //               <TableHead className="w-10"></TableHead>
+// //             </TableRow>
+// //           </TableHeader>
+// //           <TableBody>
+// //             {loadingDues && (
+// //               <TableRow>
+// //                 <TableCell colSpan={16} className="text-center text-sm text-muted-foreground py-8">
+// //                   <div className="flex items-center justify-center gap-2">
+// //                     <RefreshCcw className="h-4 w-4 animate-spin" />
+// //                     Loading dues...
+// //                   </div>
+// //                 </TableCell>
+// //               </TableRow>
+// //             )}
+            
+// //             {!loadingDues && rows.length === 0 && (
+// //               <TableRow>
+// //                 <TableCell colSpan={16} className="text-center text-sm text-muted-foreground py-8">
+// //                   {isMonthSelected 
+// //                     ? `No dues found for ${formatMonthLabel(selectedMonth)}` 
+// //                     : "No dues found"}
+// //                 </TableCell>
+// //               </TableRow>
+// //             )}
+            
+// //             {!loadingDues && rows.slice(0, 300).map((r) => (
+// //               <TableRow key={r.student_uuid} className="hover:bg-muted/30">
+// //                 <TableCell>
+// //                   <Checkbox
+// //                     checked={picked.has(r.student_uuid)}
+// //                     onCheckedChange={(v) => { 
+// //                       const n = new Set(picked); 
+// //                       if (v) n.add(r.student_uuid); 
+// //                       else n.delete(r.student_uuid); 
+// //                       setPicked(n); 
+// //                     }}
+// //                   />
+// //                 </TableCell>
+// //                 <TableCell>
+// //                   <div className="text-sm font-medium">{r.student_name}</div>
+// //                   <div className="text-xs text-muted-foreground">{r.student_no}</div>
+// //                 </TableCell>
+// //                 <TableCell className="text-xs">{r.class_name ?? "—"}</TableCell>
+// //                 <TableCell className="text-xs">{r.structure_name ?? "—"}</TableCell>
+// //                 <TableCell>
+// //                   <div className="flex flex-col gap-0.5">
+// //                     {r.components?.map((comp, idx) => (
+// //                       <div key={idx} className="flex items-center gap-1.5 text-xs">
+// //                         <span className="truncate max-w-[80px]">{comp.component_name}</span>
+// //                         <Badge 
+// //                           className={`text-[9px] px-1.5 py-0 h-4 ${getStatusColor(comp.status)}`}
+// //                         >
+// //                           {comp.status}
+// //                         </Badge>
+// //                         <span className="text-muted-foreground text-[10px]">
+// //                           {inr(comp.balance_amount)}
+// //                         </span>
+// //                       </div>
+// //                     ))}
+// //                   </div>
+// //                 </TableCell>
+                
+// //                 {/* Month columns */}
+// //                 {isMonthSelected && (
+// //                   <>
+// //                     <TableCell className="text-right font-semibold text-xs">
+// //                       {inr(r.month_amount || 0)}
+// //                     </TableCell>
+// //                     <TableCell className="text-right text-orange-500 text-xs">
+// //                       {inr(r.month_discount || 0)}
+// //                     </TableCell>
+// //                     <TableCell className="text-right text-amber-600 text-xs">
+// //                       {inr(r.month_late_fee || 0)}
+// //                     </TableCell>
+// //                     <TableCell className="text-right text-emerald-600 text-xs">
+// //                       {inr(r.month_paid || 0)}
+// //                     </TableCell>
+// //                     <TableCell className="text-right font-semibold text-xs">
+// //                       {inr(r.month_balance || 0)}
+// //                     </TableCell>
+// //                   </>
+// //                 )}
+                
+// //                 {/* Year columns - from the API response */}
+// //                 <TableCell className="text-right text-xs">
+// //                   {inr(r.year_total_amount || 0)}
+// //                 </TableCell>
+// //                 <TableCell className="text-right text-emerald-600 text-xs">
+// //                   {inr(r.year_total_paid || 0)}
+// //                 </TableCell>
+// //                 <TableCell className="text-right text-orange-500 text-xs">
+// //                   {inr(r.year_total_discount || 0)}
+// //                 </TableCell>
+// //                 <TableCell className="text-right text-amber-600 text-xs">
+// //                   {inr(r.year_total_late_fee || 0)}
+// //                 </TableCell>
+// //                 <TableCell className="text-right font-bold text-primary text-xs">
+// //                   {inr(r.year_balance_amount || 0)}
+// //                 </TableCell>
+// //                 <TableCell>
+// //                   <Badge className={`${getStatusColor(r.status)} text-xs font-medium`}>
+// //                     {r.status || "PENDING"}
+// //                   </Badge>
+// //                 </TableCell>
+// //                 <TableCell>
+// //                   <DropdownMenu>
+// //                     <DropdownMenuTrigger asChild>
+// //                       <Button variant="ghost" size="icon" className="h-7 w-7">
+// //                         <MoreHorizontal className="h-4 w-4" />
+// //                       </Button>
+// //                     </DropdownMenuTrigger>
+// //                     <DropdownMenuContent align="end">
+// //                       <DropdownMenuItem onClick={() => {
+// //                         const compDetails = r.components?.map(c => 
+// //                           `${c.component_name}: ${c.status} (${inr(c.balance_amount)})`
+// //                         ).join("\n");
+// //                         toast.info(`Components:\n${compDetails}\n\nYear Balance: ${inr(r.year_balance_amount)}`);
+// //                       }}>
+// //                         <Eye className="h-4 w-4 mr-2" />View Details
+// //                       </DropdownMenuItem>
+// //                       <DropdownMenuItem onClick={() => toast.info("Generate invoice")}>
+// //                         <FileText className="h-4 w-4 mr-2" />Invoice
+// //                       </DropdownMenuItem>
+// //                       <DropdownMenuSeparator />
+// //                       <DropdownMenuItem 
+// //                         className="text-destructive"
+// //                         onClick={() => toast.info("Send reminder")}
+// //                       >
+// //                         <Send className="h-4 w-4 mr-2" />Send Reminder
+// //                       </DropdownMenuItem>
+// //                     </DropdownMenuContent>
+// //                   </DropdownMenu>
+// //                 </TableCell>
+// //               </TableRow>
+// //             ))}
+// //           </TableBody>
+// //         </Table>
+// //       </CardContent>
+// //     </Card>
+// //   );
+// // }
+
 // function DuesPanel({ students, onGenInvoices }) {
 //   const [cls, setCls] = useState("");
 //   const [sec, setSec] = useState("");
 //   const [q, setQ] = useState("");
 //   const [only, setOnly] = useState("overdue");
 //   const [picked, setPicked] = useState(new Set());
+
 //   const [selectedMonth, setSelectedMonth] = useState(() => {
 //     const now = new Date();
-//     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+//     return `${now.getFullYear()}-${String(
+//       now.getMonth() + 1
+//     ).padStart(2, "0")}`;
 //   });
 
 //   const [dueRows, setDueRows] = useState([]);
@@ -3969,526 +5692,1775 @@
 //   const [componentData, setComponentData] = useState([]);
 //   const [summary, setSummary] = useState(null);
 
-// const fetchDues = () => {
-//   setLoadingDues(true);
-//   getStudentDues({ academic_year: ACADEMIC_YEAR })
-//     .then((res) => {
-//       const body = res?.data ?? res ?? {};
-//       const componentRows = Array.isArray(body.data) ? body.data : [];
+//   // View Details dialog
+//   const [detailsOpen, setDetailsOpen] = useState(false);
+//   const [selectedDueStudent, setSelectedDueStudent] = useState(null);
 
-//       setComponentData(componentRows);
-//       setSummary(body.summary || null);
+//   // ============================================================
+//   // FETCH DUES
+//   // ============================================================
+//   const fetchDues = () => {
+//     setLoadingDues(true);
 
-//       // normalize fee_month to "YYYY-MM" so it matches selectedMonth
-//       const months = [
-//         ...new Set(
-//           componentRows
-//             .map((item) => (item.fee_month ? item.fee_month.slice(0, 7) : null))
-//             .filter(Boolean)
-//         ),
-//       ].sort();
-//       setAllMonths(months);
+//     getStudentDues({
+//       academic_year: ACADEMIC_YEAR,
+//     })
+//       .then((res) => {
+//         const body = res?.data ?? res ?? {};
 
+//         const componentRows = Array.isArray(body.data)
+//           ? body.data
+//           : [];
 
+//         setComponentData(componentRows);
+//         setSummary(body.summary || null);
+
+//         // Normalize fee_month to YYYY-MM
+//         const months = [
+//           ...new Set(
+//             componentRows
+//               .map((item) =>
+//                 item.fee_month
+//                   ? item.fee_month.slice(0, 7)
+//                   : null
+//               )
+//               .filter(Boolean)
+//           ),
+//         ].sort();
+
+//         setAllMonths(months);
+
+//         // ======================================================
+//         // GROUP BY STUDENT
+//         // ======================================================
 //         const byStudent = new Map();
+
 //         componentRows.forEach((row) => {
 //           const key = row.student_uuid;
+
 //           if (!byStudent.has(key)) {
 //             byStudent.set(key, {
 //               student_uuid: row.student_uuid,
 //               student_no: row.student_no,
 //               student_name: row.student_name,
+
 //               class_uuid: row.class_uuid,
 //               class_name: row.class_name,
+//               section_name: row.section_name,
+
 //               structure_name: row.structure_name,
 //               academic_year: row.academic_year,
+
 //               components: [],
-//               // Year totals - take from first row of this student
-//               year_total_amount: Number(row.year_total_amount || 0),
-//               year_total_paid: Number(row.year_total_paid || 0),
-//               year_total_discount: Number(row.year_total_discount || 0),
-//               year_total_late_fee: Number(row.year_total_late_fee || 0),
-//               year_balance_amount: Number(row.year_balance_amount || 0),
-//               // Month totals (sum of all components for this student)
+
+//               // Year totals
+//               year_total_amount: Number(
+//                 row.year_total_amount || 0
+//               ),
+
+//               year_total_paid: Number(
+//                 row.year_total_paid || 0
+//               ),
+
+//               year_total_discount: Number(
+//                 row.year_total_discount || 0
+//               ),
+
+//               year_total_late_fee: Number(
+//                 row.year_total_late_fee || 0
+//               ),
+
+//               year_balance_amount: Number(
+//                 row.year_balance_amount || 0
+//               ),
+
+//               // Month totals
 //               total_amount: 0,
 //               total_discount: 0,
 //               total_late_fee: 0,
 //               total_paid: 0,
 //               total_balance: 0,
+
 //               status: "PAID",
 //             });
 //           }
+
 //           const student = byStudent.get(key);
+
+//           // Component
 //           student.components.push({
 //             due_uuid: row.due_uuid,
 //             fee_month: row.fee_month,
+
 //             component_name: row.component_name,
+
 //             amount: Number(row.amount || 0),
 //             discount: Number(row.discount || 0),
 //             late_fee: Number(row.late_fee || 0),
 //             paid_amount: Number(row.paid_amount || 0),
 //             balance_amount: Number(row.balance_amount || 0),
+
 //             status: row.status || "PENDING",
 //           });
-          
-//           // Update month totals (sum of all components)
-//           student.total_amount += Number(row.amount || 0);
-//           student.total_discount += Number(row.discount || 0);
-//           student.total_late_fee += Number(row.late_fee || 0);
-//           student.total_paid += Number(row.paid_amount || 0);
-//           student.total_balance += Number(row.balance_amount || 0);
-          
-//           // Determine overall status based on year balance
-//           const yearBalance = Number(row.year_balance_amount || 0);
+
+//           // Month totals
+//           student.total_amount += Number(
+//             row.amount || 0
+//           );
+
+//           student.total_discount += Number(
+//             row.discount || 0
+//           );
+
+//           student.total_late_fee += Number(
+//             row.late_fee || 0
+//           );
+
+//           student.total_paid += Number(
+//             row.paid_amount || 0
+//           );
+
+//           student.total_balance += Number(
+//             row.balance_amount || 0
+//           );
+
+//           // Determine status from year balance
+//           const yearBalance = Number(
+//             row.year_balance_amount || 0
+//           );
+
 //           if (yearBalance > 0) {
-//             student.status = student.year_total_paid > 0 ? "PARTIAL" : "PENDING";
+//             student.status =
+//               student.year_total_paid > 0
+//                 ? "PARTIAL"
+//                 : "PENDING";
 //           } else {
 //             student.status = "PAID";
 //           }
 //         });
-        
-//         setDueRows(Array.from(byStudent.values()));
+
+//         setDueRows(
+//           Array.from(byStudent.values())
+//         );
 //       })
 //       .catch((err) => {
 //         console.error(err);
-//         toast.error(getErrorMessage(err, "Failed to load dues"));
+
+//         toast.error(
+//           getErrorMessage(
+//             err,
+//             "Failed to load dues"
+//           )
+//         );
+
 //         setDueRows([]);
 //         setComponentData([]);
 //         setAllMonths([]);
 //         setSummary(null);
 //       })
-//       .finally(() => { setLoadingDues(false); });
+//       .finally(() => {
+//         setLoadingDues(false);
+//       });
 //   };
 
 //   useEffect(fetchDues, []);
 
-// // 2) filtering components for the selected month
-// const filteredComponents = useMemo(() => {
-//   if (!selectedMonth || selectedMonth === "all") return componentData;
-//   return componentData.filter(
-//     (item) => item.fee_month && item.fee_month.slice(0, 7) === selectedMonth
-//   );
-// }, [componentData, selectedMonth]);
+//   // ============================================================
+//   // FILTER COMPONENTS BY MONTH
+//   // ============================================================
+//   const filteredComponents = useMemo(() => {
+//     if (
+//       !selectedMonth ||
+//       selectedMonth === "all"
+//     ) {
+//       return componentData;
+//     }
 
-//   // Group filtered components by student with month data
+//     return componentData.filter(
+//       (item) =>
+//         item.fee_month &&
+//         item.fee_month.slice(0, 7) === selectedMonth
+//     );
+//   }, [componentData, selectedMonth]);
+
+//   // ============================================================
+//   // GROUP FILTERED MONTH DATA BY STUDENT
+//   // ============================================================
 //   const filteredByMonth = useMemo(() => {
 //     const byStudent = new Map();
+
 //     filteredComponents.forEach((row) => {
 //       const key = row.student_uuid;
+
 //       if (!byStudent.has(key)) {
 //         byStudent.set(key, {
 //           student_uuid: row.student_uuid,
 //           student_no: row.student_no,
 //           student_name: row.student_name,
+
 //           class_uuid: row.class_uuid,
 //           class_name: row.class_name,
+
 //           structure_name: row.structure_name,
+
 //           fee_month: row.fee_month,
+
 //           components: [],
+
 //           // Month totals
 //           month_amount: 0,
 //           month_discount: 0,
 //           month_late_fee: 0,
 //           month_paid: 0,
 //           month_balance: 0,
-//           // Year totals from the row
-//           year_total_amount: Number(row.year_total_amount || 0),
-//           year_total_paid: Number(row.year_total_paid || 0),
-//           year_total_discount: Number(row.year_total_discount || 0),
-//           year_total_late_fee: Number(row.year_total_late_fee || 0),
-//           year_balance_amount: Number(row.year_balance_amount || 0),
+
+//           // Year totals
+//           year_total_amount: Number(
+//             row.year_total_amount || 0
+//           ),
+
+//           year_total_paid: Number(
+//             row.year_total_paid || 0
+//           ),
+
+//           year_total_discount: Number(
+//             row.year_total_discount || 0
+//           ),
+
+//           year_total_late_fee: Number(
+//             row.year_total_late_fee || 0
+//           ),
+
+//           year_balance_amount: Number(
+//             row.year_balance_amount || 0
+//           ),
+
 //           status: row.status || "PENDING",
 //         });
 //       }
+
 //       const student = byStudent.get(key);
+
 //       student.components.push({
 //         due_uuid: row.due_uuid,
-//         component_name: row.component_name,
+
+//         component_name:
+//           row.component_name,
+
 //         amount: Number(row.amount || 0),
 //         discount: Number(row.discount || 0),
 //         late_fee: Number(row.late_fee || 0),
-//         paid_amount: Number(row.paid_amount || 0),
-//         balance_amount: Number(row.balance_amount || 0),
+//         paid_amount: Number(
+//           row.paid_amount || 0
+//         ),
+//         balance_amount: Number(
+//           row.balance_amount || 0
+//         ),
+
 //         status: row.status || "PENDING",
 //       });
-      
-//       // Sum month totals
-//       student.month_amount += Number(row.amount || 0);
-//       student.month_discount += Number(row.discount || 0);
-//       student.month_late_fee += Number(row.late_fee || 0);
-//       student.month_paid += Number(row.paid_amount || 0);
-//       student.month_balance += Number(row.balance_amount || 0);
+
+//       // Month totals
+//       student.month_amount += Number(
+//         row.amount || 0
+//       );
+
+//       student.month_discount += Number(
+//         row.discount || 0
+//       );
+
+//       student.month_late_fee += Number(
+//         row.late_fee || 0
+//       );
+
+//       student.month_paid += Number(
+//         row.paid_amount || 0
+//       );
+
+//       student.month_balance += Number(
+//         row.balance_amount || 0
+//       );
 //     });
+
 //     return Array.from(byStudent.values());
 //   }, [filteredComponents]);
 
-//   const classes = useMemo(() => Array.from(new Set(students.map((s) => s.class_name).filter(Boolean))).sort(), [students]);
+//   // ============================================================
+//   // CLASSES
+//   // ============================================================
+//   const classes = useMemo(
+//     () =>
+//       Array.from(
+//         new Set(
+//           students
+//             .map((s) => s.class_name)
+//             .filter(Boolean)
+//         )
+//       ).sort(),
+//     [students]
+//   );
+
+//   // ============================================================
+//   // SECTIONS
+//   // ============================================================
 //   const sectionsFor = useMemo(
-//     () => Array.from(new Set(students.filter((s) => !cls || s.class_name === cls).map((s) => s.section_name).filter(Boolean))).sort(),
+//     () =>
+//       Array.from(
+//         new Set(
+//           students
+//             .filter(
+//               (s) =>
+//                 !cls ||
+//                 s.class_name === cls
+//             )
+//             .map((s) => s.section_name)
+//             .filter(Boolean)
+//         )
+//       ).sort(),
 //     [students, cls]
 //   );
 
+//   // ============================================================
+//   // FINAL TABLE ROWS
+//   // ============================================================
 //   const rows = useMemo(() => {
-//     // Use filteredByMonth for month view, or dueRows for all
-//     const sourceData = selectedMonth && selectedMonth !== "all" ? filteredByMonth : dueRows;
-    
+//     const sourceData =
+//       selectedMonth &&
+//       selectedMonth !== "all"
+//         ? filteredByMonth
+//         : dueRows;
+
 //     return students
-//       .filter((s) => (!cls || s.class_name === cls) && (!sec || s.section_name === sec) && (!q || s.full_name?.toLowerCase().includes(q.toLowerCase()) || s.student_no?.toLowerCase().includes(q.toLowerCase())))
+//       .filter(
+//         (s) =>
+//           (!cls ||
+//             s.class_name === cls) &&
+//           (!sec ||
+//             s.section_name === sec) &&
+//           (!q ||
+//             s.full_name
+//               ?.toLowerCase()
+//               .includes(q.toLowerCase()) ||
+//             s.student_no
+//               ?.toLowerCase()
+//               .includes(q.toLowerCase()))
+//       )
 //       .map((s) => {
-//         const due = sourceData.find(r => r.student_uuid === s.student_uuid);
+//         const due = sourceData.find(
+//           (r) =>
+//             r.student_uuid ===
+//             s.student_uuid
+//         );
+
 //         if (!due) return null;
+
 //         return {
 //           ...due,
-//           student_uuid: s.student_uuid,
-//           student_name: s.full_name,
-//           student_no: s.student_no,
-//           class_name: s.class_name,
-//           section_name: s.section_name,
+
+//           student_uuid:
+//             s.student_uuid,
+
+//           student_name:
+//             s.full_name,
+
+//           student_no:
+//             s.student_no,
+
+//           class_name:
+//             s.class_name,
+
+//           section_name:
+//             s.section_name,
 //         };
 //       })
 //       .filter(Boolean)
 //       .filter((r) => {
-//         if (only === "all") return true;
-//         const balance = (selectedMonth && selectedMonth !== "all") ? r.month_balance : r.year_balance_amount;
+//         if (only === "all") {
+//           return true;
+//         }
+
+//         const balance =
+//           selectedMonth &&
+//           selectedMonth !== "all"
+//             ? r.month_balance
+//             : r.year_balance_amount;
+
 //         return balance > 0;
 //       })
 //       .sort((a, b) => {
-//         const balA = (selectedMonth && selectedMonth !== "all") ? a.month_balance : a.year_balance_amount;
-//         const balB = (selectedMonth && selectedMonth !== "all") ? b.month_balance : b.year_balance_amount;
+//         const balA =
+//           selectedMonth &&
+//           selectedMonth !== "all"
+//             ? a.month_balance
+//             : a.year_balance_amount;
+
+//         const balB =
+//           selectedMonth &&
+//           selectedMonth !== "all"
+//             ? b.month_balance
+//             : b.year_balance_amount;
+
 //         return balB - balA;
 //       });
-//   }, [students, cls, sec, q, only, dueRows, filteredByMonth, selectedMonth]);
+//   }, [
+//     students,
+//     cls,
+//     sec,
+//     q,
+//     only,
+//     dueRows,
+//     filteredByMonth,
+//     selectedMonth,
+//   ]);
 
+//   // ============================================================
+//   // MONTH LABEL
+//   // ============================================================
 //   const formatMonthLabel = (monthStr) => {
-//     if (!monthStr || monthStr === "all") return "All Months";
+//     if (
+//       !monthStr ||
+//       monthStr === "all"
+//     ) {
+//       return "All Months";
+//     }
+
 //     try {
 //       const date = new Date(monthStr);
-//       return date.toLocaleString("default", { month: "short", year: "numeric" });
+
+//       return date.toLocaleString(
+//         "default",
+//         {
+//           month: "short",
+//           year: "numeric",
+//         }
+//       );
 //     } catch {
 //       return monthStr;
 //     }
 //   };
 
+//   // ============================================================
+//   // STATUS COLOR
+//   // ============================================================
 //   const getStatusColor = (status) => {
-//     switch (status?.toUpperCase()) {
-//       case "PAID": return "bg-emerald-100 text-emerald-800 border-emerald-200";
-//       case "PARTIAL": return "bg-amber-100 text-amber-800 border-amber-200";
-//       case "PENDING": return "bg-red-100 text-red-800 border-red-200";
-//       default: return "bg-gray-100 text-gray-800 border-gray-200";
+//     switch (
+//       status?.toUpperCase()
+//     ) {
+//       case "PAID":
+//         return "bg-emerald-100 text-emerald-800 border-emerald-200";
+
+//       case "PARTIAL":
+//         return "bg-amber-100 text-amber-800 border-amber-200";
+
+//       case "PENDING":
+//       case "OVERDUE":
+//         return "bg-red-100 text-red-800 border-red-200";
+
+//       default:
+//         return "bg-gray-100 text-gray-800 border-gray-200";
 //     }
 //   };
 
-//   const isMonthSelected = selectedMonth && selectedMonth !== "all";
+//   const isMonthSelected =
+//     selectedMonth &&
+//     selectedMonth !== "all";
 
+//   // ============================================================
+//   // REMINDER
+//   // ============================================================
 //   const remind = () => {
-//     if (picked.size === 0) { toast.error("Pick students first"); return; }
-//     toast.success(`Reminder queued for ${picked.size} students`);
+//     if (picked.size === 0) {
+//       toast.error(
+//         "Pick students first"
+//       );
+//       return;
+//     }
+
+//     toast.success(
+//       `Reminder queued for ${picked.size} students`
+//     );
+
 //     setPicked(new Set());
 //   };
-  
+
+//   // ============================================================
+//   // GENERATE INVOICE
+//   // ============================================================
 //   const genInvoice = () => {
-//     if (picked.size === 0) { toast.error("Pick students first"); return; }
+//     if (picked.size === 0) {
+//       toast.error(
+//         "Pick students first"
+//       );
+//       return;
+//     }
+
 //     onGenInvoices(
 //       rows
-//         .filter((r) => picked.has(r.student_uuid))
+//         .filter((r) =>
+//           picked.has(
+//             r.student_uuid
+//           )
+//         )
 //         .map((r) => ({
-//           student_uuid: r.student_uuid,
-//           student_name: r.student_name,
-//           class_name: r.class_name,
-//           totalDue: isMonthSelected ? r.month_balance : r.year_balance_amount,
-//           totalLate: isMonthSelected ? r.month_late_fee : r.year_total_late_fee,
+//           student_uuid:
+//             r.student_uuid,
+
+//           student_name:
+//             r.student_name,
+
+//           class_name:
+//             r.class_name,
+
+//           totalDue:
+//             isMonthSelected
+//               ? r.month_balance
+//               : r.year_balance_amount,
+
+//           totalLate:
+//             isMonthSelected
+//               ? r.month_late_fee
+//               : r.year_total_late_fee,
 //         }))
 //     );
+
 //     setPicked(new Set());
 //   };
 
-//   return (
-//     <Card className="border-border/60">
-//       <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
-//         <div>
-//           <CardTitle className="font-display text-base">Student Dues</CardTitle>
-//           <CardDescription>
-//             Live balances from the fee-dues API with component-wise breakdown.
-//             {summary && (
-//               <span className="ml-2 text-xs text-muted-foreground">
-//                 · {summary.count} entries · Total Due: {inr(summary.total_due)}
-//               </span>
-//             )}
-//           </CardDescription>
-//         </div>
-//         <div className="flex gap-2 flex-wrap">
-//           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-//             <SelectTrigger className="w-40 h-9 border-primary/30 bg-primary/5">
-//               <CalendarRange className="h-4 w-4 mr-1 text-primary" />
-//               <SelectValue>
-//                 {selectedMonth ? formatMonthLabel(selectedMonth) : "All Months"}
-//               </SelectValue>
-//             </SelectTrigger>
-//             <SelectContent>
-//               <SelectItem value="all">All Months</SelectItem>
-//               {allMonths.map((month) => (
-//                 <SelectItem key={month} value={month}>
-//                   {formatMonthLabel(month)}
-//                 </SelectItem>
-//               ))}
-//             </SelectContent>
-//           </Select>
+//   // ============================================================
+//   // VIEW DETAILS
+//   // ============================================================
+//   const openDueDetails = (student) => {
+//     setSelectedDueStudent(student);
+//     setDetailsOpen(true);
+//   };
 
-//           <Select value={only} onValueChange={setOnly}>
-//             <SelectTrigger className="w-32 h-9">
-//               <SelectValue />
-//             </SelectTrigger>
-//             <SelectContent>
-//               <SelectItem value="overdue">Overdue only</SelectItem>
-//               <SelectItem value="all">All students</SelectItem>
-//             </SelectContent>
-//           </Select>
-          
-//           <Select value={cls} onValueChange={setCls}>
-//             <SelectTrigger className="w-24 h-9">
-//               <SelectValue placeholder="Class" />
-//             </SelectTrigger>
-//             <SelectContent>
-//               {classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-//             </SelectContent>
-//           </Select>
-          
-//           <Select value={sec} onValueChange={setSec}>
-//             <SelectTrigger className="w-24 h-9">
-//               <SelectValue placeholder="Section" />
-//             </SelectTrigger>
-//             <SelectContent>
-//               {sectionsFor.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-//             </SelectContent>
-//           </Select>
-          
-//           <Input 
-//             value={q} 
-//             onChange={(e) => setQ(e.target.value)} 
-//             placeholder="Search..." 
-//             className="h-9 w-40" 
-//           />
-          
-//           <Button size="sm" variant="outline" onClick={fetchDues}>
-//             <RefreshCcw className="h-4 w-4" />Refresh
-//           </Button>
-          
-//           <Button
-//             size="sm"
-//             variant="outline"
-//             onClick={() =>
-//               exportRowsCsv(
-//                 rows.map((r) => ({
-//                   student_name: r.student_name,
-//                   student_no: r.student_no,
-//                   class_name: r.class_name,
-//                   fee_month: isMonthSelected ? formatMonthLabel(selectedMonth) : "All Months",
-//                   // Month totals (only when month selected)
-//                   month_amount: isMonthSelected ? r.month_amount : "—",
-//                   month_discount: isMonthSelected ? r.month_discount : "—",
-//                   month_late_fee: isMonthSelected ? r.month_late_fee : "—",
-//                   month_paid: isMonthSelected ? r.month_paid : "—",
-//                   month_balance: isMonthSelected ? r.month_balance : "—",
-//                   // Year totals (always shown)
-//                   year_total_amount: r.year_total_amount || "—",
-//                   year_total_paid: r.year_total_paid || "—",
-//                   year_total_discount: r.year_total_discount || "—",
-//                   year_total_late_fee: r.year_total_late_fee || "—",
-//                   year_balance_amount: r.year_balance_amount || "—",
-//                   status: r.status,
-//                   components: r.components?.map(c => `${c.component_name}(${c.status})`).join("; ") || "",
-//                 })),
-//                 `dues-${isMonthSelected ? selectedMonth : "all"}.csv`
-//               )
-//             }
-//           >
-//             <Download className="h-4 w-4" />Export
-//           </Button>
-//         </div>
-//       </CardHeader>
-      
-//       {picked.size > 0 && (
-//         <div className="mx-4 mb-3 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-//           <Badge>{picked.size} selected</Badge>
-//           <Button size="sm" variant="outline" onClick={remind}>
-//             <Send className="h-4 w-4" />Send Reminders
-//           </Button>
-//           <Button size="sm" variant="outline" onClick={genInvoice}>
-//             <FileText className="h-4 w-4" />Generate Invoices
-//           </Button>
-//           <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())} className="ml-auto">
-//             <X className="h-4 w-4" />Clear
-//           </Button>
-//         </div>
-//       )}
-      
-//       <CardContent className="p-0 overflow-x-auto">
-//         <Table>
-//           <TableHeader>
-//             <TableRow className="bg-muted/30">
-//               <TableHead className="w-8"></TableHead>
-//               <TableHead>Student</TableHead>
-//               <TableHead>Class</TableHead>
-//               <TableHead>Structure</TableHead>
-//               <TableHead>Components & Status</TableHead>
-              
-//               {/* Month columns - shown when a month is selected */}
-//               {isMonthSelected && (
-//                 <>
-//                   <TableHead className="text-right text-xs">Month Amount</TableHead>
-//                   <TableHead className="text-right text-xs">Month Discount</TableHead>
-//                   <TableHead className="text-right text-xs">Month Late Fee</TableHead>
-//                   <TableHead className="text-right text-xs">Month Paid</TableHead>
-//                   <TableHead className="text-right text-xs">Month Balance</TableHead>
-//                 </>
+//   // ============================================================
+//   // CLOSE DETAILS
+//   // ============================================================
+//   const closeDueDetails = () => {
+//     setDetailsOpen(false);
+//     setSelectedDueStudent(null);
+//   };
+
+//   // ============================================================
+//   // RETURN
+//   // ============================================================
+//   return (
+//     <>
+//       <Card className="border-border/60">
+
+//         {/* ======================================================
+//             HEADER
+//         ====================================================== */}
+//         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
+
+//           <div>
+//             <CardTitle className="font-display text-base">
+//               Student Dues
+//             </CardTitle>
+
+//             <CardDescription>
+//               Live balances from the fee-dues API
+//               with component-wise breakdown.
+
+//               {summary && (
+//                 <span className="ml-2 text-xs text-muted-foreground">
+//                   · {summary.count} entries · Total Due:{" "}
+//                   {inr(summary.total_due)}
+//                 </span>
 //               )}
-              
-//               {/* Year columns - always shown */}
-//               <TableHead className="text-right text-xs">Year Amount</TableHead>
-//               <TableHead className="text-right text-xs">Year Paid</TableHead>
-//               <TableHead className="text-right text-xs">Year Discount</TableHead>
-//               <TableHead className="text-right text-xs">Year Late Fee</TableHead>
-//               <TableHead className="text-right text-xs font-bold text-primary">Year Balance</TableHead>
-//               <TableHead>Status</TableHead>
-//               <TableHead className="w-10"></TableHead>
-//             </TableRow>
-//           </TableHeader>
-//           <TableBody>
-//             {loadingDues && (
-//               <TableRow>
-//                 <TableCell colSpan={16} className="text-center text-sm text-muted-foreground py-8">
-//                   <div className="flex items-center justify-center gap-2">
-//                     <RefreshCcw className="h-4 w-4 animate-spin" />
-//                     Loading dues...
-//                   </div>
-//                 </TableCell>
-//               </TableRow>
-//             )}
-            
-//             {!loadingDues && rows.length === 0 && (
-//               <TableRow>
-//                 <TableCell colSpan={16} className="text-center text-sm text-muted-foreground py-8">
-//                   {isMonthSelected 
-//                     ? `No dues found for ${formatMonthLabel(selectedMonth)}` 
-//                     : "No dues found"}
-//                 </TableCell>
-//               </TableRow>
-//             )}
-            
-//             {!loadingDues && rows.slice(0, 300).map((r) => (
-//               <TableRow key={r.student_uuid} className="hover:bg-muted/30">
-//                 <TableCell>
-//                   <Checkbox
-//                     checked={picked.has(r.student_uuid)}
-//                     onCheckedChange={(v) => { 
-//                       const n = new Set(picked); 
-//                       if (v) n.add(r.student_uuid); 
-//                       else n.delete(r.student_uuid); 
-//                       setPicked(n); 
-//                     }}
-//                   />
-//                 </TableCell>
-//                 <TableCell>
-//                   <div className="text-sm font-medium">{r.student_name}</div>
-//                   <div className="text-xs text-muted-foreground">{r.student_no}</div>
-//                 </TableCell>
-//                 <TableCell className="text-xs">{r.class_name ?? "—"}</TableCell>
-//                 <TableCell className="text-xs">{r.structure_name ?? "—"}</TableCell>
-//                 <TableCell>
-//                   <div className="flex flex-col gap-0.5">
-//                     {r.components?.map((comp, idx) => (
-//                       <div key={idx} className="flex items-center gap-1.5 text-xs">
-//                         <span className="truncate max-w-[80px]">{comp.component_name}</span>
-//                         <Badge 
-//                           className={`text-[9px] px-1.5 py-0 h-4 ${getStatusColor(comp.status)}`}
-//                         >
-//                           {comp.status}
-//                         </Badge>
-//                         <span className="text-muted-foreground text-[10px]">
-//                           {inr(comp.balance_amount)}
-//                         </span>
-//                       </div>
-//                     ))}
-//                   </div>
-//                 </TableCell>
-                
+//             </CardDescription>
+//           </div>
+
+//           {/* ==================================================
+//               FILTERS
+//           ================================================== */}
+//           <div className="flex gap-2 flex-wrap">
+
+//             {/* Month */}
+//             <Select
+//               value={selectedMonth}
+//               onValueChange={
+//                 setSelectedMonth
+//               }
+//             >
+//               <SelectTrigger className="w-40 h-9 border-primary/30 bg-primary/5">
+
+//                 <CalendarRange className="h-4 w-4 mr-1 text-primary" />
+
+//                 <SelectValue>
+//                   {selectedMonth
+//                     ? formatMonthLabel(
+//                         selectedMonth
+//                       )
+//                     : "All Months"}
+//                 </SelectValue>
+
+//               </SelectTrigger>
+
+//               <SelectContent>
+
+//                 <SelectItem value="all">
+//                   All Months
+//                 </SelectItem>
+
+//                 {allMonths.map(
+//                   (month) => (
+//                     <SelectItem
+//                       key={month}
+//                       value={month}
+//                     >
+//                       {formatMonthLabel(
+//                         month
+//                       )}
+//                     </SelectItem>
+//                   )
+//                 )}
+
+//               </SelectContent>
+//             </Select>
+
+//             {/* Status */}
+//             <Select
+//               value={only}
+//               onValueChange={setOnly}
+//             >
+//               <SelectTrigger className="w-32 h-9">
+//                 <SelectValue />
+//               </SelectTrigger>
+
+//               <SelectContent>
+
+//                 <SelectItem value="overdue">
+//                   Overdue only
+//                 </SelectItem>
+
+//                 <SelectItem value="all">
+//                   All students
+//                 </SelectItem>
+
+//               </SelectContent>
+//             </Select>
+
+//             {/* Class */}
+//             <Select
+//               value={cls}
+//               onValueChange={setCls}
+//             >
+//               <SelectTrigger className="w-24 h-9">
+//                 <SelectValue placeholder="Class" />
+//               </SelectTrigger>
+
+//               <SelectContent>
+
+//                 {classes.map(
+//                   (c) => (
+//                     <SelectItem
+//                       key={c}
+//                       value={c}
+//                     >
+//                       {c}
+//                     </SelectItem>
+//                   )
+//                 )}
+
+//               </SelectContent>
+//             </Select>
+
+//             {/* Section */}
+//             <Select
+//               value={sec}
+//               onValueChange={setSec}
+//             >
+//               <SelectTrigger className="w-24 h-9">
+//                 <SelectValue placeholder="Section" />
+//               </SelectTrigger>
+
+//               <SelectContent>
+
+//                 {sectionsFor.map(
+//                   (s) => (
+//                     <SelectItem
+//                       key={s}
+//                       value={s}
+//                     >
+//                       {s}
+//                     </SelectItem>
+//                   )
+//                 )}
+
+//               </SelectContent>
+//             </Select>
+
+//             {/* Search */}
+//             <Input
+//               value={q}
+//               onChange={(e) =>
+//                 setQ(e.target.value)
+//               }
+//               placeholder="Search..."
+//               className="h-9 w-40"
+//             />
+
+//             {/* Refresh */}
+//             <Button
+//               size="sm"
+//               variant="outline"
+//               onClick={fetchDues}
+//             >
+//               <RefreshCcw className="h-4 w-4" />
+//               Refresh
+//             </Button>
+
+//             {/* Export */}
+//             <Button
+//               size="sm"
+//               variant="outline"
+//               onClick={() =>
+//                 exportRowsCsv(
+//                   rows.map((r) => ({
+//                     student_name:
+//                       r.student_name,
+
+//                     student_no:
+//                       r.student_no,
+
+//                     class_name:
+//                       r.class_name,
+
+//                     fee_month:
+//                       isMonthSelected
+//                         ? formatMonthLabel(
+//                             selectedMonth
+//                           )
+//                         : "All Months",
+
+//                     month_amount:
+//                       isMonthSelected
+//                         ? r.month_amount
+//                         : "—",
+
+//                     month_discount:
+//                       isMonthSelected
+//                         ? r.month_discount
+//                         : "—",
+
+//                     month_late_fee:
+//                       isMonthSelected
+//                         ? r.month_late_fee
+//                         : "—",
+
+//                     month_paid:
+//                       isMonthSelected
+//                         ? r.month_paid
+//                         : "—",
+
+//                     month_balance:
+//                       isMonthSelected
+//                         ? r.month_balance
+//                         : "—",
+
+//                     year_total_amount:
+//                       r.year_total_amount ||
+//                       "—",
+
+//                     year_total_paid:
+//                       r.year_total_paid ||
+//                       "—",
+
+//                     year_total_discount:
+//                       r.year_total_discount ||
+//                       "—",
+
+//                     year_total_late_fee:
+//                       r.year_total_late_fee ||
+//                       "—",
+
+//                     year_balance_amount:
+//                       r.year_balance_amount ||
+//                       "—",
+
+//                     status:
+//                       r.status,
+
+//                     components:
+//                       r.components
+//                         ?.map(
+//                           (c) =>
+//                             `${c.component_name}(${c.status})`
+//                         )
+//                         .join("; ") || "",
+//                   })),
+//                   `dues-${
+//                     isMonthSelected
+//                       ? selectedMonth
+//                       : "all"
+//                   }.csv`
+//                 )
+//               }
+//             >
+//               <Download className="h-4 w-4" />
+//               Export
+//             </Button>
+
+//           </div>
+//         </CardHeader>
+
+//         {/* ======================================================
+//             SELECTED ACTIONS
+//         ====================================================== */}
+//         {picked.size > 0 && (
+//           <div className="mx-4 mb-3 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+
+//             <Badge>
+//               {picked.size} selected
+//             </Badge>
+
+//             <Button
+//               size="sm"
+//               variant="outline"
+//               onClick={remind}
+//             >
+//               <Send className="h-4 w-4" />
+//               Send Reminders
+//             </Button>
+
+//             <Button
+//               size="sm"
+//               variant="outline"
+//               onClick={genInvoice}
+//             >
+//               <FileText className="h-4 w-4" />
+//               Generate Invoices
+//             </Button>
+
+//             <Button
+//               size="sm"
+//               variant="ghost"
+//               onClick={() =>
+//                 setPicked(new Set())
+//               }
+//               className="ml-auto"
+//             >
+//               <X className="h-4 w-4" />
+//               Clear
+//             </Button>
+
+//           </div>
+//         )}
+
+//         {/* ======================================================
+//             TABLE
+//         ====================================================== */}
+//         <CardContent className="p-0 overflow-x-auto">
+
+//           <Table>
+
+//             {/* ==================================================
+//                 TABLE HEADER
+//             ================================================== */}
+//             <TableHeader>
+
+//               <TableRow className="bg-muted/30">
+
+//                 <TableHead className="w-8">
+//                 </TableHead>
+
+//                 <TableHead>
+//                   Student
+//                 </TableHead>
+
+//                 <TableHead>
+//                   Class
+//                 </TableHead>
+
+//                 <TableHead>
+//                   Structure
+//                 </TableHead>
+
+//                 <TableHead>
+//                   Components & Status
+//                 </TableHead>
+
 //                 {/* Month columns */}
 //                 {isMonthSelected && (
 //                   <>
-//                     <TableCell className="text-right font-semibold text-xs">
-//                       {inr(r.month_amount || 0)}
-//                     </TableCell>
-//                     <TableCell className="text-right text-orange-500 text-xs">
-//                       {inr(r.month_discount || 0)}
-//                     </TableCell>
-//                     <TableCell className="text-right text-amber-600 text-xs">
-//                       {inr(r.month_late_fee || 0)}
-//                     </TableCell>
-//                     <TableCell className="text-right text-emerald-600 text-xs">
-//                       {inr(r.month_paid || 0)}
-//                     </TableCell>
-//                     <TableCell className="text-right font-semibold text-xs">
-//                       {inr(r.month_balance || 0)}
-//                     </TableCell>
+//                     <TableHead className="text-right text-xs">
+//                       Month Amount
+//                     </TableHead>
+
+//                     <TableHead className="text-right text-xs">
+//                       Month Discount
+//                     </TableHead>
+
+//                     <TableHead className="text-right text-xs">
+//                       Month Late Fee
+//                     </TableHead>
+
+//                     <TableHead className="text-right text-xs">
+//                       Month Paid
+//                     </TableHead>
+
+//                     <TableHead className="text-right text-xs">
+//                       Month Balance
+//                     </TableHead>
 //                   </>
 //                 )}
-                
-//                 {/* Year columns - from the API response */}
-//                 <TableCell className="text-right text-xs">
-//                   {inr(r.year_total_amount || 0)}
-//                 </TableCell>
-//                 <TableCell className="text-right text-emerald-600 text-xs">
-//                   {inr(r.year_total_paid || 0)}
-//                 </TableCell>
-//                 <TableCell className="text-right text-orange-500 text-xs">
-//                   {inr(r.year_total_discount || 0)}
-//                 </TableCell>
-//                 <TableCell className="text-right text-amber-600 text-xs">
-//                   {inr(r.year_total_late_fee || 0)}
-//                 </TableCell>
-//                 <TableCell className="text-right font-bold text-primary text-xs">
-//                   {inr(r.year_balance_amount || 0)}
-//                 </TableCell>
-//                 <TableCell>
-//                   <Badge className={`${getStatusColor(r.status)} text-xs font-medium`}>
-//                     {r.status || "PENDING"}
-//                   </Badge>
-//                 </TableCell>
-//                 <TableCell>
-//                   <DropdownMenu>
-//                     <DropdownMenuTrigger asChild>
-//                       <Button variant="ghost" size="icon" className="h-7 w-7">
-//                         <MoreHorizontal className="h-4 w-4" />
-//                       </Button>
-//                     </DropdownMenuTrigger>
-//                     <DropdownMenuContent align="end">
-//                       <DropdownMenuItem onClick={() => {
-//                         const compDetails = r.components?.map(c => 
-//                           `${c.component_name}: ${c.status} (${inr(c.balance_amount)})`
-//                         ).join("\n");
-//                         toast.info(`Components:\n${compDetails}\n\nYear Balance: ${inr(r.year_balance_amount)}`);
-//                       }}>
-//                         <Eye className="h-4 w-4 mr-2" />View Details
-//                       </DropdownMenuItem>
-//                       <DropdownMenuItem onClick={() => toast.info("Generate invoice")}>
-//                         <FileText className="h-4 w-4 mr-2" />Invoice
-//                       </DropdownMenuItem>
-//                       <DropdownMenuSeparator />
-//                       <DropdownMenuItem 
-//                         className="text-destructive"
-//                         onClick={() => toast.info("Send reminder")}
-//                       >
-//                         <Send className="h-4 w-4 mr-2" />Send Reminder
-//                       </DropdownMenuItem>
-//                     </DropdownMenuContent>
-//                   </DropdownMenu>
-//                 </TableCell>
+
+//                 {/* Year columns */}
+//                 <TableHead className="text-right text-xs">
+//                   Year Amount
+//                 </TableHead>
+
+//                 <TableHead className="text-right text-xs">
+//                   Year Paid
+//                 </TableHead>
+
+//                 <TableHead className="text-right text-xs">
+//                   Year Discount
+//                 </TableHead>
+
+//                 <TableHead className="text-right text-xs">
+//                   Year Late Fee
+//                 </TableHead>
+
+//                 <TableHead className="text-right text-xs font-bold text-primary">
+//                   Year Balance
+//                 </TableHead>
+
+//                 <TableHead>
+//                   Status
+//                 </TableHead>
+
+//                 <TableHead className="w-10">
+//                 </TableHead>
+
 //               </TableRow>
-//             ))}
-//           </TableBody>
-//         </Table>
-//       </CardContent>
-//     </Card>
+
+//             </TableHeader>
+
+//             {/* ==================================================
+//                 TABLE BODY
+//             ================================================== */}
+//             <TableBody>
+
+//               {/* Loading */}
+//               {loadingDues && (
+//                 <TableRow>
+
+//                   <TableCell
+//                     colSpan={16}
+//                     className="text-center text-sm text-muted-foreground py-8"
+//                   >
+//                     <div className="flex items-center justify-center gap-2">
+
+//                       <RefreshCcw className="h-4 w-4 animate-spin" />
+
+//                       Loading dues...
+
+//                     </div>
+//                   </TableCell>
+
+//                 </TableRow>
+//               )}
+
+//               {/* Empty */}
+//               {!loadingDues &&
+//                 rows.length === 0 && (
+//                   <TableRow>
+
+//                     <TableCell
+//                       colSpan={16}
+//                       className="text-center text-sm text-muted-foreground py-8"
+//                     >
+//                       {isMonthSelected
+//                         ? `No dues found for ${formatMonthLabel(
+//                             selectedMonth
+//                           )}`
+//                         : "No dues found"}
+//                     </TableCell>
+
+//                   </TableRow>
+//                 )}
+
+//               {/* Rows */}
+//               {!loadingDues &&
+//                 rows
+//                   .slice(0, 300)
+//                   .map((r) => (
+//                     <TableRow
+//                       key={r.student_uuid}
+//                       className="hover:bg-muted/30"
+//                     >
+
+//                       {/* Checkbox */}
+//                       <TableCell>
+
+//                         <Checkbox
+//                           checked={picked.has(
+//                             r.student_uuid
+//                           )}
+//                           onCheckedChange={(
+//                             v
+//                           ) => {
+//                             const n =
+//                               new Set(
+//                                 picked
+//                               );
+
+//                             if (v) {
+//                               n.add(
+//                                 r.student_uuid
+//                               );
+//                             } else {
+//                               n.delete(
+//                                 r.student_uuid
+//                               );
+//                             }
+
+//                             setPicked(n);
+//                           }}
+//                         />
+
+//                       </TableCell>
+
+//                       {/* Student */}
+//                       <TableCell>
+
+//                         <div className="text-sm font-medium">
+//                           {r.student_name}
+//                         </div>
+
+//                         <div className="text-xs text-muted-foreground">
+//                           {r.student_no}
+//                         </div>
+
+//                       </TableCell>
+
+//                       {/* Class */}
+//                       <TableCell className="text-xs">
+//                         {r.class_name ??
+//                           "—"}
+//                       </TableCell>
+
+//                       {/* Structure */}
+//                       <TableCell className="text-xs">
+//                         {r.structure_name ??
+//                           "—"}
+//                       </TableCell>
+
+//                       {/* Components */}
+//                       <TableCell>
+
+//                         <div className="flex flex-col gap-0.5">
+
+//                           {r.components?.map(
+//                             (comp, idx) => (
+//                               <div
+//                                 key={
+//                                   comp.due_uuid ||
+//                                   idx
+//                                 }
+//                                 className="flex items-center gap-1.5 text-xs"
+//                               >
+
+//                                 <span className="truncate max-w-[100px]">
+//                                   {
+//                                     comp.component_name
+//                                   }
+//                                 </span>
+
+//                                 <Badge
+//                                   className={`text-[9px] px-1.5 py-0 h-4 ${getStatusColor(
+//                                     comp.status
+//                                   )}`}
+//                                 >
+//                                   {
+//                                     comp.status
+//                                   }
+//                                 </Badge>
+
+//                                 <span className="text-muted-foreground text-[10px]">
+//                                   {inr(
+//                                     comp.balance_amount
+//                                   )}
+//                                 </span>
+
+//                               </div>
+//                             )
+//                           )}
+
+//                         </div>
+
+//                       </TableCell>
+
+//                       {/* Month */}
+//                       {isMonthSelected && (
+//                         <>
+//                           <TableCell className="text-right font-semibold text-xs">
+//                             {inr(
+//                               r.month_amount ||
+//                                 0
+//                             )}
+//                           </TableCell>
+
+//                           <TableCell className="text-right text-orange-500 text-xs">
+//                             {inr(
+//                               r.month_discount ||
+//                                 0
+//                             )}
+//                           </TableCell>
+
+//                           <TableCell className="text-right text-amber-600 text-xs">
+//                             {inr(
+//                               r.month_late_fee ||
+//                                 0
+//                             )}
+//                           </TableCell>
+
+//                           <TableCell className="text-right text-emerald-600 text-xs">
+//                             {inr(
+//                               r.month_paid ||
+//                                 0
+//                             )}
+//                           </TableCell>
+
+//                           <TableCell className="text-right font-semibold text-xs">
+//                             {inr(
+//                               r.month_balance ||
+//                                 0
+//                             )}
+//                           </TableCell>
+//                         </>
+//                       )}
+
+//                       {/* Year Amount */}
+//                       <TableCell className="text-right text-xs">
+//                         {inr(
+//                           r.year_total_amount ||
+//                             0
+//                         )}
+//                       </TableCell>
+
+//                       {/* Year Paid */}
+//                       <TableCell className="text-right text-emerald-600 text-xs">
+//                         {inr(
+//                           r.year_total_paid ||
+//                             0
+//                         )}
+//                       </TableCell>
+
+//                       {/* Year Discount */}
+//                       <TableCell className="text-right text-orange-500 text-xs">
+//                         {inr(
+//                           r.year_total_discount ||
+//                             0
+//                         )}
+//                       </TableCell>
+
+//                       {/* Year Late */}
+//                       <TableCell className="text-right text-amber-600 text-xs">
+//                         {inr(
+//                           r.year_total_late_fee ||
+//                             0
+//                         )}
+//                       </TableCell>
+
+//                       {/* Year Balance */}
+//                       <TableCell className="text-right font-bold text-primary text-xs">
+//                         {inr(
+//                           r.year_balance_amount ||
+//                             0
+//                         )}
+//                       </TableCell>
+
+//                       {/* Status */}
+//                       <TableCell>
+
+//                         <Badge
+//                           className={`${getStatusColor(
+//                             r.status
+//                           )} text-xs font-medium`}
+//                         >
+//                           {r.status ||
+//                             "PENDING"}
+//                         </Badge>
+
+//                       </TableCell>
+
+//                       {/* ACTIONS */}
+//                       <TableCell>
+
+//                         <DropdownMenu>
+
+//                           <DropdownMenuTrigger
+//                             asChild
+//                           >
+//                             <Button
+//                               variant="ghost"
+//                               size="icon"
+//                               className="h-7 w-7"
+//                             >
+//                               <MoreHorizontal className="h-4 w-4" />
+//                             </Button>
+//                           </DropdownMenuTrigger>
+
+//                           <DropdownMenuContent align="end">
+
+//                             {/* =================================
+//                                 VIEW DETAILS
+//                             ================================= */}
+//                             <DropdownMenuItem
+//                               onClick={() =>
+//                                 openDueDetails(
+//                                   r
+//                                 )
+//                               }
+//                             >
+//                               <Eye className="h-4 w-4 mr-2" />
+
+//                               View Details
+//                             </DropdownMenuItem>
+
+//                             {/* =================================
+//                                 INVOICE
+//                             ================================= */}
+//                             <DropdownMenuItem
+//                               onClick={() =>
+//                                 toast.info(
+//                                   "Generate invoice"
+//                                 )
+//                               }
+//                             >
+//                               <FileText className="h-4 w-4 mr-2" />
+
+//                               Invoice
+//                             </DropdownMenuItem>
+
+//                             <DropdownMenuSeparator />
+
+//                             {/* =================================
+//                                 REMINDER
+//                             ================================= */}
+//                             <DropdownMenuItem
+//                               className="text-destructive"
+//                               onClick={() =>
+//                                 toast.info(
+//                                   "Send reminder"
+//                                 )
+//                               }
+//                             >
+//                               <Send className="h-4 w-4 mr-2" />
+
+//                               Send Reminder
+//                             </DropdownMenuItem>
+
+//                           </DropdownMenuContent>
+
+//                         </DropdownMenu>
+
+//                       </TableCell>
+
+//                     </TableRow>
+//                   ))}
+
+//             </TableBody>
+
+//           </Table>
+
+//         </CardContent>
+
+//       </Card>
+
+//       {/* ========================================================
+//           VIEW DETAILS DIALOG
+//       ======================================================== */}
+//       <Dialog
+//         open={detailsOpen}
+//         onOpenChange={(open) => {
+//           setDetailsOpen(open);
+
+//           if (!open) {
+//             setSelectedDueStudent(
+//               null
+//             );
+//           }
+//         }}
+//       >
+
+//         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+
+//           <DialogHeader>
+
+//             <DialogTitle className="text-lg">
+//               Student Fee Details
+//             </DialogTitle>
+
+//             <DialogDescription>
+//               Complete fee component,
+//               payment and balance details.
+//             </DialogDescription>
+
+//           </DialogHeader>
+
+//           {selectedDueStudent && (
+//             <div className="space-y-5">
+
+//               {/* ==================================================
+//                   STUDENT INFORMATION
+//               ================================================== */}
+//               <div className="rounded-lg border bg-muted/30 p-4">
+
+//                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+
+//                   <div>
+//                     <div className="text-xs text-muted-foreground">
+//                       Student
+//                     </div>
+
+//                     <div className="font-semibold text-sm mt-1">
+//                       {selectedDueStudent.student_name ||
+//                         "—"}
+//                     </div>
+//                   </div>
+
+//                   <div>
+//                     <div className="text-xs text-muted-foreground">
+//                       Student No
+//                     </div>
+
+//                     <div className="font-medium text-sm mt-1">
+//                       {selectedDueStudent.student_no ||
+//                         "—"}
+//                     </div>
+//                   </div>
+
+//                   <div>
+//                     <div className="text-xs text-muted-foreground">
+//                       Class
+//                     </div>
+
+//                     <div className="font-medium text-sm mt-1">
+//                       {selectedDueStudent.class_name ||
+//                         "—"}
+//                     </div>
+//                   </div>
+
+//                   <div>
+//                     <div className="text-xs text-muted-foreground">
+//                       Section
+//                     </div>
+
+//                     <div className="font-medium text-sm mt-1">
+//                       {selectedDueStudent.section_name ||
+//                         "—"}
+//                     </div>
+//                   </div>
+
+//                   <div>
+//                     <div className="text-xs text-muted-foreground">
+//                       Structure
+//                     </div>
+
+//                     <div className="font-medium text-sm mt-1">
+//                       {selectedDueStudent.structure_name ||
+//                         "—"}
+//                     </div>
+//                   </div>
+
+//                 </div>
+
+//               </div>
+
+//               {/* ==================================================
+//                   STATUS
+//               ================================================== */}
+//               <div className="flex items-center justify-between">
+
+//                 <div>
+//                   <div className="font-semibold text-sm">
+//                     Payment Status
+//                   </div>
+
+//                   <div className="text-xs text-muted-foreground">
+//                     Current overall fee status
+//                   </div>
+//                 </div>
+
+//                 <Badge
+//                   className={`text-xs ${getStatusColor(
+//                     selectedDueStudent.status
+//                   )}`}
+//                 >
+//                   {selectedDueStudent.status ||
+//                     "PENDING"}
+//                 </Badge>
+
+//               </div>
+
+//               {/* ==================================================
+//                   MONTH SUMMARY
+//               ================================================== */}
+//               {isMonthSelected && (
+//                 <div>
+
+//                   <div className="font-semibold text-sm mb-2">
+//                     {formatMonthLabel(
+//                       selectedMonth
+//                     )}{" "}
+//                     Summary
+//                   </div>
+
+//                   <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+
+//                     <div className="border rounded-lg p-3">
+//                       <div className="text-xs text-muted-foreground">
+//                         Amount
+//                       </div>
+
+//                       <div className="font-semibold mt-1">
+//                         {inr(
+//                           selectedDueStudent.month_amount ||
+//                             0
+//                         )}
+//                       </div>
+//                     </div>
+
+//                     <div className="border rounded-lg p-3">
+//                       <div className="text-xs text-muted-foreground">
+//                         Discount
+//                       </div>
+
+//                       <div className="font-semibold text-orange-500 mt-1">
+//                         {inr(
+//                           selectedDueStudent.month_discount ||
+//                             0
+//                         )}
+//                       </div>
+//                     </div>
+
+//                     <div className="border rounded-lg p-3">
+//                       <div className="text-xs text-muted-foreground">
+//                         Late Fee
+//                       </div>
+
+//                       <div className="font-semibold text-amber-600 mt-1">
+//                         {inr(
+//                           selectedDueStudent.month_late_fee ||
+//                             0
+//                         )}
+//                       </div>
+//                     </div>
+
+//                     <div className="border rounded-lg p-3">
+//                       <div className="text-xs text-muted-foreground">
+//                         Paid
+//                       </div>
+
+//                       <div className="font-semibold text-emerald-600 mt-1">
+//                         {inr(
+//                           selectedDueStudent.month_paid ||
+//                             0
+//                         )}
+//                       </div>
+//                     </div>
+
+//                     <div className="border rounded-lg p-3 bg-primary/5">
+//                       <div className="text-xs text-muted-foreground">
+//                         Balance
+//                       </div>
+
+//                       <div className="font-bold text-primary text-lg mt-1">
+//                         {inr(
+//                           selectedDueStudent.month_balance ||
+//                             0
+//                         )}
+//                       </div>
+//                     </div>
+
+//                   </div>
+
+//                 </div>
+//               )}
+
+//               {/* ==================================================
+//                   COMPONENT DETAILS
+//               ================================================== */}
+//               <div>
+
+//                 <div className="font-semibold text-sm mb-2">
+//                   Components & Status
+//                 </div>
+
+//                 <div className="border rounded-lg overflow-hidden">
+
+//                   <Table>
+
+//                     <TableHeader>
+
+//                       <TableRow className="bg-muted/30">
+
+//                         <TableHead>
+//                           Component
+//                         </TableHead>
+
+//                         <TableHead className="text-right">
+//                           Amount
+//                         </TableHead>
+
+//                         <TableHead className="text-right">
+//                           Discount
+//                         </TableHead>
+
+//                         <TableHead className="text-right">
+//                           Late Fee
+//                         </TableHead>
+
+//                         <TableHead className="text-right">
+//                           Paid
+//                         </TableHead>
+
+//                         <TableHead className="text-right">
+//                           Balance
+//                         </TableHead>
+
+//                         <TableHead>
+//                           Status
+//                         </TableHead>
+
+//                       </TableRow>
+
+//                     </TableHeader>
+
+//                     <TableBody>
+
+//                       {(
+//                         selectedDueStudent.components ||
+//                         []
+//                       ).map(
+//                         (comp, index) => (
+//                           <TableRow
+//                             key={
+//                               comp.due_uuid ||
+//                               index
+//                             }
+//                           >
+
+//                             <TableCell>
+
+//                               <div className="font-medium text-sm">
+//                                 {
+//                                   comp.component_name
+//                                 }
+//                               </div>
+
+//                               {comp.fee_month && (
+//                                 <div className="text-[10px] text-muted-foreground">
+//                                   {formatMonthLabel(
+//                                     comp.fee_month.slice(
+//                                       0,
+//                                       7
+//                                     )
+//                                   )}
+//                                 </div>
+//                               )}
+
+//                             </TableCell>
+
+//                             <TableCell className="text-right text-sm">
+//                               {inr(
+//                                 comp.amount ||
+//                                   0
+//                               )}
+//                             </TableCell>
+
+//                             <TableCell className="text-right text-sm text-orange-500">
+//                               {inr(
+//                                 comp.discount ||
+//                                   0
+//                               )}
+//                             </TableCell>
+
+//                             <TableCell className="text-right text-sm text-amber-600">
+//                               {inr(
+//                                 comp.late_fee ||
+//                                   0
+//                               )}
+//                             </TableCell>
+
+//                             <TableCell className="text-right text-sm text-emerald-600">
+//                               {inr(
+//                                 comp.paid_amount ||
+//                                   0
+//                               )}
+//                             </TableCell>
+
+//                             <TableCell className="text-right text-sm font-semibold">
+//                               {inr(
+//                                 comp.balance_amount ||
+//                                   0
+//                               )}
+//                             </TableCell>
+
+//                             <TableCell>
+
+//                               <Badge
+//                                 className={`text-[10px] ${getStatusColor(
+//                                   comp.status
+//                                 )}`}
+//                               >
+//                                 {comp.status ||
+//                                   "PENDING"}
+//                               </Badge>
+
+//                             </TableCell>
+
+//                           </TableRow>
+//                         )
+//                       )}
+
+//                       {(!selectedDueStudent.components ||
+//                         selectedDueStudent
+//                           .components
+//                           .length ===
+//                           0) && (
+//                         <TableRow>
+
+//                           <TableCell
+//                             colSpan={7}
+//                             className="text-center py-8 text-sm text-muted-foreground"
+//                           >
+//                             No component details
+//                             available.
+//                           </TableCell>
+
+//                         </TableRow>
+//                       )}
+
+//                     </TableBody>
+
+//                   </Table>
+
+//                 </div>
+
+//               </div>
+
+//               {/* ==================================================
+//                   YEAR SUMMARY
+//               ================================================== */}
+//               <div>
+
+//                 <div className="font-semibold text-sm mb-2">
+//                   Academic Year Summary
+//                 </div>
+
+//                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+
+//                   {/* Year Amount */}
+//                   <div className="border rounded-lg p-3">
+
+//                     <div className="text-xs text-muted-foreground">
+//                       Year Amount
+//                     </div>
+
+//                     <div className="font-semibold mt-1">
+//                       {inr(
+//                         selectedDueStudent.year_total_amount ||
+//                           0
+//                       )}
+//                     </div>
+
+//                   </div>
+
+//                   {/* Year Paid */}
+//                   <div className="border rounded-lg p-3">
+
+//                     <div className="text-xs text-muted-foreground">
+//                       Year Paid
+//                     </div>
+
+//                     <div className="font-semibold text-emerald-600 mt-1">
+//                       {inr(
+//                         selectedDueStudent.year_total_paid ||
+//                           0
+//                       )}
+//                     </div>
+
+//                   </div>
+
+//                   {/* Year Discount */}
+//                   <div className="border rounded-lg p-3">
+
+//                     <div className="text-xs text-muted-foreground">
+//                       Year Discount
+//                     </div>
+
+//                     <div className="font-semibold text-orange-500 mt-1">
+//                       {inr(
+//                         selectedDueStudent.year_total_discount ||
+//                           0
+//                       )}
+//                     </div>
+
+//                   </div>
+
+//                   {/* Year Late Fee */}
+//                   <div className="border rounded-lg p-3">
+
+//                     <div className="text-xs text-muted-foreground">
+//                       Year Late Fee
+//                     </div>
+
+//                     <div className="font-semibold text-amber-600 mt-1">
+//                       {inr(
+//                         selectedDueStudent.year_total_late_fee ||
+//                           0
+//                       )}
+//                     </div>
+
+//                   </div>
+
+//                   {/* Year Balance */}
+//                   <div className="border rounded-lg p-3 bg-primary/5">
+
+//                     <div className="text-xs text-muted-foreground">
+//                       Year Balance
+//                     </div>
+
+//                     <div className="font-bold text-primary text-lg mt-1">
+//                       {inr(
+//                         selectedDueStudent.year_balance_amount ||
+//                           0
+//                       )}
+//                     </div>
+
+//                   </div>
+
+//                 </div>
+
+//               </div>
+
+//             </div>
+//           )}
+
+//           {/* ======================================================
+//               DIALOG FOOTER
+//           ====================================================== */}
+//           <DialogFooter>
+
+//             <Button
+//               variant="outline"
+//               onClick={closeDueDetails}
+//             >
+//               Close
+//             </Button>
+
+//           </DialogFooter>
+
+//         </DialogContent>
+
+//       </Dialog>
+//     </>
 //   );
 // }
 // /* ================================================================== */
@@ -4786,19 +7758,7 @@
 //     </>
 //   )}
 
-//   {r.status === "Success" && (
-//     <>
-//       <DropdownMenuSeparator />
-//       <DropdownMenuItem onClick={() => onCancel?.(r.id)}>
-//         <X className="h-4 w-4 mr-2" />
-//         Cancel
-//       </DropdownMenuItem>
-//       <DropdownMenuItem onClick={() => onRefund?.(r.id)}>
-//         <RefreshCcw className="h-4 w-4 mr-2" />
-//         Refund
-//       </DropdownMenuItem>
-//     </>
-//   )}
+
 // </DropdownMenuContent>
 //                       </DropdownMenu>
 //                     </TableCell>
@@ -5407,4812 +8367,9 @@
 // }
 
 
-// // function ReportsPanel({ students }) {
-// //   const [loading, setLoading] = useState(false);
-// //   const [reportData, setReportData] = useState([]);
-// //   const [totals, setTotals] = useState([]);
-// //   const [components, setComponents] = useState([]);
-// //   const [error, setError] = useState("");
 
-// //   // =====================================================
-// //   // REPORT TYPE
-// //   // IMPORTANT:
-// //   // value = key used everywhere (API param + filter logic)
-// //   // label = shown in dropdown
-// //   // =====================================================
 
-// //   const REPORT_TYPES = [
-// //     {
-// //       value: "MASTER_FEES",
-// //       label: "Master Student Fees Report (Paid / Unpaid)",
-// //       description: "Paid vs unpaid breakdown across all students",
-// //     },
-// //     {
-// //       value: "DAILY_COLLECTION",
-// //       label: "Daily Collections Report",
-// //       description: "Payments collected on a specific day",
-// //     },
-// //     {
-// //       value: "FEE_PENDING",
-// //       label: "Fee Pending Report",
-// //       description: "Students with pending / overdue fees",
-// //     },
-// //     {
-// //       value: "STUDENT_FEE_NEW",
-// //       label: "Student Fee Report (New)",
-// //       description: "Detailed fee report with student-wise breakdown",
-// //     },
-// //     {
-// //       value: "RETRACTED_INVOICE",
-// //       label: "Retracted Invoice Report",
-// //       description: "Invoices that were retracted / cancelled",
-// //     },
-// //   ];
 
-// //   const [reportType, setReportType] =
-// //     useState("STUDENT_FEE_NEW");
-
-// //   const activeReport = useMemo(
-// //     () =>
-// //       REPORT_TYPES.find(
-// //         (r) => r.value === reportType
-// //       ) || REPORT_TYPES[3],
-// //     [reportType]
-// //   );
-
-// //   // =====================================================
-// //   // FILTER STATES
-// //   // =====================================================
-
-// //   const [academicYear, setAcademicYear] =
-// //     useState(ACADEMIC_YEAR);
-
-// //   const [studentUuid, setStudentUuid] =
-// //     useState("");
-
-// //   const [studentQuery, setStudentQuery] =
-// //     useState("");
-
-// //   const [fromDate, setFromDate] =
-// //     useState("");
-
-// //   const [toDate, setToDate] =
-// //     useState("");
-
-// //   // Used only by Daily Collections Report
-// //   const [collectionDate, setCollectionDate] =
-// //     useState(
-// //       new Date().toISOString().split("T")[0]
-// //     );
-
-// //   const [classUuid, setClassUuid] =
-// //     useState("all");
-
-// //   const [sectionUuid, setSectionUuid] =
-// //     useState("all");
-
-// //   const [paymentStatus, setPaymentStatus] =
-// //     useState("all");
-
-// //   const [showFilters, setShowFilters] =
-// //     useState(true);
-
-// //   // =====================================================
-// //   // PER-REPORT FILTER VISIBILITY
-// //   // =====================================================
-
-// //   const visibleFilters = useMemo(() => {
-// //     switch (reportType) {
-// //       case "MASTER_FEES":
-// //         return {
-// //           academicYear: true,
-// //           student: true,
-// //           class: true,
-// //           section: true,
-// //           dateRange: false,
-// //           collectionDate: false,
-// //           paymentStatus: true,
-// //         };
-
-// //       case "DAILY_COLLECTION":
-// //         return {
-// //           academicYear: false,
-// //           student: false,
-// //           class: true,
-// //           section: true,
-// //           dateRange: false,
-// //           collectionDate: true,
-// //           paymentStatus: false,
-// //         };
-
-// //       case "FEE_PENDING":
-// //         return {
-// //           academicYear: true,
-// //           student: true,
-// //           class: true,
-// //           section: true,
-// //           dateRange: false,
-// //           collectionDate: false,
-// //           paymentStatus: false, // locked to PENDING/OVERDUE
-// //         };
-
-// //       case "RETRACTED_INVOICE":
-// //         return {
-// //           academicYear: true,
-// //           student: false,
-// //           class: true,
-// //           section: true,
-// //           dateRange: true,
-// //           collectionDate: false,
-// //           paymentStatus: false,
-// //         };
-
-// //       case "STUDENT_FEE_NEW":
-// //       default:
-// //         return {
-// //           academicYear: true,
-// //           student: true,
-// //           class: true,
-// //           section: true,
-// //           dateRange: true,
-// //           collectionDate: false,
-// //           paymentStatus: true,
-// //         };
-// //     }
-// //   }, [reportType]);
-
-// //   const statusOptionsForReport = useMemo(() => {
-// //     if (reportType === "MASTER_FEES") {
-// //       return [
-// //         { value: "all", label: "All Status" },
-// //         { value: "PAID", label: "Paid" },
-// //         { value: "PENDING", label: "Unpaid" },
-// //       ];
-// //     }
-
-// //     return [
-// //       { value: "all", label: "All Status" },
-// //       { value: "PAID", label: "Paid" },
-// //       { value: "PARTIAL", label: "Partial" },
-// //       { value: "PENDING", label: "Pending" },
-// //       { value: "OVERDUE", label: "Overdue" },
-// //       { value: "ADVANCE", label: "Advance" },
-// //     ];
-// //   }, [reportType]);
-
-// //   const handleReportTypeChange = (value) => {
-// //     setReportType(value);
-// //     setError("");
-
-// //     if (value === "DAILY_COLLECTION") {
-// //       setFromDate("");
-// //       setToDate("");
-// //       setStudentUuid("");
-// //       setStudentQuery("");
-// //       setPaymentStatus("all");
-// //     }
-
-// //     if (value === "FEE_PENDING") {
-// //       setPaymentStatus("PENDING");
-// //     }
-
-// //     if (value === "MASTER_FEES") {
-// //       setFromDate("");
-// //       setToDate("");
-// //     }
-
-// //     if (value === "RETRACTED_INVOICE") {
-// //       setStudentUuid("");
-// //       setStudentQuery("");
-// //       setPaymentStatus("all");
-// //     }
-// //   };
-
-// //   const academicYears = useMemo(() => {
-// //     const years = [];
-
-// //     const currentYear =
-// //       new Date().getFullYear();
-
-// //     for (let i = 0; i < 5; i++) {
-// //       const year = currentYear - i;
-
-// //       years.push(
-// //         `${year}-${String(year + 1).slice(-2)}`
-// //       );
-// //     }
-
-// //     return years;
-// //   }, []);
-
-// //   const classes = useMemo(() => {
-// //     const classMap = new Map();
-
-// //     (students || []).forEach((student) => {
-// //       if (
-// //         student.class_uuid &&
-// //         student.class_name
-// //       ) {
-// //         classMap.set(
-// //           student.class_uuid,
-// //           {
-// //             uuid: student.class_uuid,
-// //             name: student.class_name,
-// //           }
-// //         );
-// //       }
-// //     });
-
-// //     return Array.from(
-// //       classMap.values()
-// //     ).sort((a, b) =>
-// //       a.name.localeCompare(b.name)
-// //     );
-// //   }, [students]);
-
-// //   const sections = useMemo(() => {
-// //     const sectionMap = new Map();
-
-// //     (students || []).forEach((student) => {
-// //       if (
-// //         student.section_uuid &&
-// //         student.section_name
-// //       ) {
-// //         sectionMap.set(
-// //           student.section_uuid,
-// //           {
-// //             uuid: student.section_uuid,
-// //             name: student.section_name,
-// //           }
-// //         );
-// //       }
-// //     });
-
-// //     return Array.from(
-// //       sectionMap.values()
-// //     ).sort((a, b) =>
-// //       a.name.localeCompare(b.name)
-// //     );
-// //   }, [students]);
-
-// //   const matchingStudents = useMemo(() => {
-// //     if (!studentQuery.trim()) {
-// //       return [];
-// //     }
-
-// //     const q =
-// //       studentQuery
-// //         .toLowerCase()
-// //         .trim();
-
-// //     return (students || [])
-// //       .filter((student) => {
-// //         const name =
-// //           student.full_name
-// //             ?.toLowerCase()
-// //             || "";
-
-// //         const studentNo =
-// //           student.student_no
-// //             ?.toLowerCase()
-// //             || "";
-
-// //         const admissionNo =
-// //           student.admission_no
-// //             ?.toLowerCase()
-// //             || "";
-
-// //         return (
-// //           name.includes(q) ||
-// //           studentNo.includes(q) ||
-// //           admissionNo.includes(q)
-// //         );
-// //       })
-// //       .slice(0, 8);
-// //   }, [
-// //     studentQuery,
-// //     students,
-// //   ]);
-
-// //   // =====================================================
-// //   // FETCH REPORT
-// //   // =====================================================
-
-// //   // const fetchReport = async () => {
-// //   //   setLoading(true);
-// //   //   setError("");
-
-// //   //   try {
-// //   //     const params = {
-// //   //       report_type: reportType,
-
-// //   //       academic_year:
-// //   //         visibleFilters.academicYear
-// //   //           ? academicYear || undefined
-// //   //           : undefined,
-
-// //   //       student_uuid:
-// //   //         visibleFilters.student
-// //   //           ? studentUuid || undefined
-// //   //           : undefined,
-
-// //   //       from_date:
-// //   //         visibleFilters.dateRange
-// //   //           ? fromDate || undefined
-// //   //           : undefined,
-
-// //   //       to_date:
-// //   //         visibleFilters.dateRange
-// //   //           ? toDate || undefined
-// //   //           : undefined,
-
-// //   //       collection_date:
-// //   //         visibleFilters.collectionDate
-// //   //           ? collectionDate || undefined
-// //   //           : undefined,
-
-// //   //       class_uuid:
-// //   //         classUuid === "all"
-// //   //           ? undefined
-// //   //           : classUuid,
-
-// //   //       section_uuid:
-// //   //         sectionUuid === "all"
-// //   //           ? undefined
-// //   //           : sectionUuid,
-
-// //   //       payment_status:
-// //   //         paymentStatus === "all"
-// //   //           ? undefined
-// //   //           : paymentStatus,
-// //   //     };
-
-// //   //     const response =
-// //   //       await getStudentFeeReport(
-// //   //         params
-// //   //       );
-
-// //   //     const body =
-// //   //       response?.data ??
-// //   //       response ??
-// //   //       {};
-
-// //   //     if (!body.success) {
-// //   //       // body.message can itself be a dict/list in some backends —
-// //   //       // reuse the same describe helper for consistency.
-// //   //       throw new Error(
-// //   //         typeof body.message === "string"
-// //   //           ? body.message
-// //   //           : describeErrorDetail(body.message) || "Failed to fetch report"
-// //   //       );
-// //   //     }
-
-// //   //     const data =
-// //   //       Array.isArray(body.data)
-// //   //         ? body.data
-// //   //         : [];
-
-// //   //     const componentsList =
-// //   //       Array.isArray(body.components)
-// //   //         ? body.components
-// //   //         : [];
-
-// //   //     setComponents(
-// //   //       componentsList
-// //   //     );
-
-// //   //     const formattedRows =
-// //   //       data.map((row) => {
-// //   //         const formattedRow = {
-// //   //           "Sr No":
-// //   //             row.sr_no,
-
-// //   //           "Student":
-// //   //             row.student_name ||
-// //   //             "—",
-
-// //   //           "Class":
-// //   //             row.class_name ||
-// //   //             "—",
-
-// //   //           "Section":
-// //   //             row.section_name ||
-// //   //             "—",
-
-// //   //           "Admission No":
-// //   //             row.admission_number ||
-// //   //             "—",
-
-// //   //           "Invoice":
-// //   //             row.invoice_number ||
-// //   //             "—",
-
-// //   //           "Receipt":
-// //   //             row.receipt_number ||
-// //   //             "—",
-// //   //         };
-
-// //   //         componentsList.forEach(
-// //   //           (component) => {
-// //   //             const value =
-// //   //               row.components?.[
-// //   //                 component
-// //   //               ];
-
-// //   //             formattedRow[
-// //   //               component
-// //   //             ] =
-// //   //               value === null ||
-// //   //               value === undefined
-// //   //                 ? null
-// //   //                 : Number(value);
-// //   //           }
-// //   //         );
-
-// //   //         formattedRow["Gross (₹)"] =
-// //   //           Number(row.gross_amount || 0);
-
-// //   //         formattedRow["Discount (₹)"] =
-// //   //           Number(row.concession_amount || 0);
-
-// //   //         formattedRow["Late Fee (₹)"] =
-// //   //           Number(row.late_fee || 0);
-
-// //   //         formattedRow["Net (₹)"] =
-// //   //           Number(row.net_amount || 0);
-
-// //   //         formattedRow["Paid (₹)"] =
-// //   //           Number(row.paid_amount || 0);
-
-// //   //         formattedRow["Pending (₹)"] =
-// //   //           Number(row.pending_amount || 0);
-
-// //   //         formattedRow["Payment Mode"] =
-// //   //           row.payment_mode || "—";
-
-// //   //         formattedRow["Reference"] =
-// //   //           row.reference_number || "—";
-
-// //   //         formattedRow["Payment Date"] =
-// //   //           row.payment_date
-// //   //             ? new Date(row.payment_date).toLocaleDateString()
-// //   //             : "—";
-
-// //   //         formattedRow["Due Date"] =
-// //   //           row.due_date
-// //   //             ? new Date(row.due_date).toLocaleDateString()
-// //   //             : "—";
-
-// //   //         formattedRow["Invoice Date"] =
-// //   //           row.invoice_date
-// //   //             ? new Date(row.invoice_date).toLocaleDateString()
-// //   //             : "—";
-
-// //   //         if (reportType === "RETRACTED_INVOICE") {
-// //   //           formattedRow["Retracted On"] =
-// //   //             row.retracted_at
-// //   //               ? new Date(row.retracted_at).toLocaleDateString()
-// //   //               : "—";
-
-// //   //           formattedRow["Retracted By"] =
-// //   //             row.retracted_by || "—";
-
-// //   //           formattedRow["Reason"] =
-// //   //             row.retraction_reason || "—";
-// //   //         }
-
-// //   //         return formattedRow;
-// //   //       });
-
-// //   //     setReportData(
-// //   //       formattedRows
-// //   //     );
-
-// //   //     const totalGross =
-// //   //       data.reduce((sum, row) => sum + Number(row.gross_amount || 0), 0);
-
-// //   //     const totalDiscount =
-// //   //       data.reduce((sum, row) => sum + Number(row.concession_amount || 0), 0);
-
-// //   //     const totalLateFee =
-// //   //       data.reduce((sum, row) => sum + Number(row.late_fee || 0), 0);
-
-// //   //     const totalNet =
-// //   //       data.reduce((sum, row) => sum + Number(row.net_amount || 0), 0);
-
-// //   //     const totalPaid =
-// //   //       data.reduce((sum, row) => sum + Number(row.paid_amount || 0), 0);
-
-// //   //     const totalPending =
-// //   //       data.reduce((sum, row) => sum + Number(row.pending_amount || 0), 0);
-
-// //   //     const componentTotals = {};
-
-// //   //     componentsList.forEach((component) => {
-// //   //       componentTotals[component] = data.reduce(
-// //   //         (sum, row) =>
-// //   //           sum + Number(row.components?.[component] || 0),
-// //   //         0
-// //   //       );
-// //   //     });
-
-// //   //     const totalCards = [
-// //   //       { label: "Students", value: data.length },
-// //   //       { label: "Total Gross", value: inr(totalGross) },
-// //   //       { label: "Total Discount", value: inr(totalDiscount) },
-// //   //       { label: "Total Late Fee", value: inr(totalLateFee) },
-// //   //       { label: "Total Net", value: inr(totalNet) },
-// //   //       { label: "Total Paid", value: inr(totalPaid) },
-// //   //       { label: "Total Pending", value: inr(totalPending) },
-// //   //     ];
-
-// //   //     componentsList.forEach((component) => {
-// //   //       totalCards.push({
-// //   //         label: component,
-// //   //         value: inr(componentTotals[component] || 0),
-// //   //       });
-// //   //     });
-
-// //   //     setTotals(totalCards);
-// //   //   } catch (err) {
-// //   //     console.error(
-// //   //       "Report Error:",
-// //   //       err
-// //   //     );
-
-// //   //     // IMPORTANT: `err?.response?.data?.detail` can be a dict/array
-// //   //     // ({message, student_uuid, ...} or a list of such dicts) — never
-// //   //     // put that straight into state that gets rendered as {error} in
-// //   //     // JSX. getErrorMessage always returns a plain string.
-// //   //     setError(
-// //   //       getErrorMessage(err, "Failed to load report")
-// //   //     );
-
-// //   //     setReportData([]);
-// //   //     setTotals([]);
-// //   //     setComponents([]);
-// //   //   } finally {
-// //   //     setLoading(false);
-// //   //   }
-// //   // };
-
-
-// //   const fetchReport = async () => {
-// //   setLoading(true);
-// //   setError("");
-
-// //   try {
-// //     // =====================================================
-// //     // DAILY COLLECTION REPORT
-// //     // ONLY SUCCESSFUL PAYMENTS MADE ON SELECTED DATE
-// //     // =====================================================
-// //     if (reportType === "DAILY_COLLECTION") {
-// //       const response = await getPayments({
-// //         limit: 500,
-// //       });
-
-// //       const payments =
-// //         response?.data?.data ??
-// //         response?.data ??
-// //         [];
-
-// //       const selectedDate =
-// //         collectionDate ||
-// //         new Date().toLocaleDateString("en-CA");
-
-// //       // ---------------------------------------------------
-// //       // ONLY SUCCESSFUL TRANSACTIONS OF SELECTED DATE
-// //       // ---------------------------------------------------
-// //       const dailyPayments = payments.filter((txn) => {
-// //         if (txn.transaction_status !== "SUCCESS") {
-// //           return false;
-// //         }
-
-// //         if (!txn.created_at) {
-// //           return false;
-// //         }
-
-// //         const paymentDate =
-// //           new Date(txn.created_at).toLocaleDateString("en-CA");
-
-// //         return paymentDate === selectedDate;
-// //       });
-
-// //       // ---------------------------------------------------
-// //       // CLASS / SECTION FILTER
-// //       // ---------------------------------------------------
-// //       const filteredPayments = dailyPayments.filter((txn) => {
-// //         const student = (students || []).find(
-// //           (s) => s.student_uuid === txn.student_uuid
-// //         );
-
-// //         if (!student) {
-// //           return false;
-// //         }
-
-// //         if (
-// //           classUuid !== "all" &&
-// //           classUuid &&
-// //           student.class_uuid !== classUuid
-// //         ) {
-// //           return false;
-// //         }
-
-// //         if (
-// //           sectionUuid !== "all" &&
-// //           sectionUuid &&
-// //           student.section_uuid !== sectionUuid
-// //         ) {
-// //           return false;
-// //         }
-
-// //         return true;
-// //       });
-
-// //       // ---------------------------------------------------
-// //       // FORMAT DAILY COLLECTION ROWS
-// //       // ---------------------------------------------------
-// //       const formattedRows = filteredPayments.map(
-// //         (txn, index) => {
-// //           const student =
-// //             (students || []).find(
-// //               (s) =>
-// //                 s.student_uuid === txn.student_uuid
-// //             ) || {};
-
-// //           const grossAmount =
-// //             Number(
-// //               txn.details?.reduce(
-// //                 (sum, detail) =>
-// //                   sum + Number(detail.amount || 0),
-// //                 0
-// //               ) ||
-// //                 txn.total_amount ||
-// //                 0
-// //             );
-
-// //           const discountAmount =
-// //             Number(txn.discount_amount || 0);
-
-// //           const lateFee =
-// //             Number(txn.late_fee || 0);
-
-// //           const paidAmount =
-// //             Number(txn.total_amount || 0);
-
-// //           const netAmount =
-// //             paidAmount;
-
-// //           return {
-// //             "Sr No": index + 1,
-
-// //             "Student":
-// //               txn.student_name ||
-// //               student.full_name ||
-// //               "—",
-
-// //             "Class":
-// //               student.class_name ||
-// //               "—",
-
-// //             "Section":
-// //               student.section_name ||
-// //               "—",
-
-// //             "Admission No":
-// //               student.admission_no ||
-// //               txn.admission_number ||
-// //               "—",
-
-// //             "Invoice":
-// //               txn.invoice_number ||
-// //               txn.invoice_no ||
-// //               "—",
-
-// //             "Receipt":
-// //               txn.receipt_no ||
-// //               "—",
-
-// //             "Gross (₹)":
-// //               grossAmount,
-
-// //             "Discount (₹)":
-// //               discountAmount,
-
-// //             "Late Fee (₹)":
-// //               lateFee,
-
-// //             "Net (₹)":
-// //               netAmount,
-
-// //             "Paid (₹)":
-// //               paidAmount,
-
-// //             "Pending (₹)":
-// //               0,
-
-// //             "Payment Mode":
-// //               txn.payment_mode ||
-// //               "—",
-
-// //             "Reference":
-// //               txn.reference_number ||
-// //               txn.razorpay_payment_id ||
-// //               "—",
-
-// //             "Payment Date":
-// //               txn.created_at
-// //                 ? new Date(
-// //                     txn.created_at
-// //                   ).toLocaleString()
-// //                 : "—",
-// //           };
-// //         }
-// //       );
-
-// //       setComponents([]);
-
-// //       setReportData(
-// //         formattedRows
-// //       );
-
-// //       // ---------------------------------------------------
-// //       // DAILY COLLECTION TOTALS
-// //       // ---------------------------------------------------
-// //       const totalGross =
-// //         filteredPayments.reduce(
-// //           (sum, txn) =>
-// //             sum +
-// //             Number(
-// //               txn.details?.reduce(
-// //                 (detailSum, detail) =>
-// //                   detailSum +
-// //                   Number(detail.amount || 0),
-// //                 0
-// //               ) ||
-// //                 txn.total_amount ||
-// //                 0
-// //             ),
-// //           0
-// //         );
-
-// //       const totalDiscount =
-// //         filteredPayments.reduce(
-// //           (sum, txn) =>
-// //             sum +
-// //             Number(
-// //               txn.discount_amount || 0
-// //             ),
-// //           0
-// //         );
-
-// //       const totalLateFee =
-// //         filteredPayments.reduce(
-// //           (sum, txn) =>
-// //             sum +
-// //             Number(txn.late_fee || 0),
-// //           0
-// //         );
-
-// //       const totalPaid =
-// //         filteredPayments.reduce(
-// //           (sum, txn) =>
-// //             sum +
-// //             Number(txn.total_amount || 0),
-// //           0
-// //         );
-
-// //       const totalCards = [
-// //         {
-// //           label: "Payments",
-// //           value: filteredPayments.length,
-// //         },
-// //         {
-// //           label: "Total Gross",
-// //           value: inr(totalGross),
-// //         },
-// //         {
-// //           label: "Total Discount",
-// //           value: inr(totalDiscount),
-// //         },
-// //         {
-// //           label: "Total Late Fee",
-// //           value: inr(totalLateFee),
-// //         },
-// //         {
-// //           label: "Total Collection",
-// //           value: inr(totalPaid),
-// //         },
-// //       ];
-
-// //       setTotals(totalCards);
-
-// //       return;
-// //     }
-
-// //     // =====================================================
-// //     // ALL OTHER REPORTS
-// //     // =====================================================
-
-// //     const params = {
-// //       report_type: reportType,
-
-// //       academic_year:
-// //         visibleFilters.academicYear
-// //           ? academicYear || undefined
-// //           : undefined,
-
-// //       student_uuid:
-// //         visibleFilters.student
-// //           ? studentUuid || undefined
-// //           : undefined,
-
-// //       from_date:
-// //         visibleFilters.dateRange
-// //           ? fromDate || undefined
-// //           : undefined,
-
-// //       to_date:
-// //         visibleFilters.dateRange
-// //           ? toDate || undefined
-// //           : undefined,
-
-// //       collection_date:
-// //         visibleFilters.collectionDate
-// //           ? collectionDate || undefined
-// //           : undefined,
-
-// //       class_uuid:
-// //         classUuid === "all"
-// //           ? undefined
-// //           : classUuid,
-
-// //       section_uuid:
-// //         sectionUuid === "all"
-// //           ? undefined
-// //           : sectionUuid,
-
-// //       payment_status:
-// //         paymentStatus === "all"
-// //           ? undefined
-// //           : paymentStatus,
-// //     };
-
-// //     const response =
-// //       await getStudentFeeReport(params);
-
-// //     const body =
-// //       response?.data ??
-// //       response ??
-// //       {};
-
-// //     if (!body.success) {
-// //       throw new Error(
-// //         typeof body.message === "string"
-// //           ? body.message
-// //           : describeErrorDetail(
-// //               body.message
-// //             ) ||
-// //             "Failed to fetch report"
-// //       );
-// //     }
-
-// //     const data =
-// //       Array.isArray(body.data)
-// //         ? body.data
-// //         : [];
-
-// //     const componentsList =
-// //       Array.isArray(body.components)
-// //         ? body.components
-// //         : [];
-
-// //     setComponents(
-// //       componentsList
-// //     );
-
-// //     const formattedRows =
-// //       data.map((row) => {
-// //         const formattedRow = {
-// //           "Sr No":
-// //             row.sr_no,
-
-// //           "Student":
-// //             row.student_name ||
-// //             "—",
-
-// //           "Class":
-// //             row.class_name ||
-// //             "—",
-
-// //           "Section":
-// //             row.section_name ||
-// //             "—",
-
-// //           "Admission No":
-// //             row.admission_number ||
-// //             "—",
-
-// //           "Invoice":
-// //             row.invoice_number ||
-// //             "—",
-
-// //           "Receipt":
-// //             row.receipt_number ||
-// //             "—",
-// //         };
-
-// //         componentsList.forEach(
-// //           (component) => {
-// //             const value =
-// //               row.components?.[
-// //                 component
-// //               ];
-
-// //             formattedRow[
-// //               component
-// //             ] =
-// //               value === null ||
-// //               value === undefined
-// //                 ? null
-// //                 : Number(value);
-// //           }
-// //         );
-
-// //         formattedRow["Gross (₹)"] =
-// //           Number(
-// //             row.gross_amount || 0
-// //           );
-
-// //         formattedRow["Discount (₹)"] =
-// //           Number(
-// //             row.concession_amount || 0
-// //           );
-
-// //         formattedRow["Late Fee (₹)"] =
-// //           Number(
-// //             row.late_fee || 0
-// //           );
-
-// //         formattedRow["Net (₹)"] =
-// //           Number(
-// //             row.net_amount || 0
-// //           );
-
-// //         formattedRow["Paid (₹)"] =
-// //           Number(
-// //             row.paid_amount || 0
-// //           );
-
-// //         formattedRow["Pending (₹)"] =
-// //           Number(
-// //             row.pending_amount || 0
-// //           );
-
-// //         formattedRow["Payment Mode"] =
-// //           row.payment_mode || "—";
-
-// //         formattedRow["Reference"] =
-// //           row.reference_number || "—";
-
-// //         formattedRow["Payment Date"] =
-// //           row.payment_date
-// //             ? new Date(
-// //                 row.payment_date
-// //               ).toLocaleDateString()
-// //             : "—";
-
-// //         formattedRow["Due Date"] =
-// //           row.due_date
-// //             ? new Date(
-// //                 row.due_date
-// //               ).toLocaleDateString()
-// //             : "—";
-
-// //         formattedRow["Invoice Date"] =
-// //           row.invoice_date
-// //             ? new Date(
-// //                 row.invoice_date
-// //               ).toLocaleDateString()
-// //             : "—";
-
-// //         if (
-// //           reportType ===
-// //           "RETRACTED_INVOICE"
-// //         ) {
-// //           formattedRow[
-// //             "Retracted On"
-// //           ] =
-// //             row.retracted_at
-// //               ? new Date(
-// //                   row.retracted_at
-// //                 ).toLocaleDateString()
-// //               : "—";
-
-// //           formattedRow[
-// //             "Retracted By"
-// //           ] =
-// //             row.retracted_by ||
-// //             "—";
-
-// //           formattedRow[
-// //             "Reason"
-// //           ] =
-// //             row.retraction_reason ||
-// //             "—";
-// //         }
-
-// //         return formattedRow;
-// //       });
-
-// //     setReportData(
-// //       formattedRows
-// //     );
-
-// //     // =====================================================
-// //     // OTHER REPORT TOTALS
-// //     // =====================================================
-
-// //     const totalGross =
-// //       data.reduce(
-// //         (sum, row) =>
-// //           sum +
-// //           Number(
-// //             row.gross_amount || 0
-// //           ),
-// //         0
-// //       );
-
-// //     const totalDiscount =
-// //       data.reduce(
-// //         (sum, row) =>
-// //           sum +
-// //           Number(
-// //             row.concession_amount ||
-// //               0
-// //           ),
-// //         0
-// //       );
-
-// //     const totalLateFee =
-// //       data.reduce(
-// //         (sum, row) =>
-// //           sum +
-// //           Number(
-// //             row.late_fee || 0
-// //           ),
-// //         0
-// //       );
-
-// //     const totalNet =
-// //       data.reduce(
-// //         (sum, row) =>
-// //           sum +
-// //           Number(
-// //             row.net_amount || 0
-// //           ),
-// //         0
-// //       );
-
-// //     const totalPaid =
-// //       data.reduce(
-// //         (sum, row) =>
-// //           sum +
-// //           Number(
-// //             row.paid_amount || 0
-// //           ),
-// //         0
-// //       );
-
-// //     const totalPending =
-// //       data.reduce(
-// //         (sum, row) =>
-// //           sum +
-// //           Number(
-// //             row.pending_amount || 0
-// //           ),
-// //         0
-// //       );
-
-// //     const componentTotals = {};
-
-// //     componentsList.forEach(
-// //       (component) => {
-// //         componentTotals[
-// //           component
-// //         ] = data.reduce(
-// //           (sum, row) =>
-// //             sum +
-// //             Number(
-// //               row.components?.[
-// //                 component
-// //               ] || 0
-// //             ),
-// //           0
-// //         );
-// //       }
-// //     );
-
-// //     const totalCards = [
-// //       {
-// //         label: "Students",
-// //         value: data.length,
-// //       },
-// //       {
-// //         label: "Total Gross",
-// //         value: inr(totalGross),
-// //       },
-// //       {
-// //         label: "Total Discount",
-// //         value: inr(totalDiscount),
-// //       },
-// //       {
-// //         label: "Total Late Fee",
-// //         value: inr(totalLateFee),
-// //       },
-// //       {
-// //         label: "Total Net",
-// //         value: inr(totalNet),
-// //       },
-// //       {
-// //         label: "Total Paid",
-// //         value: inr(totalPaid),
-// //       },
-// //       {
-// //         label: "Total Pending",
-// //         value: inr(totalPending),
-// //       },
-// //     ];
-
-// //     componentsList.forEach(
-// //       (component) => {
-// //         totalCards.push({
-// //           label: component,
-// //           value: inr(
-// //             componentTotals[
-// //               component
-// //             ] || 0
-// //           ),
-// //         });
-// //       }
-// //     );
-
-// //     setTotals(
-// //       totalCards
-// //     );
-// //   } catch (err) {
-// //     console.error(
-// //       "Report Error:",
-// //       err
-// //     );
-
-// //     setError(
-// //       getErrorMessage(
-// //         err,
-// //         "Failed to load report"
-// //       )
-// //     );
-
-// //     setReportData([]);
-// //     setTotals([]);
-// //     setComponents([]);
-// //   } finally {
-// //     setLoading(false);
-// //   }
-// // };
-// //   // =====================================================
-// //   // INITIAL LOAD
-// //   // =====================================================
-
-// //   useEffect(() => {
-// //     fetchReport();
-// //     // eslint-disable-next-line react-hooks/exhaustive-deps
-// //   }, []);
-
-// //   useEffect(() => {
-// //     fetchReport();
-// //     // eslint-disable-next-line react-hooks/exhaustive-deps
-// //   }, [reportType]);
-
-// //   useEffect(() => {
-// //     if (reportType === "DAILY_COLLECTION") {
-// //       fetchReport();
-// //     }
-// //     // eslint-disable-next-line react-hooks/exhaustive-deps
-// //   }, [collectionDate]);
-
-// //   const handleStudentSelect = (student) => {
-// //     setStudentUuid(student.student_uuid);
-// //     setStudentQuery(student.full_name);
-
-// //     if (student.class_uuid) {
-// //       setClassUuid(student.class_uuid);
-// //     }
-
-// //     if (student.section_uuid) {
-// //       setSectionUuid(student.section_uuid);
-// //     }
-// //   };
-
-// //   const clearFilters = () => {
-// //     setStudentUuid("");
-// //     setStudentQuery("");
-// //     setFromDate("");
-// //     setToDate("");
-// //     setClassUuid("all");
-// //     setSectionUuid("all");
-// //     setPaymentStatus(
-// //       reportType === "FEE_PENDING" ? "PENDING" : "all"
-// //     );
-// //     setCollectionDate(
-// //       new Date().toISOString().split("T")[0]
-// //     );
-
-// //     fetchReport();
-// //   };
-
-// //   const columns = useMemo(() => {
-// //     if (!reportData.length) {
-// //       return [];
-// //     }
-
-// //     return Object.keys(reportData[0]);
-// //   }, [reportData]);
-
-// //   const exportExcel = () => {
-// //     if (!reportData.length) {
-// //       toast.error("No data to export");
-// //       return;
-// //     }
-
-// //     const exportRows = reportData.map((row) => {
-// //       const exportRow = { ...row };
-
-// //       components.forEach((component) => {
-// //         if (
-// //           exportRow[component] !== null &&
-// //           exportRow[component] !== undefined
-// //         ) {
-// //           exportRow[component] = Number(exportRow[component]);
-// //         }
-// //       });
-
-// //       return exportRow;
-// //     });
-
-// //     const worksheet = XLSX.utils.json_to_sheet(exportRows);
-// //     const workbook = XLSX.utils.book_new();
-
-// //     XLSX.utils.book_append_sheet(
-// //       workbook,
-// //       worksheet,
-// //       activeReport.label.slice(0, 31)
-// //     );
-
-// //     XLSX.writeFile(
-// //       workbook,
-// //       `${reportType.toLowerCase()}-${new Date().toISOString().split("T")[0]}.xlsx`
-// //     );
-
-// //     toast.success("Report exported successfully");
-// //   };
-
-// //   const exportPDF = () => {
-// //     if (!reportData.length) {
-// //       toast.error("No data to export");
-// //       return;
-// //     }
-
-// //     const doc = new jsPDF({
-// //       orientation: "landscape",
-// //       unit: "mm",
-// //       format: "a4",
-// //     });
-
-// //     doc.setFontSize(16);
-// //     doc.text(activeReport.label, 14, 15);
-
-// //     doc.setFontSize(9);
-// //     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22);
-
-// //     if (visibleFilters.academicYear) {
-// //       doc.text(`Academic Year: ${academicYear}`, 14, 28);
-// //     }
-
-// //     const pdfColumns = columns;
-
-// //     const pdfData = reportData.map((row) =>
-// //       pdfColumns.map((column) => {
-// //         const value = row[column];
-// //         const isMoney =
-// //           components.includes(column) || column.includes("₹");
-
-// //         if (value === null || value === undefined) {
-// //           return "—";
-// //         }
-
-// //         return isMoney && typeof value === "number"
-// //           ? Number(value).toFixed(2)
-// //           : value;
-// //       })
-// //     );
-
-// //     autoTable(doc, {
-// //       head: [pdfColumns],
-// //       body: pdfData,
-// //       startY: 32,
-// //       styles: { fontSize: 6, cellPadding: 1.2 },
-// //       headStyles: { fontSize: 6, fillColor: [99, 102, 241] },
-// //       margin: { left: 5, right: 5 },
-// //       horizontalPageBreak: true,
-// //       horizontalPageBreakRepeat: 1,
-// //     });
-
-// //     doc.save(
-// //       `${reportType.toLowerCase()}-${new Date().toISOString().split("T")[0]}.pdf`
-// //     );
-
-// //     toast.success("PDF exported successfully");
-// //   };
-
-// //   // =====================================================
-// //   // RENDER
-// //   // =====================================================
-
-// //   return (
-// //     <div className="space-y-4">
-
-// //       <Card className="border-border/60">
-
-// //         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
-
-// //           <div>
-// //             <CardTitle className="font-display text-base flex items-center gap-2">
-// //               <FileBarChart2 className="h-4 w-4 text-primary" />
-// //               {activeReport.label}
-// //             </CardTitle>
-
-// //             <CardDescription>
-// //               {activeReport.description}
-// //               {components.length > 0 && (
-// //                 <span className="ml-2 text-xs text-muted-foreground">
-// //                   · {components.length} fee components
-// //                 </span>
-// //               )}
-// //             </CardDescription>
-// //           </div>
-
-// //           <Button
-// //             variant="ghost"
-// //             size="sm"
-// //             onClick={() => setShowFilters(!showFilters)}
-// //           >
-// //             {showFilters ? "Hide Filters" : "Show Filters"}
-// //           </Button>
-
-// //         </CardHeader>
-
-// //         {showFilters && (
-// //           <CardContent className="pt-0 space-y-3">
-
-// //             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
-
-// //               <FF label="Report Type">
-// //                 <Select
-// //                   value={reportType}
-// //                   onValueChange={handleReportTypeChange}
-// //                 >
-// //                   <SelectTrigger className="h-9">
-// //                     <SelectValue placeholder="Select report" />
-// //                   </SelectTrigger>
-
-// //                   <SelectContent>
-// //                     {REPORT_TYPES.map((rt) => (
-// //                       <SelectItem key={rt.value} value={rt.value}>
-// //                         {rt.label}
-// //                       </SelectItem>
-// //                     ))}
-// //                   </SelectContent>
-// //                 </Select>
-// //               </FF>
-
-// //               {visibleFilters.academicYear && (
-// //                 <FF label="Academic Year">
-// //                   <Select
-// //                     value={academicYear}
-// //                     onValueChange={setAcademicYear}
-// //                   >
-// //                     <SelectTrigger className="h-9">
-// //                       <SelectValue placeholder="Select year" />
-// //                     </SelectTrigger>
-
-// //                     <SelectContent>
-// //                       {academicYears.map((year) => (
-// //                         <SelectItem key={year} value={year}>
-// //                           {year}
-// //                         </SelectItem>
-// //                       ))}
-// //                     </SelectContent>
-// //                   </Select>
-// //                 </FF>
-// //               )}
-
-// //               {visibleFilters.student && (
-// //                 <div className="space-y-1.5 relative">
-// //                   <Label className="text-xs text-muted-foreground">
-// //                     Student
-// //                   </Label>
-
-// //                   <Input
-// //                     placeholder="Search by name, student no or admission no..."
-// //                     value={studentQuery}
-// //                     onChange={(e) => {
-// //                       const value = e.target.value;
-// //                       setStudentQuery(value);
-// //                       if (!value) setStudentUuid("");
-// //                     }}
-// //                     className="h-9"
-// //                   />
-
-// //                   {studentQuery &&
-// //                     !studentUuid &&
-// //                     matchingStudents.length > 0 && (
-// //                       <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-// //                         {matchingStudents.map((student) => (
-// //                           <button
-// //                             key={student.student_uuid}
-// //                             type="button"
-// //                             className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center justify-between"
-// //                             onClick={() => handleStudentSelect(student)}
-// //                           >
-// //                             <span>{student.full_name}</span>
-// //                             <span className="text-xs text-muted-foreground">
-// //                               {student.class_name}
-// //                               {student.section_name
-// //                                 ? `-${student.section_name}`
-// //                                 : ""}
-// //                             </span>
-// //                           </button>
-// //                         ))}
-// //                       </div>
-// //                     )}
-
-// //                   {studentUuid && (
-// //                     <div className="text-xs text-primary flex items-center gap-1.5 bg-primary/5 rounded-md px-2 py-1 w-fit">
-// //                       <Check className="h-3 w-3" />
-// //                       <span className="font-medium">{studentQuery}</span>
-// //                       <button
-// //                         type="button"
-// //                         className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
-// //                         onClick={() => {
-// //                           setStudentUuid("");
-// //                           setStudentQuery("");
-// //                           setClassUuid("all");
-// //                           setSectionUuid("all");
-// //                         }}
-// //                       >
-// //                         <X className="h-3 w-3" />
-// //                       </button>
-// //                     </div>
-// //                   )}
-// //                 </div>
-// //               )}
-
-// //               {visibleFilters.class && (
-// //                 <FF label="Class">
-// //                   <Select
-// //                     value={classUuid}
-// //                     onValueChange={(value) => {
-// //                       setClassUuid(value);
-// //                       setSectionUuid("all");
-// //                     }}
-// //                   >
-// //                     <SelectTrigger className="h-9">
-// //                       <SelectValue placeholder="All Classes" />
-// //                     </SelectTrigger>
-
-// //                     <SelectContent>
-// //                       <SelectItem value="all">All Classes</SelectItem>
-// //                       {classes.map((item) => (
-// //                         <SelectItem key={item.uuid} value={item.uuid}>
-// //                           {item.name}
-// //                         </SelectItem>
-// //                       ))}
-// //                     </SelectContent>
-// //                   </Select>
-// //                 </FF>
-// //               )}
-
-// //               {visibleFilters.section && (
-// //                 <FF label="Section">
-// //                   <Select
-// //                     value={sectionUuid}
-// //                     onValueChange={setSectionUuid}
-// //                   >
-// //                     <SelectTrigger className="h-9">
-// //                       <SelectValue placeholder="All Sections" />
-// //                     </SelectTrigger>
-
-// //                     <SelectContent>
-// //                       <SelectItem value="all">All Sections</SelectItem>
-// //                       {sections.map((item) => (
-// //                         <SelectItem key={item.uuid} value={item.uuid}>
-// //                           {item.name}
-// //                         </SelectItem>
-// //                       ))}
-// //                     </SelectContent>
-// //                   </Select>
-// //                 </FF>
-// //               )}
-
-// //               {visibleFilters.dateRange && (
-// //                 <>
-// //                   <FF label="From Date">
-// //                     <Input
-// //                       type="date"
-// //                       value={fromDate}
-// //                       onChange={(e) => setFromDate(e.target.value)}
-// //                       className="h-9"
-// //                     />
-// //                   </FF>
-
-// //                   <FF label="To Date">
-// //                     <Input
-// //                       type="date"
-// //                       value={toDate}
-// //                       onChange={(e) => setToDate(e.target.value)}
-// //                       className="h-9"
-// //                     />
-// //                   </FF>
-// //                 </>
-// //               )}
-
-// //               {visibleFilters.collectionDate && (
-// //                 <FF label="Collection Date">
-// //                   <Input
-// //                     type="date"
-// //                     value={collectionDate}
-// //                     onChange={(e) => setCollectionDate(e.target.value)}
-// //                     className="h-9"
-// //                   />
-// //                 </FF>
-// //               )}
-
-// //               {visibleFilters.paymentStatus && (
-// //                 <FF label="Payment Status">
-// //                   <Select
-// //                     value={paymentStatus}
-// //                     onValueChange={setPaymentStatus}
-// //                   >
-// //                     <SelectTrigger className="h-9">
-// //                       <SelectValue placeholder="All Status" />
-// //                     </SelectTrigger>
-
-// //                     <SelectContent>
-// //                       {statusOptionsForReport.map((status) => (
-// //                         <SelectItem key={status.value} value={status.value}>
-// //                           {status.label}
-// //                         </SelectItem>
-// //                       ))}
-// //                     </SelectContent>
-// //                   </Select>
-// //                 </FF>
-// //               )}
-
-// //               <div className="flex items-end gap-2">
-// //                 <Button
-// //                   size="sm"
-// //                   className="gradient-primary border-0 flex-1"
-// //                   onClick={fetchReport}
-// //                   disabled={loading}
-// //                 >
-// //                   <RefreshCcw
-// //                     className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-// //                   />
-// //                   {loading ? "Loading..." : "Generate"}
-// //                 </Button>
-
-// //                 <Button
-// //                   size="sm"
-// //                   variant="outline"
-// //                   onClick={clearFilters}
-// //                   disabled={loading}
-// //                 >
-// //                   Clear
-// //                 </Button>
-// //               </div>
-
-// //             </div>
-
-// //           </CardContent>
-// //         )}
-
-// //       </Card>
-
-// //       {totals.length > 0 && (
-// //         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
-// //           {totals.slice(0, 7).map((total) => (
-// //             <div
-// //               key={total.label}
-// //               className="rounded-lg border border-border/60 bg-card px-3 py-2 text-center"
-// //             >
-// //               <div className="text-xs text-muted-foreground">
-// //                 {total.label}
-// //               </div>
-// //               <div className="text-sm font-semibold">{total.value}</div>
-// //             </div>
-// //           ))}
-// //         </div>
-// //       )}
-
-// //       {error && (
-// //         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-// //           <AlertCircle className="h-4 w-4 inline mr-2" />
-// //           {error}
-// //         </div>
-// //       )}
-
-// //       <Card className="border-border/60">
-// //         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-2 flex-wrap">
-// //           <div>
-// //             <CardTitle className="font-display text-base">
-// //               Report Data
-// //               <span className="ml-2 text-sm font-normal text-muted-foreground">
-// //                 {reportData.length} records
-// //               </span>
-// //             </CardTitle>
-// //           </div>
-
-// //           <div className="flex gap-2">
-// //             <Button
-// //               size="sm"
-// //               variant="outline"
-// //               onClick={exportExcel}
-// //               disabled={!reportData.length || loading}
-// //             >
-// //               <Download className="h-4 w-4" />
-// //               Excel
-// //             </Button>
-
-// //             <Button
-// //               size="sm"
-// //               variant="outline"
-// //               onClick={exportPDF}
-// //               disabled={!reportData.length || loading}
-// //             >
-// //               <FileText className="h-4 w-4" />
-// //               PDF
-// //             </Button>
-
-// //             <Button
-// //               size="sm"
-// //               variant="outline"
-// //               onClick={fetchReport}
-// //               disabled={loading}
-// //             >
-// //               <RefreshCcw
-// //                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-// //               />
-// //             </Button>
-// //           </div>
-// //         </CardHeader>
-
-// //         <CardContent className="p-0 overflow-x-auto">
-// //           <div className="max-h-[500px] overflow-y-auto">
-// //             <Table>
-// //               <TableHeader>
-// //                 <TableRow className="sticky top-0 bg-background z-10">
-// //                   {columns.map((column) => (
-// //                     <TableHead
-// //                       key={column}
-// //                       className="whitespace-nowrap text-xs font-semibold"
-// //                     >
-// //                       {column}
-// //                     </TableHead>
-// //                   ))}
-// //                 </TableRow>
-// //               </TableHeader>
-
-// //               <TableBody>
-// //                 {loading ? (
-// //                   <TableRow>
-// //                     <TableCell
-// //                       colSpan={columns.length || 1}
-// //                       className="text-center py-8"
-// //                     >
-// //                       <div className="flex items-center justify-center gap-2 text-muted-foreground">
-// //                         <RefreshCcw className="h-4 w-4 animate-spin" />
-// //                         Loading report...
-// //                       </div>
-// //                     </TableCell>
-// //                   </TableRow>
-// //                 ) : reportData.length === 0 ? (
-// //                   <TableRow>
-// //                     <TableCell
-// //                       colSpan={columns.length || 1}
-// //                       className="text-center py-8 text-muted-foreground"
-// //                     >
-// //                       No data found. Adjust your filters and click "Generate".
-// //                     </TableCell>
-// //                   </TableRow>
-// //                 ) : (
-// //                   reportData.map((row, index) => (
-// //                     <TableRow key={index} className="hover:bg-muted/30">
-// //                       {columns.map((column) => {
-// //                         const value = row[column];
-// //                         const isComponent = components.includes(column);
-// //                         const isMoney =
-// //                           isComponent ||
-// //                           column.includes("₹") ||
-// //                           column.includes("Gross") ||
-// //                           column.includes("Discount") ||
-// //                           column.includes("Late") ||
-// //                           column.includes("Net") ||
-// //                           column.includes("Paid") ||
-// //                           column.includes("Pending");
-// //                         const isPending = column === "Pending (₹)";
-
-// //                         return (
-// //                           <TableCell
-// //                             key={column}
-// //                             className={`
-// //                               whitespace-nowrap text-sm
-// //                               ${isMoney && typeof value === "number" ? "font-mono" : ""}
-// //                               ${isPending && typeof value === "number" && value > 0 ? "text-warning font-semibold" : ""}
-// //                             `}
-// //                           >
-// //                             {value === null || value === undefined || value === ""
-// //                               ? "—"
-// //                               : typeof value === "number" && isMoney
-// //                               ? inr(value)
-// //                               : value}
-// //                           </TableCell>
-// //                         );
-// //                       })}
-// //                     </TableRow>
-// //                   ))
-// //                 )}
-// //               </TableBody>
-// //             </Table>
-// //           </div>
-// //         </CardContent>
-// //       </Card>
-
-// //       {components.length > 0 && reportData.length > 0 && (
-// //         <Card className="border-border/60">
-// //           <CardHeader className="pb-3">
-// //             <CardTitle className="font-display text-base">
-// //               Fee Components
-// //             </CardTitle>
-// //             <CardDescription>
-// //               Components tracked in this report
-// //             </CardDescription>
-// //           </CardHeader>
-
-// //           <CardContent>
-// //             <div className="flex flex-wrap gap-2">
-// //               {components.map((component) => (
-// //                 <Badge key={component} variant="secondary" className="text-xs">
-// //                   {component}
-// //                 </Badge>
-// //               ))}
-// //             </div>
-// //           </CardContent>
-// //         </Card>
-// //       )}
-
-// //     </div>
-// //   );
-// // }
-
-// function ReportsPanel({ students }) {
-//   const [loading, setLoading] = useState(false);
-//   const [reportData, setReportData] = useState([]);
-//   const [totals, setTotals] = useState([]);
-//   const [components, setComponents] = useState([]);
-//   const [error, setError] = useState("");
-
-//   // =====================================================
-//   // REPORT TYPES
-//   // =====================================================
-
-//   const REPORT_TYPES = [
-//     {
-//       value: "MASTER_FEES",
-//       label: "Master Student Fees Report (Paid / Unpaid)",
-//       description: "Paid vs unpaid breakdown across all students",
-//     },
-
-//     {
-//       value: "DAILY_COLLECTION",
-//       label: "Daily Collections Report",
-//       description: "Payments collected on a specific day",
-//     },
-
-//     // ===================================================
-//     // NEW
-//     // ===================================================
-//     {
-//       value: "DAILY_COLLECTION_HEAD",
-//       label: "Daily Collection Head Report",
-//       description:
-//         "Collection head-wise payment mode collection for the selected day",
-//     },
-
-//     {
-//       value: "FEE_PENDING",
-//       label: "Fee Pending Report",
-//       description: "Students with pending / overdue fees",
-//     },
-
-//     {
-//       value: "STUDENT_FEE_NEW",
-//       label: "Student Fee Report (New)",
-//       description:
-//         "Detailed fee report with student-wise breakdown",
-//     },
-
-//     {
-//       value: "RETRACTED_INVOICE",
-//       label: "Retracted Invoice Report",
-//       description:
-//         "Invoices that were retracted / cancelled",
-//     },
-//   ];
-
-//   const [reportType, setReportType] =
-//     useState("STUDENT_FEE_NEW");
-
-//   const activeReport = useMemo(
-//     () =>
-//       REPORT_TYPES.find(
-//         (r) => r.value === reportType
-//       ) || REPORT_TYPES[3],
-//     [reportType]
-//   );
-
-//   // =====================================================
-//   // FILTER STATES
-//   // =====================================================
-
-//   const [academicYear, setAcademicYear] =
-//     useState(ACADEMIC_YEAR);
-
-//   const [studentUuid, setStudentUuid] =
-//     useState("");
-
-//   const [studentQuery, setStudentQuery] =
-//     useState("");
-
-//   const [fromDate, setFromDate] =
-//     useState("");
-
-//   const [toDate, setToDate] =
-//     useState("");
-
-//   const [collectionDate, setCollectionDate] =
-//     useState(
-//       new Date()
-//         .toISOString()
-//         .split("T")[0]
-//     );
-
-//   const [classUuid, setClassUuid] =
-//     useState("all");
-
-//   const [sectionUuid, setSectionUuid] =
-//     useState("all");
-
-//   const [paymentStatus, setPaymentStatus] =
-//     useState("all");
-
-//   const [showFilters, setShowFilters] =
-//     useState(true);
-
-//   // =====================================================
-//   // PER REPORT FILTER VISIBILITY
-//   // =====================================================
-
-//   const visibleFilters = useMemo(() => {
-//     switch (reportType) {
-//       case "MASTER_FEES":
-//         return {
-//           academicYear: true,
-//           student: true,
-//           class: true,
-//           section: true,
-//           dateRange: false,
-//           collectionDate: false,
-//           paymentStatus: true,
-//         };
-
-//       case "DAILY_COLLECTION":
-//         return {
-//           academicYear: false,
-//           student: false,
-//           class: true,
-//           section: true,
-//           dateRange: false,
-//           collectionDate: true,
-//           paymentStatus: false,
-//         };
-
-//       // =================================================
-//       // NEW DAILY COLLECTION HEAD
-//       // =================================================
-//       case "DAILY_COLLECTION_HEAD":
-//         return {
-//           academicYear: false,
-//           student: false,
-//           class: true,
-//           section: true,
-//           dateRange: false,
-//           collectionDate: true,
-//           paymentStatus: false,
-//         };
-
-//       case "FEE_PENDING":
-//         return {
-//           academicYear: true,
-//           student: true,
-//           class: true,
-//           section: true,
-//           dateRange: false,
-//           collectionDate: false,
-//           paymentStatus: false,
-//         };
-
-//       case "RETRACTED_INVOICE":
-//         return {
-//           academicYear: true,
-//           student: false,
-//           class: true,
-//           section: true,
-//           dateRange: true,
-//           collectionDate: false,
-//           paymentStatus: false,
-//         };
-
-//       case "STUDENT_FEE_NEW":
-//       default:
-//         return {
-//           academicYear: true,
-//           student: true,
-//           class: true,
-//           section: true,
-//           dateRange: true,
-//           collectionDate: false,
-//           paymentStatus: true,
-//         };
-//     }
-//   }, [reportType]);
-
-//   // =====================================================
-//   // STATUS OPTIONS
-//   // =====================================================
-
-//   const statusOptionsForReport = useMemo(() => {
-//     if (reportType === "MASTER_FEES") {
-//       return [
-//         {
-//           value: "all",
-//           label: "All Status",
-//         },
-//         {
-//           value: "PAID",
-//           label: "Paid",
-//         },
-//         {
-//           value: "PENDING",
-//           label: "Unpaid",
-//         },
-//       ];
-//     }
-
-//     return [
-//       {
-//         value: "all",
-//         label: "All Status",
-//       },
-//       {
-//         value: "PAID",
-//         label: "Paid",
-//       },
-//       {
-//         value: "PARTIAL",
-//         label: "Partial",
-//       },
-//       {
-//         value: "PENDING",
-//         label: "Pending",
-//       },
-//       {
-//         value: "OVERDUE",
-//         label: "Overdue",
-//       },
-//       {
-//         value: "ADVANCE",
-//         label: "Advance",
-//       },
-//     ];
-//   }, [reportType]);
-
-//   // =====================================================
-//   // REPORT TYPE CHANGE
-//   // =====================================================
-
-//   const handleReportTypeChange = (value) => {
-//     setReportType(value);
-//     setError("");
-
-//     // Daily reports
-//     if (
-//       value === "DAILY_COLLECTION" ||
-//       value === "DAILY_COLLECTION_HEAD"
-//     ) {
-//       setFromDate("");
-//       setToDate("");
-//       setStudentUuid("");
-//       setStudentQuery("");
-//       setPaymentStatus("all");
-//     }
-
-//     if (value === "FEE_PENDING") {
-//       setPaymentStatus("PENDING");
-//     }
-
-//     if (value === "MASTER_FEES") {
-//       setFromDate("");
-//       setToDate("");
-//     }
-
-//     if (value === "RETRACTED_INVOICE") {
-//       setStudentUuid("");
-//       setStudentQuery("");
-//       setPaymentStatus("all");
-//     }
-//   };
-
-//   // =====================================================
-//   // ACADEMIC YEARS
-//   // =====================================================
-
-//   const academicYears = useMemo(() => {
-//     const years = [];
-
-//     const currentYear =
-//       new Date().getFullYear();
-
-//     for (let i = 0; i < 5; i++) {
-//       const year = currentYear - i;
-
-//       years.push(
-//         `${year}-${String(year + 1).slice(-2)}`
-//       );
-//     }
-
-//     return years;
-//   }, []);
-
-//   // =====================================================
-//   // CLASSES
-//   // =====================================================
-
-//   const classes = useMemo(() => {
-//     const classMap = new Map();
-
-//     (students || []).forEach((student) => {
-//       if (
-//         student.class_uuid &&
-//         student.class_name
-//       ) {
-//         classMap.set(
-//           student.class_uuid,
-//           {
-//             uuid: student.class_uuid,
-//             name: student.class_name,
-//           }
-//         );
-//       }
-//     });
-
-//     return Array.from(
-//       classMap.values()
-//     ).sort((a, b) =>
-//       a.name.localeCompare(b.name)
-//     );
-//   }, [students]);
-
-//   // =====================================================
-//   // SECTIONS
-//   // =====================================================
-
-//   const sections = useMemo(() => {
-//     const sectionMap = new Map();
-
-//     (students || []).forEach((student) => {
-//       if (
-//         student.section_uuid &&
-//         student.section_name
-//       ) {
-//         sectionMap.set(
-//           student.section_uuid,
-//           {
-//             uuid: student.section_uuid,
-//             name: student.section_name,
-//           }
-//         );
-//       }
-//     });
-
-//     return Array.from(
-//       sectionMap.values()
-//     ).sort((a, b) =>
-//       a.name.localeCompare(b.name)
-//     );
-//   }, [students]);
-
-//   // =====================================================
-//   // STUDENT SEARCH
-//   // =====================================================
-
-//   const matchingStudents = useMemo(() => {
-//     if (!studentQuery.trim()) {
-//       return [];
-//     }
-
-//     const q =
-//       studentQuery
-//         .toLowerCase()
-//         .trim();
-
-//     return (students || [])
-//       .filter((student) => {
-//         const name =
-//           student.full_name
-//             ?.toLowerCase() || "";
-
-//         const studentNo =
-//           student.student_no
-//             ?.toLowerCase() || "";
-
-//         const admissionNo =
-//           student.admission_no
-//             ?.toLowerCase() || "";
-
-//         return (
-//           name.includes(q) ||
-//           studentNo.includes(q) ||
-//           admissionNo.includes(q)
-//         );
-//       })
-//       .slice(0, 8);
-//   }, [
-//     studentQuery,
-//     students,
-//   ]);
-
-//   // =====================================================
-//   // PAYMENT MODE NORMALIZER
-//   // =====================================================
-
-//   const getPaymentColumn = (mode) => {
-//     const value = String(mode || "")
-//       .trim()
-//       .toUpperCase()
-//       .replace(/[\s-]+/g, "_");
-
-//     switch (value) {
-//       case "CASH":
-//         return "Cash";
-
-//       case "CHEQUE":
-//       case "CHECK":
-//         return "Cheque";
-
-//       case "BANK_TRANSFER":
-//       case "BANKTRANSFER":
-//         return "Bank Transfer";
-
-//       case "CARD":
-//       case "SWIPE":
-//         return "Swipe";
-
-//       case "DD":
-//       case "DEMAND_DRAFT":
-//         return "DD";
-
-//       case "PAYTM":
-//         return "Paytm";
-
-//       case "NEFT":
-//         return "NEFT";
-
-//       case "NSO":
-//         return "NSO";
-
-//       case "ONLINE_MANUAL":
-//         return "Online Manual";
-
-//       case "CREDIT_NOTE":
-//       case "ADJUST_FROM_CREDIT_NOTE":
-//         return "Adjust from Credit Note";
-
-//       case "STUDENT_ACCOUNT":
-//       case "ADJUST_FROM_STUDENT_ACCOUNT":
-//         return "Adjust from Student Account balance";
-
-//       case "UPI":
-//         return "UPI";
-
-//       case "RAZORPAY":
-//       case "NETBANKING":
-//       case "NET_BANKING":
-//       case "ONLINE":
-//         return "Online";
-
-//       case "OTHER_SETTLEMENT":
-//         return "Other Settlement";
-
-//       case "CANCELLED":
-//         return "Cancelled";
-
-//       default:
-//         return "Online";
-//     }
-//   };
-
-//   // =====================================================
-//   // DAILY COLLECTION HEAD PAYMENT COLUMNS
-//   // =====================================================
-
-//   const DAILY_HEAD_COLUMNS = [
-//     "Online",
-//     "Cheque",
-//     "Cash",
-//     "Bank Transfer",
-//     "Other Settlement",
-//     "Cancelled",
-//     "Swipe",
-//     "DD",
-//     "Paytm",
-//     "Adjust from Student Account balance",
-//     "NEFT",
-//     "NSO",
-//     "Online Manual",
-//     "Adjust from Credit Note",
-//     "UPI",
-//   ];
-
-//   // =====================================================
-//   // GET TRANSACTION DETAIL AMOUNT
-//   // =====================================================
-
-//   const getTransactionComponentDetails = (txn) => {
-//     if (
-//       Array.isArray(txn.details) &&
-//       txn.details.length > 0
-//     ) {
-//       return txn.details;
-//     }
-
-//     return [];
-//   };
-
-//   // =====================================================
-//   // FETCH REPORT
-//   // =====================================================
-
-//   const fetchReport = async () => {
-//     setLoading(true);
-//     setError("");
-
-//     try {
-//       // =================================================
-//       // DAILY COLLECTION HEAD REPORT
-//       // =================================================
-
-//       if (
-//         reportType ===
-//         "DAILY_COLLECTION_HEAD"
-//       ) {
-//         const response =
-//           await getPayments({
-//             limit: 500,
-//           });
-
-//         const payments =
-//           response?.data?.data ??
-//           response?.data ??
-//           [];
-
-//         const selectedDate =
-//           collectionDate ||
-//           new Date()
-//             .toISOString()
-//             .split("T")[0];
-
-//         // -----------------------------------------------
-//         // ONLY SUCCESSFUL PAYMENTS
-//         // -----------------------------------------------
-
-//         const dailyPayments =
-//           payments.filter((txn) => {
-//             if (
-//               txn.transaction_status !==
-//               "SUCCESS"
-//             ) {
-//               return false;
-//             }
-
-//             if (!txn.created_at) {
-//               return false;
-//             }
-
-//             const paymentDate =
-//               new Date(
-//                 txn.created_at
-//               )
-//                 .toLocaleDateString(
-//                   "en-CA"
-//                 );
-
-//             return (
-//               paymentDate ===
-//               selectedDate
-//             );
-//           });
-
-//         // -----------------------------------------------
-//         // CLASS / SECTION FILTER
-//         // -----------------------------------------------
-
-//         const filteredPayments =
-//           dailyPayments.filter(
-//             (txn) => {
-//               const student =
-//                 (students || []).find(
-//                   (s) =>
-//                     s.student_uuid ===
-//                     txn.student_uuid
-//                 );
-
-//               // If student is not available
-//               // in frontend list, don't include
-//               // because class/section cannot be verified.
-//               if (!student) {
-//                 return false;
-//               }
-
-//               if (
-//                 classUuid !== "all" &&
-//                 classUuid &&
-//                 student.class_uuid !==
-//                   classUuid
-//               ) {
-//                 return false;
-//               }
-
-//               if (
-//                 sectionUuid !== "all" &&
-//                 sectionUuid &&
-//                 student.section_uuid !==
-//                   sectionUuid
-//               ) {
-//                 return false;
-//               }
-
-//               return true;
-//             }
-//           );
-
-//         // -----------------------------------------------
-//         // GROUP COLLECTION HEAD
-//         // -----------------------------------------------
-
-//         const collectionMap =
-//           new Map();
-
-//         filteredPayments.forEach(
-//           (txn) => {
-//             const paymentColumn =
-//               getPaymentColumn(
-//                 txn.payment_mode
-//               );
-
-//             const details =
-//               getTransactionComponentDetails(
-//                 txn
-//               );
-
-//             // -------------------------------------------
-//             // NORMAL FEE COMPONENTS
-//             // -------------------------------------------
-
-//             if (details.length > 0) {
-//               details.forEach(
-//                 (detail) => {
-//                   const collectionHead =
-//                     detail.component_name ||
-//                     detail.name ||
-//                     "Other Income";
-
-//                   const amount =
-//                     Number(
-//                       detail.amount ??
-//                         detail.paid_amount ??
-//                         0
-//                     );
-
-//                   if (
-//                     !Number.isFinite(
-//                       amount
-//                     ) ||
-//                     amount <= 0
-//                   ) {
-//                     return;
-//                   }
-
-//                   if (
-//                     !collectionMap.has(
-//                       collectionHead
-//                     )
-//                   ) {
-//                     const row = {
-//                       "Collection Head":
-//                         collectionHead,
-
-//                       Date:
-//                         selectedDate,
-//                     };
-
-//                     DAILY_HEAD_COLUMNS.forEach(
-//                       (column) => {
-//                         row[column] = 0;
-//                       }
-//                     );
-
-//                     collectionMap.set(
-//                       collectionHead,
-//                       row
-//                     );
-//                   }
-
-//                   const row =
-//                     collectionMap.get(
-//                       collectionHead
-//                     );
-
-//                   row[paymentColumn] =
-//                     Number(
-//                       row[paymentColumn] || 0
-//                     ) + amount;
-//                 }
-//               );
-//             }
-
-//             // -------------------------------------------
-//             // LATE FEE
-//             //
-//             // Add late fee separately because
-//             // many payment transaction details
-//             // contain only actual fee components.
-//             // Avoid duplicate if a detail already
-//             // contains Late Fee.
-//             // -------------------------------------------
-
-//             const lateFee =
-//               Number(
-//                 txn.late_fee || 0
-//               );
-
-//             if (
-//               lateFee > 0
-//             ) {
-//               const hasLateFeeDetail =
-//                 details.some(
-//                   (detail) =>
-//                     String(
-//                       detail.component_name ||
-//                         detail.name ||
-//                         ""
-//                     )
-//                       .toLowerCase()
-//                       .includes(
-//                         "late"
-//                       )
-//                 );
-
-//               if (!hasLateFeeDetail) {
-//                 const collectionHead =
-//                   "Late Fee";
-
-//                 if (
-//                   !collectionMap.has(
-//                     collectionHead
-//                   )
-//                 ) {
-//                   const row = {
-//                     "Collection Head":
-//                       collectionHead,
-
-//                     Date:
-//                       selectedDate,
-//                   };
-
-//                   DAILY_HEAD_COLUMNS.forEach(
-//                     (column) => {
-//                       row[column] = 0;
-//                     }
-//                   );
-
-//                   collectionMap.set(
-//                     collectionHead,
-//                     row
-//                   );
-//                 }
-
-//                 const row =
-//                   collectionMap.get(
-//                     collectionHead
-//                   );
-
-//                 row[paymentColumn] =
-//                   Number(
-//                     row[paymentColumn] || 0
-//                   ) + lateFee;
-//               }
-//             }
-
-//             // -------------------------------------------
-//             // IF TRANSACTION HAS NO DETAILS
-//             // -------------------------------------------
-
-//             if (
-//               details.length === 0 &&
-//               lateFee <= 0
-//             ) {
-//               const collectionHead =
-//                 "Other Income";
-
-//               const amount =
-//                 Number(
-//                   txn.total_amount || 0
-//                 );
-
-//               if (amount > 0) {
-//                 if (
-//                   !collectionMap.has(
-//                     collectionHead
-//                   )
-//                 ) {
-//                   const row = {
-//                     "Collection Head":
-//                       collectionHead,
-
-//                     Date:
-//                       selectedDate,
-//                   };
-
-//                   DAILY_HEAD_COLUMNS.forEach(
-//                     (column) => {
-//                       row[column] = 0;
-//                     }
-//                   );
-
-//                   collectionMap.set(
-//                     collectionHead,
-//                     row
-//                   );
-//                 }
-
-//                 const row =
-//                   collectionMap.get(
-//                     collectionHead
-//                   );
-
-//                 row[paymentColumn] =
-//                   Number(
-//                     row[paymentColumn] || 0
-//                   ) + amount;
-//               }
-//             }
-//           }
-//         );
-
-//         // -----------------------------------------------
-//         // FORMAT DATE
-//         // -----------------------------------------------
-
-//         const displayDate =
-//           new Date(
-//             `${selectedDate}T00:00:00`
-//           ).toLocaleDateString(
-//             "en-GB"
-//           );
-
-//         // -----------------------------------------------
-//         // CREATE REPORT ROWS
-//         // -----------------------------------------------
-
-//         const collectionRows =
-//           Array.from(
-//             collectionMap.values()
-//           ).map(
-//             (row, index) => {
-//               const formattedRow = {
-//                 "Sr No":
-//                   index + 1,
-
-//                 "Collection Head":
-//                   row[
-//                     "Collection Head"
-//                   ],
-
-//                 Date:
-//                   displayDate,
-//               };
-
-//               let total = 0;
-
-//               DAILY_HEAD_COLUMNS.forEach(
-//                 (column) => {
-//                   const amount =
-//                     Number(
-//                       row[column] || 0
-//                     );
-
-//                   formattedRow[
-//                     column
-//                   ] = amount;
-
-//                   total += amount;
-//                 }
-//               );
-
-//               formattedRow[
-//                 "Total (₹)"
-//               ] = total;
-
-//               return formattedRow;
-//             }
-//           );
-
-//         // -----------------------------------------------
-//         // TOTAL ROW
-//         // -----------------------------------------------
-
-//         if (
-//           collectionRows.length > 0
-//         ) {
-//           const totalRow = {
-//             "Sr No": "",
-//             "Collection Head":
-//               "Total",
-//             Date: "",
-//           };
-
-//           let grandTotal = 0;
-
-//           DAILY_HEAD_COLUMNS.forEach(
-//             (column) => {
-//               const total =
-//                 collectionRows.reduce(
-//                   (sum, row) =>
-//                     sum +
-//                     Number(
-//                       row[column] || 0
-//                     ),
-//                   0
-//                 );
-
-//               totalRow[column] =
-//                 total;
-
-//               grandTotal += total;
-//             }
-//           );
-
-//           totalRow[
-//             "Total (₹)"
-//           ] = grandTotal;
-
-//           collectionRows.push(
-//             totalRow
-//           );
-//         }
-
-//         // -----------------------------------------------
-//         // SET DATA
-//         // -----------------------------------------------
-
-//         setComponents([]);
-
-//         setReportData(
-//           collectionRows
-//         );
-
-//         // -----------------------------------------------
-//         // TOTALS
-//         // -----------------------------------------------
-
-//         const grandCollection =
-//           collectionRows.length > 0
-//             ? Number(
-//                 collectionRows[
-//                   collectionRows.length - 1
-//                 ]["Total (₹)"] || 0
-//               )
-//             : 0;
-
-//         setTotals([
-//           {
-//             label:
-//               "Successful Payments",
-//             value:
-//               filteredPayments.length,
-//           },
-
-//           {
-//             label:
-//               "Collection Heads",
-//             value:
-//               collectionRows.length >
-//               0
-//                 ? collectionRows.length -
-//                   1
-//                 : 0,
-//           },
-
-//           {
-//             label:
-//               "Total Collection",
-//             value:
-//               inr(
-//                 grandCollection
-//               ),
-//           },
-//         ]);
-
-//         return;
-//       }
-
-//       // =================================================
-//       // DAILY COLLECTION REPORT
-//       // =================================================
-
-//       if (
-//         reportType ===
-//         "DAILY_COLLECTION"
-//       ) {
-//         const response =
-//           await getPayments({
-//             limit: 500,
-//           });
-
-//         const payments =
-//           response?.data?.data ??
-//           response?.data ??
-//           [];
-
-//         const selectedDate =
-//           collectionDate ||
-//           new Date()
-//             .toLocaleDateString(
-//               "en-CA"
-//             );
-
-//         // -----------------------------------------------
-//         // ONLY SUCCESSFUL PAYMENTS
-//         // -----------------------------------------------
-
-//         const dailyPayments =
-//           payments.filter(
-//             (txn) => {
-//               if (
-//                 txn.transaction_status !==
-//                 "SUCCESS"
-//               ) {
-//                 return false;
-//               }
-
-//               if (!txn.created_at) {
-//                 return false;
-//               }
-
-//               const paymentDate =
-//                 new Date(
-//                   txn.created_at
-//                 ).toLocaleDateString(
-//                   "en-CA"
-//                 );
-
-//               return (
-//                 paymentDate ===
-//                 selectedDate
-//               );
-//             }
-//           );
-
-//         // -----------------------------------------------
-//         // CLASS / SECTION FILTER
-//         // -----------------------------------------------
-
-//         const filteredPayments =
-//           dailyPayments.filter(
-//             (txn) => {
-//               const student =
-//                 (students || []).find(
-//                   (s) =>
-//                     s.student_uuid ===
-//                     txn.student_uuid
-//                 );
-
-//               if (!student) {
-//                 return false;
-//               }
-
-//               if (
-//                 classUuid !== "all" &&
-//                 classUuid &&
-//                 student.class_uuid !==
-//                   classUuid
-//               ) {
-//                 return false;
-//               }
-
-//               if (
-//                 sectionUuid !== "all" &&
-//                 sectionUuid &&
-//                 student.section_uuid !==
-//                   sectionUuid
-//               ) {
-//                 return false;
-//               }
-
-//               return true;
-//             }
-//           );
-
-//         // -----------------------------------------------
-//         // FORMAT DAILY COLLECTION ROWS
-//         // -----------------------------------------------
-
-//         const formattedRows =
-//           filteredPayments.map(
-//             (txn, index) => {
-//               const student =
-//                 (students || []).find(
-//                   (s) =>
-//                     s.student_uuid ===
-//                     txn.student_uuid
-//                 ) || {};
-
-//               const grossAmount =
-//                 Number(
-//                   txn.details?.reduce(
-//                     (sum, detail) =>
-//                       sum +
-//                       Number(
-//                         detail.amount ||
-//                           0
-//                       ),
-//                     0
-//                   ) ||
-//                     txn.total_amount ||
-//                     0
-//                 );
-
-//               const discountAmount =
-//                 Number(
-//                   txn.discount_amount ||
-//                     0
-//                 );
-
-//               const lateFee =
-//                 Number(
-//                   txn.late_fee || 0
-//                 );
-
-//               const paidAmount =
-//                 Number(
-//                   txn.total_amount || 0
-//                 );
-
-//               return {
-//                 "Sr No":
-//                   index + 1,
-
-//                 Student:
-//                   txn.student_name ||
-//                   student.full_name ||
-//                   "—",
-
-//                 Class:
-//                   student.class_name ||
-//                   "—",
-
-//                 Section:
-//                   student.section_name ||
-//                   "—",
-
-//                 "Admission No":
-//                   student.admission_no ||
-//                   txn.admission_number ||
-//                   "—",
-
-//                 Invoice:
-//                   txn.invoice_number ||
-//                   txn.invoice_no ||
-//                   "—",
-
-//                 Receipt:
-//                   txn.receipt_no ||
-//                   "—",
-
-//                 "Gross (₹)":
-//                   grossAmount,
-
-//                 "Discount (₹)":
-//                   discountAmount,
-
-//                 "Late Fee (₹)":
-//                   lateFee,
-
-//                 "Net (₹)":
-//                   paidAmount,
-
-//                 "Paid (₹)":
-//                   paidAmount,
-
-//                 "Pending (₹)":
-//                   0,
-
-//                 "Payment Mode":
-//                   txn.payment_mode ||
-//                   "—",
-
-//                 Reference:
-//                   txn.reference_number ||
-//                   txn.razorpay_payment_id ||
-//                   "—",
-
-//                 "Payment Date":
-//                   txn.created_at
-//                     ? new Date(
-//                         txn.created_at
-//                       ).toLocaleString()
-//                     : "—",
-//               };
-//             }
-//           );
-
-//         setComponents([]);
-
-//         setReportData(
-//           formattedRows
-//         );
-
-//         // -----------------------------------------------
-//         // TOTALS
-//         // -----------------------------------------------
-
-//         const totalGross =
-//           filteredPayments.reduce(
-//             (sum, txn) =>
-//               sum +
-//               Number(
-//                 txn.details?.reduce(
-//                   (detailSum, detail) =>
-//                     detailSum +
-//                     Number(
-//                       detail.amount ||
-//                         0
-//                     ),
-//                   0
-//                 ) ||
-//                   txn.total_amount ||
-//                   0
-//               ),
-//             0
-//           );
-
-//         const totalDiscount =
-//           filteredPayments.reduce(
-//             (sum, txn) =>
-//               sum +
-//               Number(
-//                 txn.discount_amount ||
-//                   0
-//               ),
-//             0
-//           );
-
-//         const totalLateFee =
-//           filteredPayments.reduce(
-//             (sum, txn) =>
-//               sum +
-//               Number(
-//                 txn.late_fee || 0
-//               ),
-//             0
-//           );
-
-//         const totalPaid =
-//           filteredPayments.reduce(
-//             (sum, txn) =>
-//               sum +
-//               Number(
-//                 txn.total_amount || 0
-//               ),
-//             0
-//           );
-
-//         setTotals([
-//           {
-//             label: "Payments",
-//             value:
-//               filteredPayments.length,
-//           },
-
-//           {
-//             label: "Total Gross",
-//             value:
-//               inr(totalGross),
-//           },
-
-//           {
-//             label:
-//               "Total Discount",
-//             value:
-//               inr(totalDiscount),
-//           },
-
-//           {
-//             label:
-//               "Total Late Fee",
-//             value:
-//               inr(totalLateFee),
-//           },
-
-//           {
-//             label:
-//               "Total Collection",
-//             value:
-//               inr(totalPaid),
-//           },
-//         ]);
-
-//         return;
-//       }
-
-//       // =================================================
-//       // ALL OTHER REPORTS
-//       // =================================================
-
-//       const params = {
-//         report_type:
-//           reportType,
-
-//         academic_year:
-//           visibleFilters.academicYear
-//             ? academicYear ||
-//               undefined
-//             : undefined,
-
-//         student_uuid:
-//           visibleFilters.student
-//             ? studentUuid ||
-//               undefined
-//             : undefined,
-
-//         from_date:
-//           visibleFilters.dateRange
-//             ? fromDate ||
-//               undefined
-//             : undefined,
-
-//         to_date:
-//           visibleFilters.dateRange
-//             ? toDate ||
-//               undefined
-//             : undefined,
-
-//         collection_date:
-//           visibleFilters.collectionDate
-//             ? collectionDate ||
-//               undefined
-//             : undefined,
-
-//         class_uuid:
-//           classUuid === "all"
-//             ? undefined
-//             : classUuid,
-
-//         section_uuid:
-//           sectionUuid === "all"
-//             ? undefined
-//             : sectionUuid,
-
-//         payment_status:
-//           paymentStatus === "all"
-//             ? undefined
-//             : paymentStatus,
-//       };
-
-//       const response =
-//         await getStudentFeeReport(
-//           params
-//         );
-
-//       const body =
-//         response?.data ??
-//         response ??
-//         {};
-
-//       if (!body.success) {
-//         throw new Error(
-//           typeof body.message ===
-//             "string"
-//             ? body.message
-//             : describeErrorDetail(
-//                 body.message
-//               ) ||
-//                 "Failed to fetch report"
-//         );
-//       }
-
-//       const data =
-//         Array.isArray(body.data)
-//           ? body.data
-//           : [];
-
-//       const componentsList =
-//         Array.isArray(
-//           body.components
-//         )
-//           ? body.components
-//           : [];
-
-//       setComponents(
-//         componentsList
-//       );
-
-//       // -----------------------------------------------
-//       // FORMAT NORMAL REPORT
-//       // -----------------------------------------------
-
-//       const formattedRows =
-//         data.map((row) => {
-//           const formattedRow = {
-//             "Sr No":
-//               row.sr_no,
-
-//             Student:
-//               row.student_name ||
-//               "—",
-
-//             Class:
-//               row.class_name ||
-//               "—",
-
-//             Section:
-//               row.section_name ||
-//               "—",
-
-//             "Admission No":
-//               row.admission_number ||
-//               "—",
-
-//             Invoice:
-//               row.invoice_number ||
-//               "—",
-
-//             Receipt:
-//               row.receipt_number ||
-//               "—",
-//           };
-
-//           componentsList.forEach(
-//             (component) => {
-//               const value =
-//                 row.components?.[
-//                   component
-//                 ];
-
-//               formattedRow[
-//                 component
-//               ] =
-//                 value === null ||
-//                 value === undefined
-//                   ? null
-//                   : Number(value);
-//             }
-//           );
-
-//           formattedRow[
-//             "Gross (₹)"
-//           ] =
-//             Number(
-//               row.gross_amount ||
-//                 0
-//             );
-
-//           formattedRow[
-//             "Discount (₹)"
-//           ] =
-//             Number(
-//               row.concession_amount ||
-//                 0
-//             );
-
-//           formattedRow[
-//             "Late Fee (₹)"
-//           ] =
-//             Number(
-//               row.late_fee ||
-//                 0
-//             );
-
-//           formattedRow[
-//             "Net (₹)"
-//           ] =
-//             Number(
-//               row.net_amount ||
-//                 0
-//             );
-
-//           formattedRow[
-//             "Paid (₹)"
-//           ] =
-//             Number(
-//               row.paid_amount ||
-//                 0
-//             );
-
-//           formattedRow[
-//             "Pending (₹)"
-//           ] =
-//             Number(
-//               row.pending_amount ||
-//                 0
-//             );
-
-//           formattedRow[
-//             "Payment Mode"
-//           ] =
-//             row.payment_mode ||
-//             "—";
-
-//           formattedRow[
-//             "Reference"
-//           ] =
-//             row.reference_number ||
-//             "—";
-
-//           formattedRow[
-//             "Payment Date"
-//           ] =
-//             row.payment_date
-//               ? new Date(
-//                   row.payment_date
-//                 ).toLocaleDateString()
-//               : "—";
-
-//           formattedRow[
-//             "Due Date"
-//           ] =
-//             row.due_date
-//               ? new Date(
-//                   row.due_date
-//                 ).toLocaleDateString()
-//               : "—";
-
-//           formattedRow[
-//             "Invoice Date"
-//           ] =
-//             row.invoice_date
-//               ? new Date(
-//                   row.invoice_date
-//                 ).toLocaleDateString()
-//               : "—";
-
-//           if (
-//             reportType ===
-//             "RETRACTED_INVOICE"
-//           ) {
-//             formattedRow[
-//               "Retracted On"
-//             ] =
-//               row.retracted_at
-//                 ? new Date(
-//                     row.retracted_at
-//                   ).toLocaleDateString()
-//                 : "—";
-
-//             formattedRow[
-//               "Retracted By"
-//             ] =
-//               row.retracted_by ||
-//               "—";
-
-//             formattedRow[
-//               "Reason"
-//             ] =
-//               row.retraction_reason ||
-//               "—";
-//           }
-
-//           return formattedRow;
-//         });
-
-//       setReportData(
-//         formattedRows
-//       );
-
-//       // -----------------------------------------------
-//       // NORMAL REPORT TOTALS
-//       // -----------------------------------------------
-
-//       const totalGross =
-//         data.reduce(
-//           (sum, row) =>
-//             sum +
-//             Number(
-//               row.gross_amount ||
-//                 0
-//             ),
-//           0
-//         );
-
-//       const totalDiscount =
-//         data.reduce(
-//           (sum, row) =>
-//             sum +
-//             Number(
-//               row.concession_amount ||
-//                 0
-//             ),
-//           0
-//         );
-
-//       const totalLateFee =
-//         data.reduce(
-//           (sum, row) =>
-//             sum +
-//             Number(
-//               row.late_fee ||
-//                 0
-//             ),
-//           0
-//         );
-
-//       const totalNet =
-//         data.reduce(
-//           (sum, row) =>
-//             sum +
-//             Number(
-//               row.net_amount ||
-//                 0
-//             ),
-//           0
-//         );
-
-//       const totalPaid =
-//         data.reduce(
-//           (sum, row) =>
-//             sum +
-//             Number(
-//               row.paid_amount ||
-//                 0
-//             ),
-//           0
-//         );
-
-//       const totalPending =
-//         data.reduce(
-//           (sum, row) =>
-//             sum +
-//             Number(
-//               row.pending_amount ||
-//                 0
-//             ),
-//           0
-//         );
-
-//       const componentTotals = {};
-
-//       componentsList.forEach(
-//         (component) => {
-//           componentTotals[
-//             component
-//           ] = data.reduce(
-//             (sum, row) =>
-//               sum +
-//               Number(
-//                 row.components?.[
-//                   component
-//                 ] || 0
-//               ),
-//             0
-//           );
-//         }
-//       );
-
-//       const totalCards = [
-//         {
-//           label: "Students",
-//           value:
-//             data.length,
-//         },
-
-//         {
-//           label: "Total Gross",
-//           value:
-//             inr(totalGross),
-//         },
-
-//         {
-//           label:
-//             "Total Discount",
-//           value:
-//             inr(totalDiscount),
-//         },
-
-//         {
-//           label:
-//             "Total Late Fee",
-//           value:
-//             inr(totalLateFee),
-//         },
-
-//         {
-//           label: "Total Net",
-//           value:
-//             inr(totalNet),
-//         },
-
-//         {
-//           label: "Total Paid",
-//           value:
-//             inr(totalPaid),
-//         },
-
-//         {
-//           label:
-//             "Total Pending",
-//           value:
-//             inr(totalPending),
-//         },
-//       ];
-
-//       componentsList.forEach(
-//         (component) => {
-//           totalCards.push({
-//             label:
-//               component,
-
-//             value:
-//               inr(
-//                 componentTotals[
-//                   component
-//                 ] || 0
-//               ),
-//           });
-//         }
-//       );
-
-//       setTotals(
-//         totalCards
-//       );
-//     } catch (err) {
-//       console.error(
-//         "Report Error:",
-//         err
-//       );
-
-//       setError(
-//         getErrorMessage(
-//           err,
-//           "Failed to load report"
-//         )
-//       );
-
-//       setReportData([]);
-//       setTotals([]);
-//       setComponents([]);
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   // =====================================================
-//   // INITIAL / REPORT TYPE LOAD
-//   // =====================================================
-
-//   useEffect(() => {
-//     fetchReport();
-
-//     // eslint-disable-next-line react-hooks/exhaustive-deps
-//   }, []);
-
-//   useEffect(() => {
-//     fetchReport();
-
-//     // eslint-disable-next-line react-hooks/exhaustive-deps
-//   }, [reportType]);
-
-//   useEffect(() => {
-//     if (
-//       reportType ===
-//         "DAILY_COLLECTION" ||
-//       reportType ===
-//         "DAILY_COLLECTION_HEAD"
-//     ) {
-//       fetchReport();
-//     }
-
-//     // eslint-disable-next-line react-hooks/exhaustive-deps
-//   }, [collectionDate]);
-
-//   // =====================================================
-//   // STUDENT SELECT
-//   // =====================================================
-
-//   const handleStudentSelect = (
-//     student
-//   ) => {
-//     setStudentUuid(
-//       student.student_uuid
-//     );
-
-//     setStudentQuery(
-//       student.full_name
-//     );
-
-//     if (student.class_uuid) {
-//       setClassUuid(
-//         student.class_uuid
-//       );
-//     }
-
-//     if (student.section_uuid) {
-//       setSectionUuid(
-//         student.section_uuid
-//       );
-//     }
-//   };
-
-//   // =====================================================
-//   // CLEAR FILTERS
-//   // =====================================================
-
-//   const clearFilters = () => {
-//     setStudentUuid("");
-//     setStudentQuery("");
-//     setFromDate("");
-//     setToDate("");
-//     setClassUuid("all");
-//     setSectionUuid("all");
-
-//     setPaymentStatus(
-//       reportType ===
-//         "FEE_PENDING"
-//         ? "PENDING"
-//         : "all"
-//     );
-
-//     setCollectionDate(
-//       new Date()
-//         .toISOString()
-//         .split("T")[0]
-//     );
-
-//     fetchReport();
-//   };
-
-//   // =====================================================
-//   // TABLE COLUMNS
-//   // =====================================================
-
-//   const columns = useMemo(() => {
-//     if (!reportData.length) {
-//       return [];
-//     }
-
-//     return Object.keys(
-//       reportData[0]
-//     );
-//   }, [reportData]);
-
-//   // =====================================================
-//   // EXCEL EXPORT
-//   // =====================================================
-
-//   const exportExcel = () => {
-//     if (!reportData.length) {
-//       toast.error(
-//         "No data to export"
-//       );
-//       return;
-//     }
-
-//     const exportRows =
-//       reportData.map(
-//         (row) => {
-//           const exportRow = {
-//             ...row,
-//           };
-
-//           components.forEach(
-//             (component) => {
-//               if (
-//                 exportRow[
-//                   component
-//                 ] !== null &&
-//                 exportRow[
-//                   component
-//                 ] !== undefined
-//               ) {
-//                 exportRow[
-//                   component
-//                 ] = Number(
-//                   exportRow[
-//                     component
-//                   ]
-//                 );
-//               }
-//             }
-//           );
-
-//           return exportRow;
-//         }
-//       );
-
-//     const worksheet =
-//       XLSX.utils.json_to_sheet(
-//         exportRows
-//       );
-
-//     const workbook =
-//       XLSX.utils.book_new();
-
-//     XLSX.utils.book_append_sheet(
-//       workbook,
-//       worksheet,
-//       activeReport.label.slice(
-//         0,
-//         31
-//       )
-//     );
-
-//     XLSX.writeFile(
-//       workbook,
-//       `${reportType.toLowerCase()}-${new Date()
-//         .toISOString()
-//         .split("T")[0]}.xlsx`
-//     );
-
-//     toast.success(
-//       "Report exported successfully"
-//     );
-//   };
-
-//   // =====================================================
-//   // PDF EXPORT
-//   // =====================================================
-
-//   const exportPDF = () => {
-//     if (!reportData.length) {
-//       toast.error(
-//         "No data to export"
-//       );
-//       return;
-//     }
-
-//     const doc = new jsPDF({
-//       orientation:
-//         "landscape",
-//       unit: "mm",
-//       format: "a4",
-//     });
-
-//     doc.setFontSize(16);
-
-//     doc.text(
-//       activeReport.label,
-//       14,
-//       15
-//     );
-
-//     doc.setFontSize(9);
-
-//     doc.text(
-//       `Generated: ${new Date().toLocaleString()}`,
-//       14,
-//       22
-//     );
-
-//     if (
-//       visibleFilters.academicYear
-//     ) {
-//       doc.text(
-//         `Academic Year: ${academicYear}`,
-//         14,
-//         28
-//       );
-//     }
-
-//     const pdfColumns =
-//       columns;
-
-//     const pdfData =
-//       reportData.map(
-//         (row) =>
-//           pdfColumns.map(
-//             (column) => {
-//               const value =
-//                 row[column];
-
-//               const isMoney =
-//                 components.includes(
-//                   column
-//                 ) ||
-//                 column.includes(
-//                   "₹"
-//                 ) ||
-//                 column ===
-//                   "Online" ||
-//                 column ===
-//                   "Cheque" ||
-//                 column ===
-//                   "Cash" ||
-//                 column ===
-//                   "Bank Transfer" ||
-//                 column ===
-//                   "Other Settlement" ||
-//                 column ===
-//                   "Cancelled" ||
-//                 column ===
-//                   "Swipe" ||
-//                 column === "DD" ||
-//                 column ===
-//                   "Paytm" ||
-//                 column ===
-//                   "Adjust from Student Account balance" ||
-//                 column ===
-//                   "NEFT" ||
-//                 column === "NSO" ||
-//                 column ===
-//                   "Online Manual" ||
-//                 column ===
-//                   "Adjust from Credit Note" ||
-//                 column === "UPI" ||
-//                 column ===
-//                   "Total (₹)";
-
-//               if (
-//                 value === null ||
-//                 value === undefined
-//               ) {
-//                 return "—";
-//               }
-
-//               return isMoney &&
-//                 typeof value ===
-//                   "number"
-//                 ? Number(
-//                     value
-//                   ).toFixed(2)
-//                 : value;
-//             }
-//           )
-//       );
-
-//     autoTable(doc, {
-//       head: [
-//         pdfColumns,
-//       ],
-
-//       body: pdfData,
-
-//       startY:
-//         visibleFilters.academicYear
-//           ? 32
-//           : 28,
-
-//       styles: {
-//         fontSize: 6,
-//         cellPadding: 1.2,
-//       },
-
-//       headStyles: {
-//         fontSize: 6,
-//       },
-
-//       margin: {
-//         left: 5,
-//         right: 5,
-//       },
-
-//       horizontalPageBreak:
-//         true,
-
-//       horizontalPageBreakRepeat:
-//         1,
-//     });
-
-//     doc.save(
-//       `${reportType.toLowerCase()}-${new Date()
-//         .toISOString()
-//         .split("T")[0]}.pdf`
-//     );
-
-//     toast.success(
-//       "PDF exported successfully"
-//     );
-//   };
-
-//   // =====================================================
-//   // RENDER
-//   // =====================================================
-
-//   return (
-//     <div className="space-y-4">
-
-//       {/* =================================================
-//           REPORT FILTER CARD
-//       ================================================= */}
-
-//       <Card className="border-border/60">
-
-//         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
-
-//           <div>
-
-//             <CardTitle className="font-display text-base flex items-center gap-2">
-
-//               <FileBarChart2 className="h-4 w-4 text-primary" />
-
-//               {activeReport.label}
-
-//             </CardTitle>
-
-//             <CardDescription>
-
-//               {activeReport.description}
-
-//               {components.length > 0 && (
-//                 <span className="ml-2 text-xs text-muted-foreground">
-//                   · {components.length} fee components
-//                 </span>
-//               )}
-
-//             </CardDescription>
-
-//           </div>
-
-//           <Button
-//             variant="ghost"
-//             size="sm"
-//             onClick={() =>
-//               setShowFilters(
-//                 !showFilters
-//               )
-//             }
-//           >
-//             {showFilters
-//               ? "Hide Filters"
-//               : "Show Filters"}
-//           </Button>
-
-//         </CardHeader>
-
-//         {showFilters && (
-//           <CardContent className="pt-0 space-y-3">
-
-//             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
-
-//               {/* REPORT TYPE */}
-
-//               <FF label="Report Type">
-
-//                 <Select
-//                   value={reportType}
-//                   onValueChange={
-//                     handleReportTypeChange
-//                   }
-//                 >
-
-//                   <SelectTrigger className="h-9">
-//                     <SelectValue placeholder="Select report" />
-//                   </SelectTrigger>
-
-//                   <SelectContent>
-
-//                     {REPORT_TYPES.map(
-//                       (rt) => (
-//                         <SelectItem
-//                           key={
-//                             rt.value
-//                           }
-//                           value={
-//                             rt.value
-//                           }
-//                         >
-//                           {rt.label}
-//                         </SelectItem>
-//                       )
-//                     )}
-
-//                   </SelectContent>
-
-//                 </Select>
-
-//               </FF>
-
-//               {/* ACADEMIC YEAR */}
-
-//               {visibleFilters.academicYear && (
-//                 <FF label="Academic Year">
-
-//                   <Select
-//                     value={
-//                       academicYear
-//                     }
-//                     onValueChange={
-//                       setAcademicYear
-//                     }
-//                   >
-
-//                     <SelectTrigger className="h-9">
-//                       <SelectValue placeholder="Select year" />
-//                     </SelectTrigger>
-
-//                     <SelectContent>
-
-//                       {academicYears.map(
-//                         (year) => (
-//                           <SelectItem
-//                             key={year}
-//                             value={year}
-//                           >
-//                             {year}
-//                           </SelectItem>
-//                         )
-//                       )}
-
-//                     </SelectContent>
-
-//                   </Select>
-
-//                 </FF>
-//               )}
-
-//               {/* STUDENT */}
-
-//               {visibleFilters.student && (
-//                 <div className="space-y-1.5 relative">
-
-//                   <Label className="text-xs text-muted-foreground">
-//                     Student
-//                   </Label>
-
-//                   <Input
-//                     placeholder="Search by name, student no or admission no..."
-//                     value={
-//                       studentQuery
-//                     }
-//                     onChange={(e) => {
-//                       const value =
-//                         e.target
-//                           .value;
-
-//                       setStudentQuery(
-//                         value
-//                       );
-
-//                       if (!value) {
-//                         setStudentUuid(
-//                           ""
-//                         );
-//                       }
-//                     }}
-//                     className="h-9"
-//                   />
-
-//                   {studentQuery &&
-//                     !studentUuid &&
-//                     matchingStudents.length >
-//                       0 && (
-//                       <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-
-//                         {matchingStudents.map(
-//                           (student) => (
-//                             <button
-//                               key={
-//                                 student.student_uuid
-//                               }
-//                               type="button"
-//                               className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center justify-between"
-//                               onClick={() =>
-//                                 handleStudentSelect(
-//                                   student
-//                                 )
-//                               }
-//                             >
-
-//                               <span>
-//                                 {
-//                                   student.full_name
-//                                 }
-//                               </span>
-
-//                               <span className="text-xs text-muted-foreground">
-
-//                                 {
-//                                   student.class_name
-//                                 }
-
-//                                 {student.section_name
-//                                   ? `-${student.section_name}`
-//                                   : ""}
-
-//                               </span>
-
-//                             </button>
-//                           )
-//                         )}
-
-//                       </div>
-//                     )}
-
-//                   {studentUuid && (
-//                     <div className="text-xs text-primary flex items-center gap-1.5 bg-primary/5 rounded-md px-2 py-1 w-fit">
-
-//                       <Check className="h-3 w-3" />
-
-//                       <span className="font-medium">
-//                         {
-//                           studentQuery
-//                         }
-//                       </span>
-
-//                       <button
-//                         type="button"
-//                         className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
-//                         onClick={() => {
-//                           setStudentUuid(
-//                             ""
-//                           );
-
-//                           setStudentQuery(
-//                             ""
-//                           );
-
-//                           setClassUuid(
-//                             "all"
-//                           );
-
-//                           setSectionUuid(
-//                             "all"
-//                           );
-//                         }}
-//                       >
-//                         <X className="h-3 w-3" />
-//                       </button>
-
-//                     </div>
-//                   )}
-
-//                 </div>
-//               )}
-
-//               {/* CLASS */}
-
-//               {visibleFilters.class && (
-//                 <FF label="Class">
-
-//                   <Select
-//                     value={
-//                       classUuid
-//                     }
-//                     onValueChange={(
-//                       value
-//                     ) => {
-//                       setClassUuid(
-//                         value
-//                       );
-
-//                       setSectionUuid(
-//                         "all"
-//                       );
-//                     }}
-//                   >
-
-//                     <SelectTrigger className="h-9">
-//                       <SelectValue placeholder="All Classes" />
-//                     </SelectTrigger>
-
-//                     <SelectContent>
-
-//                       <SelectItem value="all">
-//                         All Classes
-//                       </SelectItem>
-
-//                       {classes.map(
-//                         (item) => (
-//                           <SelectItem
-//                             key={
-//                               item.uuid
-//                             }
-//                             value={
-//                               item.uuid
-//                             }
-//                           >
-//                             {
-//                               item.name
-//                             }
-//                           </SelectItem>
-//                         )
-//                       )}
-
-//                     </SelectContent>
-
-//                   </Select>
-
-//                 </FF>
-//               )}
-
-//               {/* SECTION */}
-
-//               {visibleFilters.section && (
-//                 <FF label="Section">
-
-//                   <Select
-//                     value={
-//                       sectionUuid
-//                     }
-//                     onValueChange={
-//                       setSectionUuid
-//                     }
-//                   >
-
-//                     <SelectTrigger className="h-9">
-//                       <SelectValue placeholder="All Sections" />
-//                     </SelectTrigger>
-
-//                     <SelectContent>
-
-//                       <SelectItem value="all">
-//                         All Sections
-//                       </SelectItem>
-
-//                       {sections.map(
-//                         (item) => (
-//                           <SelectItem
-//                             key={
-//                               item.uuid
-//                             }
-//                             value={
-//                               item.uuid
-//                             }
-//                           >
-//                             {
-//                               item.name
-//                             }
-//                           </SelectItem>
-//                         )
-//                       )}
-
-//                     </SelectContent>
-
-//                   </Select>
-
-//                 </FF>
-//               )}
-
-//               {/* FROM / TO */}
-
-//               {visibleFilters.dateRange && (
-//                 <>
-//                   <FF label="From Date">
-
-//                     <Input
-//                       type="date"
-//                       value={
-//                         fromDate
-//                       }
-//                       onChange={(e) =>
-//                         setFromDate(
-//                           e.target
-//                             .value
-//                         )
-//                       }
-//                       className="h-9"
-//                     />
-
-//                   </FF>
-
-//                   <FF label="To Date">
-
-//                     <Input
-//                       type="date"
-//                       value={
-//                         toDate
-//                       }
-//                       onChange={(e) =>
-//                         setToDate(
-//                           e.target
-//                             .value
-//                         )
-//                       }
-//                       className="h-9"
-//                     />
-
-//                   </FF>
-//                 </>
-//               )}
-
-//               {/* COLLECTION DATE */}
-
-//               {visibleFilters.collectionDate && (
-//                 <FF label="Collection Date">
-
-//                   <Input
-//                     type="date"
-//                     value={
-//                       collectionDate
-//                     }
-//                     onChange={(e) =>
-//                       setCollectionDate(
-//                         e.target
-//                           .value
-//                       )
-//                     }
-//                     className="h-9"
-//                   />
-
-//                 </FF>
-//               )}
-
-//               {/* PAYMENT STATUS */}
-
-//               {visibleFilters.paymentStatus && (
-//                 <FF label="Payment Status">
-
-//                   <Select
-//                     value={
-//                       paymentStatus
-//                     }
-//                     onValueChange={
-//                       setPaymentStatus
-//                     }
-//                   >
-
-//                     <SelectTrigger className="h-9">
-//                       <SelectValue placeholder="All Status" />
-//                     </SelectTrigger>
-
-//                     <SelectContent>
-
-//                       {statusOptionsForReport.map(
-//                         (status) => (
-//                           <SelectItem
-//                             key={
-//                               status.value
-//                             }
-//                             value={
-//                               status.value
-//                             }
-//                           >
-//                             {
-//                               status.label
-//                             }
-//                           </SelectItem>
-//                         )
-//                       )}
-
-//                     </SelectContent>
-
-//                   </Select>
-
-//                 </FF>
-//               )}
-
-//               {/* BUTTONS */}
-
-//               <div className="flex items-end gap-2">
-
-//                 <Button
-//                   size="sm"
-//                   className="gradient-primary border-0 flex-1"
-//                   onClick={
-//                     fetchReport
-//                   }
-//                   disabled={
-//                     loading
-//                   }
-//                 >
-
-//                   <RefreshCcw
-//                     className={`h-4 w-4 ${
-//                       loading
-//                         ? "animate-spin"
-//                         : ""
-//                     }`}
-//                   />
-
-//                   {loading
-//                     ? "Loading..."
-//                     : "Generate"}
-
-//                 </Button>
-
-//                 <Button
-//                   size="sm"
-//                   variant="outline"
-//                   onClick={
-//                     clearFilters
-//                   }
-//                   disabled={
-//                     loading
-//                   }
-//                 >
-//                   Clear
-//                 </Button>
-
-//               </div>
-
-//             </div>
-
-//           </CardContent>
-//         )}
-
-//       </Card>
-
-//       {/* =================================================
-//           TOTAL CARDS
-//       ================================================= */}
-
-//       {totals.length > 0 && (
-//         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
-
-//           {totals
-//             .slice(0, 7)
-//             .map(
-//               (total) => (
-//                 <div
-//                   key={
-//                     total.label
-//                   }
-//                   className="rounded-lg border border-border/60 bg-card px-3 py-2 text-center"
-//                 >
-
-//                   <div className="text-xs text-muted-foreground">
-//                     {
-//                       total.label
-//                     }
-//                   </div>
-
-//                   <div className="text-sm font-semibold">
-//                     {
-//                       total.value
-//                     }
-//                   </div>
-
-//                 </div>
-//               )
-//             )}
-
-//         </div>
-//       )}
-
-//       {/* =================================================
-//           ERROR
-//       ================================================= */}
-
-//       {error && (
-//         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-
-//           <AlertCircle className="h-4 w-4 inline mr-2" />
-
-//           {error}
-
-//         </div>
-//       )}
-
-//       {/* =================================================
-//           REPORT TABLE
-//       ================================================= */}
-
-//       <Card className="border-border/60">
-
-//         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-2 flex-wrap">
-
-//           <div>
-
-//             <CardTitle className="font-display text-base">
-
-//               Report Data
-
-//               <span className="ml-2 text-sm font-normal text-muted-foreground">
-
-//                 {reportData.length} records
-
-//               </span>
-
-//             </CardTitle>
-
-//           </div>
-
-//           <div className="flex gap-2">
-
-//             {/* EXCEL */}
-
-//             <Button
-//               size="sm"
-//               variant="outline"
-//               onClick={
-//                 exportExcel
-//               }
-//               disabled={
-//                 !reportData.length ||
-//                 loading
-//               }
-//             >
-
-//               <Download className="h-4 w-4" />
-
-//               Excel
-
-//             </Button>
-
-//             {/* PDF */}
-
-//             <Button
-//               size="sm"
-//               variant="outline"
-//               onClick={
-//                 exportPDF
-//               }
-//               disabled={
-//                 !reportData.length ||
-//                 loading
-//               }
-//             >
-
-//               <FileText className="h-4 w-4" />
-
-//               PDF
-
-//             </Button>
-
-//             {/* REFRESH */}
-
-//             <Button
-//               size="sm"
-//               variant="outline"
-//               onClick={
-//                 fetchReport
-//               }
-//               disabled={
-//                 loading
-//               }
-//             >
-
-//               <RefreshCcw
-//                 className={`h-4 w-4 ${
-//                   loading
-//                     ? "animate-spin"
-//                     : ""
-//                 }`}
-//               />
-
-//             </Button>
-
-//           </div>
-
-//         </CardHeader>
-
-//         <CardContent className="p-0 overflow-x-auto">
-
-//           <div className="max-h-[500px] overflow-y-auto">
-
-//             <Table>
-
-//               <TableHeader>
-
-//                 <TableRow className="sticky top-0 bg-background z-10">
-
-//                   {columns.map(
-//                     (column) => (
-//                       <TableHead
-//                         key={
-//                           column
-//                         }
-//                         className="whitespace-nowrap text-xs font-semibold"
-//                       >
-//                         {
-//                           column
-//                         }
-//                       </TableHead>
-//                     )
-//                   )}
-
-//                 </TableRow>
-
-//               </TableHeader>
-
-//               <TableBody>
-
-//                 {/* LOADING */}
-
-//                 {loading ? (
-//                   <TableRow>
-
-//                     <TableCell
-//                       colSpan={
-//                         columns.length ||
-//                         1
-//                       }
-//                       className="text-center py-8"
-//                     >
-
-//                       <div className="flex items-center justify-center gap-2 text-muted-foreground">
-
-//                         <RefreshCcw className="h-4 w-4 animate-spin" />
-
-//                         Loading report...
-
-//                       </div>
-
-//                     </TableCell>
-
-//                   </TableRow>
-
-//                 ) : reportData.length ===
-//                   0 ? (
-
-//                   /* EMPTY */
-
-//                   <TableRow>
-
-//                     <TableCell
-//                       colSpan={
-//                         columns.length ||
-//                         1
-//                       }
-//                       className="text-center py-8 text-muted-foreground"
-//                     >
-//                       No data found.
-//                       Adjust your
-//                       filters and
-//                       click
-//                       "Generate".
-//                     </TableCell>
-
-//                   </TableRow>
-
-//                 ) : (
-
-//                   /* DATA */
-
-//                   reportData.map(
-//                     (row, index) => (
-//                       <TableRow
-//                         key={
-//                           index
-//                         }
-//                         className="hover:bg-muted/30"
-//                       >
-
-//                         {columns.map(
-//                           (
-//                             column
-//                           ) => {
-//                             const value =
-//                               row[
-//                                 column
-//                               ];
-
-//                             const isComponent =
-//                               components.includes(
-//                                 column
-//                               );
-
-//                             // =================================
-//                             // MONEY COLUMNS
-//                             // =================================
-
-//                             const isMoney =
-//                               isComponent ||
-//                               column.includes(
-//                                 "₹"
-//                               ) ||
-//                               column.includes(
-//                                 "Gross"
-//                               ) ||
-//                               column.includes(
-//                                 "Discount"
-//                               ) ||
-//                               column.includes(
-//                                 "Late"
-//                               ) ||
-//                               column.includes(
-//                                 "Net"
-//                               ) ||
-//                               column.includes(
-//                                 "Paid"
-//                               ) ||
-//                               column.includes(
-//                                 "Pending"
-//                               ) ||
-
-//                               // DAILY COLLECTION HEAD
-//                               column ===
-//                                 "Online" ||
-//                               column ===
-//                                 "Cheque" ||
-//                               column ===
-//                                 "Cash" ||
-//                               column ===
-//                                 "Bank Transfer" ||
-//                               column ===
-//                                 "Other Settlement" ||
-//                               column ===
-//                                 "Cancelled" ||
-//                               column ===
-//                                 "Swipe" ||
-//                               column ===
-//                                 "DD" ||
-//                               column ===
-//                                 "Paytm" ||
-//                               column ===
-//                                 "Adjust from Student Account balance" ||
-//                               column ===
-//                                 "NEFT" ||
-//                               column ===
-//                                 "NSO" ||
-//                               column ===
-//                                 "Online Manual" ||
-//                               column ===
-//                                 "Adjust from Credit Note" ||
-//                               column ===
-//                                 "UPI" ||
-//                               column ===
-//                                 "Total (₹)";
-
-//                             const isPending =
-//                               column ===
-//                               "Pending (₹)";
-
-//                             const isTotalRow =
-//                               row[
-//                                 "Collection Head"
-//                               ] ===
-//                               "Total";
-
-//                             return (
-//                               <TableCell
-//                                 key={
-//                                   column
-//                                 }
-//                                 className={`
-//                                   whitespace-nowrap text-sm
-//                                   ${
-//                                     isMoney &&
-//                                     typeof value ===
-//                                       "number"
-//                                       ? "font-mono"
-//                                       : ""
-//                                   }
-
-//                                   ${
-//                                     isPending &&
-//                                     typeof value ===
-//                                       "number" &&
-//                                     value > 0
-//                                       ? "text-warning font-semibold"
-//                                       : ""
-//                                   }
-
-//                                   ${
-//                                     isTotalRow
-//                                       ? "font-bold bg-muted/40"
-//                                       : ""
-//                                   }
-//                                 `}
-//                               >
-
-//                                 {value ===
-//                                   null ||
-//                                 value ===
-//                                   undefined ||
-//                                 value ===
-//                                   ""
-//                                   ? "—"
-//                                   : typeof value ===
-//                                       "number" &&
-//                                     isMoney
-//                                   ? inr(
-//                                       value
-//                                     )
-//                                   : value}
-
-//                               </TableCell>
-//                             );
-//                           }
-//                         )}
-
-//                       </TableRow>
-//                     )
-//                   )
-//                 )}
-
-//               </TableBody>
-
-//             </Table>
-
-//           </div>
-
-//         </CardContent>
-
-//       </Card>
-
-//       {/* =================================================
-//           FEE COMPONENTS
-//       ================================================= */}
-
-//       {components.length >
-//         0 &&
-//         reportData.length >
-//           0 && (
-//           <Card className="border-border/60">
-
-//             <CardHeader className="pb-3">
-
-//               <CardTitle className="font-display text-base">
-//                 Fee Components
-//               </CardTitle>
-
-//               <CardDescription>
-//                 Components tracked
-//                 in this report
-//               </CardDescription>
-
-//             </CardHeader>
-
-//             <CardContent>
-
-//               <div className="flex flex-wrap gap-2">
-
-//                 {components.map(
-//                   (component) => (
-//                     <Badge
-//                       key={
-//                         component
-//                       }
-//                       variant="secondary"
-//                       className="text-xs"
-//                     >
-//                       {
-//                         component
-//                       }
-//                     </Badge>
-//                   )
-//                 )}
-
-//               </div>
-
-//             </CardContent>
-
-//           </Card>
-//         )}
-
-//     </div>
-//   );
-// }
 
 
 // const CUSTOM_REPORTS_KEY = "edureon.fee.customReports.v1";
@@ -11025,9 +9182,7 @@
 // }
 
 
-
-
-
+                        
 
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -11175,8 +9330,8 @@ import {
   archiveFeeAssignment,
   activateFeeAssignment,
   getStudentFeeDues,
-  getStudentDues
-  
+  getStudentDues,
+  getStudentsAvailableForStructure,
 } from "../../../api/feeAssignment";
 
 import {
@@ -15218,9 +13373,95 @@ function AssignmentPanel({ students, classes: classList = [], sections: sectionL
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState(new Set());
 
+  // Students returned by the backend who are still eligible for a
+  // STRUCTURE assignment in the current academic year.
+  const [availableStructureStudents, setAvailableStructureStudents] = useState([]);
+  const [loadingAvailableStructureStudents, setLoadingAvailableStructureStudents] = useState(false);
+
   useEffect(() => {
     if (!structureId && structures.length) setStructureId(structures[0].fee_structure_uuid);
   }, [structures, structureId]);
+
+  // When assigning a STRUCTURE, fetch only students who do NOT already
+  // have an active STRUCTURE assignment for this academic year.
+  //
+  // COMPONENT assignments do not remove a student from this list.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAvailableStructureStudents = async () => {
+      if (mode !== "Structure") {
+        setAvailableStructureStudents([]);
+        setLoadingAvailableStructureStudents(false);
+        return;
+      }
+
+      setLoadingAvailableStructureStudents(true);
+
+      try {
+        const params = {
+          academic_year: ACADEMIC_YEAR,
+        };
+
+        if (clsUuid) {
+          params.class_uuid = clsUuid;
+        }
+
+        if (secUuid) {
+          params.section_uuid = secUuid;
+        }
+
+        if (q.trim()) {
+          params.search = q.trim();
+        }
+
+        const res = await getStudentsAvailableForStructure(params);
+
+        if (cancelled) return;
+
+        const list = extractList(res).map((s) => ({
+          ...s,
+          student_uuid: s.student_uuid || s.uuid || s.id,
+          full_name: s.full_name || s.student_name || s.name || "",
+          student_no: s.student_no || s.admission_no || "",
+          class_uuid: s.class_uuid || null,
+          class_name: s.class_name || s.class || "",
+          section_uuid: s.section_uuid || null,
+          section_name: s.section_name || s.section || "",
+        })).filter((s) => s.student_uuid);
+
+        setAvailableStructureStudents(list);
+      } catch (err) {
+        console.error("Failed to load students available for structure:", err);
+
+        if (!cancelled) {
+          setAvailableStructureStudents([]);
+          toast.error(
+            getErrorMessage(
+              err,
+              "Failed to load available students for structure assignment"
+            )
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingAvailableStructureStudents(false);
+        }
+      }
+    };
+
+    loadAvailableStructureStudents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, clsUuid, secUuid, q]);
+
+  // Clear selected students when the assignment context changes.
+  // Search text intentionally does NOT clear selection.
+  useEffect(() => {
+    setPicked(new Set());
+  }, [mode, target, clsUuid, secUuid]);
 
   // Normalize class/section lookup rows — different endpoints/mocks may
   // use id/uuid/class_uuid or name/class_name interchangeably.
@@ -15252,22 +13493,51 @@ function AssignmentPanel({ students, classes: classList = [], sections: sectionL
     [normalizedSections, clsUuid]
   );
 
-  // Student filtering still keys off class_name/section_name since that's
-  // what student rows carry; we resolve the picked class_uuid back to its
-  // name to filter, so the student list and the payload agree on the same
-  // class. FIX: student rows use `section_name`, not `section` — the old
-  // fallback compared against a field that never existed on the row.
+  // Student filtering:
+  // STRUCTURE mode uses the backend-filtered list so students who already
+  // have a STRUCTURE assignment for ACADEMIC_YEAR are skipped.
+  //
+  // COMPONENTS mode keeps the existing local student filtering because
+  // different component assignments are allowed for the same student.
   const selectedClassName = classNameByUuid(clsUuid);
-  const filtered = useMemo(
-    () =>
-      students.filter(
+
+  const filtered = useMemo(() => {
+    if (mode === "Structure") {
+      return availableStructureStudents.filter(
         (s) =>
-          (!clsUuid || s.class_name === selectedClassName) &&
-          (!secUuid || s.section_uuid === secUuid || s.section_name === sectionsForSelectedClass.find((x) => x.section_uuid === secUuid)?.section_name) &&
-          (!q || s.full_name.toLowerCase().includes(q.toLowerCase()) || s.student_no.toLowerCase().includes(q.toLowerCase()))
-      ),
-    [students, clsUuid, secUuid, q, selectedClassName, sectionsForSelectedClass]
-  );
+          (!clsUuid || s.class_uuid === clsUuid || s.class_name === selectedClassName) &&
+          (!secUuid ||
+            s.section_uuid === secUuid ||
+            s.section_name ===
+              sectionsForSelectedClass.find(
+                (x) => x.section_uuid === secUuid
+              )?.section_name)
+      );
+    }
+
+    return students.filter(
+      (s) =>
+        (!clsUuid || s.class_name === selectedClassName) &&
+        (!secUuid ||
+          s.section_uuid === secUuid ||
+          s.section_name ===
+            sectionsForSelectedClass.find(
+              (x) => x.section_uuid === secUuid
+            )?.section_name) &&
+        (!q ||
+          s.full_name?.toLowerCase().includes(q.toLowerCase()) ||
+          s.student_no?.toLowerCase().includes(q.toLowerCase()))
+    );
+  }, [
+    mode,
+    availableStructureStudents,
+    students,
+    clsUuid,
+    secUuid,
+    q,
+    selectedClassName,
+    sectionsForSelectedClass,
+  ]);
 const structuresForTarget = useMemo(() => {
   if (!clsUuid) return structures; // no class picked yet — show everything
   return structures.filter((s) => s.class_name === selectedClassName);
@@ -15324,15 +13594,47 @@ const assignmentStudentRows = useMemo(() => {
   const rmRow = (i) => setAdhoc((a) => a.filter((_, idx) => idx !== i));
 
   const doAssign = () => {
-    if (mode === "Structure" && !structureId) { toast.error("Pick a structure"); return; }
-    if (mode === "Components" && adhoc.length === 0) { toast.error("Add at least one component"); return; }
-    if (target === "Class" && !clsUuid) { toast.error("Pick a class"); return; }
-    if (target === "Students" && picked.size === 0) { toast.error("Pick students"); return; }
-    if (mode === "Components" && adhoc.some((c) => !c.component_uuid)) {
-      toast.error("Custom (non-library) components aren't supported yet — pick each component from \"Quick add from library\" instead of \"Custom\".");
+    if (mode === "Structure" && !structureId) {
+      toast.error("Pick a structure");
       return;
     }
-  onAdd({
+
+    if (mode === "Components" && adhoc.length === 0) {
+      toast.error("Add at least one component");
+      return;
+    }
+
+    if (target === "Class" && !clsUuid) {
+      toast.error("Pick a class");
+      return;
+    }
+
+    if (target === "Students" && picked.size === 0) {
+      toast.error("Pick students");
+      return;
+    }
+
+    if (
+      (target === "Class" || target === "Section") &&
+      clsUuid &&
+      filtered.length === 0
+    ) {
+      toast.error(
+        mode === "Structure"
+          ? "No students are available for structure assignment in this selection."
+          : "No students found for this selection."
+      );
+      return;
+    }
+
+    if (mode === "Components" && adhoc.some((c) => !c.component_uuid)) {
+      toast.error(
+        'Custom (non-library) components aren\'t supported yet — pick each component from "Quick add from library" instead of "Custom".'
+      );
+      return;
+    }
+
+    onAdd({
       mode,
       structure_uuid: mode === "Structure" ? structureId : "",
       custom_components: mode === "Components" ? adhoc : undefined,
@@ -15342,13 +13644,14 @@ const assignmentStudentRows = useMemo(() => {
       student_uuids:
         target === "Students"
           ? Array.from(picked)
-          : filtered.map((s) => s.student_uuid), // Class/Section: send exactly the matched students shown in the confirmation list
-      discount_uuids: [], // discounts are applied at collection time, not at assignment time
+          : filtered.map((s) => s.student_uuid),
+      discount_uuids: [],
       academic_year: ACADEMIC_YEAR,
     });
-      setPicked(new Set());
-      setAdhoc([]);
-    };
+
+    setPicked(new Set());
+    setAdhoc([]);
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -15458,26 +13761,70 @@ const assignmentStudentRows = useMemo(() => {
   <div className="space-y-2">
     <div className="flex items-center gap-2">
       <Search className="h-4 w-4 text-muted-foreground" />
-      <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search students by name or admission..." />
-      <Badge variant="secondary">{picked.size} selected</Badge>
+      <Input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search students by name or admission..."
+      />
+      <Badge variant="secondary">
+        {picked.size} selected
+      </Badge>
     </div>
+
     <div className="border rounded-md max-h-72 overflow-y-auto">
-      <Table>
-        <TableBody>
-          {filtered.slice(0, 200).map((s) => (
-            <TableRow key={s.student_uuid} className="cursor-pointer" onClick={() => {
-              const next = new Set(picked); if (next.has(s.student_uuid)) next.delete(s.student_uuid); else next.add(s.student_uuid); setPicked(next);
-            }}>
-              <TableCell className="w-8"><Checkbox checked={picked.has(s.student_uuid)} /></TableCell>
-              <TableCell className="text-sm">{s.full_name}</TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {s.class_name} {s.section_name}
-              </TableCell>
-            </TableRow>
-          ))}
-          {filtered.length === 0 && <TableRow><TableCell className="text-center text-sm text-muted-foreground py-6">No matches</TableCell></TableRow>}
-        </TableBody>
-      </Table>
+      {mode === "Structure" && loadingAvailableStructureStudents ? (
+        <div className="text-sm text-muted-foreground text-center py-6">
+          Loading available students...
+        </div>
+      ) : (
+        <Table>
+          <TableBody>
+            {filtered.slice(0, 200).map((s) => (
+              <TableRow
+                key={s.student_uuid}
+                className="cursor-pointer"
+                onClick={() => {
+                  const next = new Set(picked);
+
+                  if (next.has(s.student_uuid)) {
+                    next.delete(s.student_uuid);
+                  } else {
+                    next.add(s.student_uuid);
+                  }
+
+                  setPicked(next);
+                }}
+              >
+                <TableCell className="w-8">
+                  <Checkbox checked={picked.has(s.student_uuid)} />
+                </TableCell>
+
+                <TableCell className="text-sm">
+                  {s.full_name}
+                </TableCell>
+
+                <TableCell className="text-xs text-muted-foreground">
+                  {s.class_name} {s.section_name}
+                </TableCell>
+              </TableRow>
+            ))}
+
+            {!loadingAvailableStructureStudents &&
+              filtered.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={3}
+                    className="text-center text-sm text-muted-foreground py-6"
+                  >
+                    {mode === "Structure"
+                      ? "No students available for structure assignment."
+                      : "No matches"}
+                  </TableCell>
+                </TableRow>
+              )}
+          </TableBody>
+        </Table>
+      )}
     </div>
   </div>
 )}
@@ -16701,6 +15048,1760 @@ function ReceiptDialog({ open, onOpenChange, entry, settings }) {
 //   );
 // }
 
+
+// function DuesPanel({ students, onGenInvoices }) {
+//   const [cls, setCls] = useState("");
+//   const [sec, setSec] = useState("");
+//   const [q, setQ] = useState("");
+//   const [only, setOnly] = useState("overdue");
+//   const [picked, setPicked] = useState(new Set());
+
+//   const [selectedMonth, setSelectedMonth] = useState(() => {
+//     const now = new Date();
+//     return `${now.getFullYear()}-${String(
+//       now.getMonth() + 1
+//     ).padStart(2, "0")}`;
+//   });
+
+//   const [dueRows, setDueRows] = useState([]);
+//   const [loadingDues, setLoadingDues] = useState(false);
+//   const [allMonths, setAllMonths] = useState([]);
+//   const [componentData, setComponentData] = useState([]);
+//   const [summary, setSummary] = useState(null);
+
+//   // View Details dialog
+//   const [detailsOpen, setDetailsOpen] = useState(false);
+//   const [selectedDueStudent, setSelectedDueStudent] = useState(null);
+
+//   // ============================================================
+//   // FETCH DUES
+//   // ============================================================
+//   const fetchDues = () => {
+//     setLoadingDues(true);
+
+//     getStudentDues({
+//       academic_year: ACADEMIC_YEAR,
+//     })
+//       .then((res) => {
+//         const body = res?.data ?? res ?? {};
+
+//         const componentRows = Array.isArray(body.data)
+//           ? body.data
+//           : [];
+
+//         setComponentData(componentRows);
+//         setSummary(body.summary || null);
+
+//         // Normalize fee_month to YYYY-MM
+//         const months = [
+//           ...new Set(
+//             componentRows
+//               .map((item) =>
+//                 item.fee_month
+//                   ? item.fee_month.slice(0, 7)
+//                   : null
+//               )
+//               .filter(Boolean)
+//           ),
+//         ].sort();
+
+//         setAllMonths(months);
+
+//         // ======================================================
+//         // GROUP BY STUDENT
+//         // ======================================================
+//         const byStudent = new Map();
+
+//         componentRows.forEach((row) => {
+//           const key = row.student_uuid;
+
+//           if (!byStudent.has(key)) {
+//             byStudent.set(key, {
+//               student_uuid: row.student_uuid,
+//               student_no: row.student_no,
+//               student_name: row.student_name,
+
+//               class_uuid: row.class_uuid,
+//               class_name: row.class_name,
+//               section_name: row.section_name,
+
+//               structure_name: row.structure_name,
+//               academic_year: row.academic_year,
+
+//               components: [],
+
+//               // Year totals
+//               year_total_amount: Number(
+//                 row.year_total_amount || 0
+//               ),
+
+//               year_total_paid: Number(
+//                 row.year_total_paid || 0
+//               ),
+
+//               year_total_discount: Number(
+//                 row.year_total_discount || 0
+//               ),
+
+//               year_total_late_fee: Number(
+//                 row.year_total_late_fee || 0
+//               ),
+
+//               year_balance_amount: Number(
+//                 row.year_balance_amount || 0
+//               ),
+
+//               // Month totals
+//               total_amount: 0,
+//               total_discount: 0,
+//               total_late_fee: 0,
+//               total_paid: 0,
+//               total_balance: 0,
+
+//               status: "PAID",
+//             });
+//           }
+
+//           const student = byStudent.get(key);
+
+//           // Component
+//           student.components.push({
+//             due_uuid: row.due_uuid,
+//             fee_month: row.fee_month,
+
+//             component_name: row.component_name,
+
+//             amount: Number(row.amount || 0),
+//             discount: Number(row.discount || 0),
+//             late_fee: Number(row.late_fee || 0),
+//             paid_amount: Number(row.paid_amount || 0),
+//             balance_amount: Number(row.balance_amount || 0),
+
+//             status: row.status || "PENDING",
+//           });
+
+//           // Month totals
+//           student.total_amount += Number(
+//             row.amount || 0
+//           );
+
+//           student.total_discount += Number(
+//             row.discount || 0
+//           );
+
+//           student.total_late_fee += Number(
+//             row.late_fee || 0
+//           );
+
+//           student.total_paid += Number(
+//             row.paid_amount || 0
+//           );
+
+//           student.total_balance += Number(
+//             row.balance_amount || 0
+//           );
+
+//           // Determine status from year balance
+//           const yearBalance = Number(
+//             row.year_balance_amount || 0
+//           );
+
+//           if (yearBalance > 0) {
+//             student.status =
+//               student.year_total_paid > 0
+//                 ? "PARTIAL"
+//                 : "PENDING";
+//           } else {
+//             student.status = "PAID";
+//           }
+//         });
+
+//         setDueRows(
+//           Array.from(byStudent.values())
+//         );
+//       })
+//       .catch((err) => {
+//         console.error(err);
+
+//         toast.error(
+//           getErrorMessage(
+//             err,
+//             "Failed to load dues"
+//           )
+//         );
+
+//         setDueRows([]);
+//         setComponentData([]);
+//         setAllMonths([]);
+//         setSummary(null);
+//       })
+//       .finally(() => {
+//         setLoadingDues(false);
+//       });
+//   };
+
+//   useEffect(fetchDues, []);
+
+//   // ============================================================
+//   // FILTER COMPONENTS BY MONTH
+//   // ============================================================
+//   const filteredComponents = useMemo(() => {
+//     if (
+//       !selectedMonth ||
+//       selectedMonth === "all"
+//     ) {
+//       return componentData;
+//     }
+
+//     return componentData.filter(
+//       (item) =>
+//         item.fee_month &&
+//         item.fee_month.slice(0, 7) === selectedMonth
+//     );
+//   }, [componentData, selectedMonth]);
+
+//   // ============================================================
+//   // GROUP FILTERED MONTH DATA BY STUDENT
+//   // ============================================================
+//   const filteredByMonth = useMemo(() => {
+//     const byStudent = new Map();
+
+//     filteredComponents.forEach((row) => {
+//       const key = row.student_uuid;
+
+//       if (!byStudent.has(key)) {
+//         byStudent.set(key, {
+//           student_uuid: row.student_uuid,
+//           student_no: row.student_no,
+//           student_name: row.student_name,
+
+//           class_uuid: row.class_uuid,
+//           class_name: row.class_name,
+
+//           structure_name: row.structure_name,
+
+//           fee_month: row.fee_month,
+
+//           components: [],
+
+//           // Month totals
+//           month_amount: 0,
+//           month_discount: 0,
+//           month_late_fee: 0,
+//           month_paid: 0,
+//           month_balance: 0,
+
+//           // Year totals
+//           year_total_amount: Number(
+//             row.year_total_amount || 0
+//           ),
+
+//           year_total_paid: Number(
+//             row.year_total_paid || 0
+//           ),
+
+//           year_total_discount: Number(
+//             row.year_total_discount || 0
+//           ),
+
+//           year_total_late_fee: Number(
+//             row.year_total_late_fee || 0
+//           ),
+
+//           year_balance_amount: Number(
+//             row.year_balance_amount || 0
+//           ),
+
+//           status: row.status || "PENDING",
+//         });
+//       }
+
+//       const student = byStudent.get(key);
+
+//       student.components.push({
+//         due_uuid: row.due_uuid,
+
+//         component_name:
+//           row.component_name,
+
+//         amount: Number(row.amount || 0),
+//         discount: Number(row.discount || 0),
+//         late_fee: Number(row.late_fee || 0),
+//         paid_amount: Number(
+//           row.paid_amount || 0
+//         ),
+//         balance_amount: Number(
+//           row.balance_amount || 0
+//         ),
+
+//         status: row.status || "PENDING",
+//       });
+
+//       // Month totals
+//       student.month_amount += Number(
+//         row.amount || 0
+//       );
+
+//       student.month_discount += Number(
+//         row.discount || 0
+//       );
+
+//       student.month_late_fee += Number(
+//         row.late_fee || 0
+//       );
+
+//       student.month_paid += Number(
+//         row.paid_amount || 0
+//       );
+
+//       student.month_balance += Number(
+//         row.balance_amount || 0
+//       );
+//     });
+
+//     return Array.from(byStudent.values());
+//   }, [filteredComponents]);
+
+//   // ============================================================
+//   // CLASSES
+//   // ============================================================
+//   const classes = useMemo(
+//     () =>
+//       Array.from(
+//         new Set(
+//           students
+//             .map((s) => s.class_name)
+//             .filter(Boolean)
+//         )
+//       ).sort(),
+//     [students]
+//   );
+
+//   // ============================================================
+//   // SECTIONS
+//   // ============================================================
+//   const sectionsFor = useMemo(
+//     () =>
+//       Array.from(
+//         new Set(
+//           students
+//             .filter(
+//               (s) =>
+//                 !cls ||
+//                 s.class_name === cls
+//             )
+//             .map((s) => s.section_name)
+//             .filter(Boolean)
+//         )
+//       ).sort(),
+//     [students, cls]
+//   );
+
+//   // ============================================================
+//   // FINAL TABLE ROWS
+//   // ============================================================
+//   const rows = useMemo(() => {
+//     const sourceData =
+//       selectedMonth &&
+//       selectedMonth !== "all"
+//         ? filteredByMonth
+//         : dueRows;
+
+//     return students
+//       .filter(
+//         (s) =>
+//           (!cls ||
+//             s.class_name === cls) &&
+//           (!sec ||
+//             s.section_name === sec) &&
+//           (!q ||
+//             s.full_name
+//               ?.toLowerCase()
+//               .includes(q.toLowerCase()) ||
+//             s.student_no
+//               ?.toLowerCase()
+//               .includes(q.toLowerCase()))
+//       )
+//       .map((s) => {
+//         const due = sourceData.find(
+//           (r) =>
+//             r.student_uuid ===
+//             s.student_uuid
+//         );
+
+//         if (!due) return null;
+
+//         return {
+//           ...due,
+
+//           student_uuid:
+//             s.student_uuid,
+
+//           student_name:
+//             s.full_name,
+
+//           student_no:
+//             s.student_no,
+
+//           class_name:
+//             s.class_name,
+
+//           section_name:
+//             s.section_name,
+//         };
+//       })
+//       .filter(Boolean)
+//       .filter((r) => {
+//         if (only === "all") {
+//           return true;
+//         }
+
+//         const balance =
+//           selectedMonth &&
+//           selectedMonth !== "all"
+//             ? r.month_balance
+//             : r.year_balance_amount;
+
+//         return balance > 0;
+//       })
+//       .sort((a, b) => {
+//         const balA =
+//           selectedMonth &&
+//           selectedMonth !== "all"
+//             ? a.month_balance
+//             : a.year_balance_amount;
+
+//         const balB =
+//           selectedMonth &&
+//           selectedMonth !== "all"
+//             ? b.month_balance
+//             : b.year_balance_amount;
+
+//         return balB - balA;
+//       });
+//   }, [
+//     students,
+//     cls,
+//     sec,
+//     q,
+//     only,
+//     dueRows,
+//     filteredByMonth,
+//     selectedMonth,
+//   ]);
+
+//   // ============================================================
+//   // MONTH LABEL
+//   // ============================================================
+//   const formatMonthLabel = (monthStr) => {
+//     if (
+//       !monthStr ||
+//       monthStr === "all"
+//     ) {
+//       return "All Months";
+//     }
+
+//     try {
+//       const date = new Date(monthStr);
+
+//       return date.toLocaleString(
+//         "default",
+//         {
+//           month: "short",
+//           year: "numeric",
+//         }
+//       );
+//     } catch {
+//       return monthStr;
+//     }
+//   };
+
+//   // ============================================================
+//   // STATUS COLOR
+//   // ============================================================
+//   const getStatusColor = (status) => {
+//     switch (
+//       status?.toUpperCase()
+//     ) {
+//       case "PAID":
+//         return "bg-emerald-100 text-emerald-800 border-emerald-200";
+
+//       case "PARTIAL":
+//         return "bg-amber-100 text-amber-800 border-amber-200";
+
+//       case "PENDING":
+//       case "OVERDUE":
+//         return "bg-red-100 text-red-800 border-red-200";
+
+//       default:
+//         return "bg-gray-100 text-gray-800 border-gray-200";
+//     }
+//   };
+
+//   const isMonthSelected =
+//     selectedMonth &&
+//     selectedMonth !== "all";
+
+//   // ============================================================
+//   // REMINDER
+//   // ============================================================
+//   const remind = () => {
+//     if (picked.size === 0) {
+//       toast.error(
+//         "Pick students first"
+//       );
+//       return;
+//     }
+
+//     toast.success(
+//       `Reminder queued for ${picked.size} students`
+//     );
+
+//     setPicked(new Set());
+//   };
+
+//   // ============================================================
+//   // GENERATE INVOICE
+//   // ============================================================
+//   const genInvoice = () => {
+//     if (picked.size === 0) {
+//       toast.error(
+//         "Pick students first"
+//       );
+//       return;
+//     }
+
+//     onGenInvoices(
+//       rows
+//         .filter((r) =>
+//           picked.has(
+//             r.student_uuid
+//           )
+//         )
+//         .map((r) => ({
+//           student_uuid:
+//             r.student_uuid,
+
+//           student_name:
+//             r.student_name,
+
+//           class_name:
+//             r.class_name,
+
+//           totalDue:
+//             isMonthSelected
+//               ? r.month_balance
+//               : r.year_balance_amount,
+
+//           totalLate:
+//             isMonthSelected
+//               ? r.month_late_fee
+//               : r.year_total_late_fee,
+//         }))
+//     );
+
+//     setPicked(new Set());
+//   };
+
+//   // ============================================================
+//   // VIEW DETAILS
+//   // ============================================================
+//   const openDueDetails = (student) => {
+//     setSelectedDueStudent(student);
+//     setDetailsOpen(true);
+//   };
+
+//   // ============================================================
+//   // CLOSE DETAILS
+//   // ============================================================
+//   const closeDueDetails = () => {
+//     setDetailsOpen(false);
+//     setSelectedDueStudent(null);
+//   };
+
+//   // ============================================================
+//   // RETURN
+//   // ============================================================
+//   return (
+//     <>
+//       <Card className="border-border/60">
+
+//         {/* ======================================================
+//             HEADER
+//         ====================================================== */}
+//         <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
+
+//           <div>
+//             <CardTitle className="font-display text-base">
+//               Student Dues
+//             </CardTitle>
+
+//             <CardDescription>
+//               Live balances from the fee-dues API
+//               with component-wise breakdown.
+
+//               {summary && (
+//                 <span className="ml-2 text-xs text-muted-foreground">
+//                   · {summary.count} entries · Total Due:{" "}
+//                   {inr(summary.total_due)}
+//                 </span>
+//               )}
+//             </CardDescription>
+//           </div>
+
+//           {/* ==================================================
+//               FILTERS
+//           ================================================== */}
+//           <div className="flex gap-2 flex-wrap">
+
+//             {/* Month */}
+//             <Select
+//               value={selectedMonth}
+//               onValueChange={
+//                 setSelectedMonth
+//               }
+//             >
+//               <SelectTrigger className="w-40 h-9 border-primary/30 bg-primary/5">
+
+//                 <CalendarRange className="h-4 w-4 mr-1 text-primary" />
+
+//                 <SelectValue>
+//                   {selectedMonth
+//                     ? formatMonthLabel(
+//                         selectedMonth
+//                       )
+//                     : "All Months"}
+//                 </SelectValue>
+
+//               </SelectTrigger>
+
+//               <SelectContent>
+
+//                 <SelectItem value="all">
+//                   All Months
+//                 </SelectItem>
+
+//                 {allMonths.map(
+//                   (month) => (
+//                     <SelectItem
+//                       key={month}
+//                       value={month}
+//                     >
+//                       {formatMonthLabel(
+//                         month
+//                       )}
+//                     </SelectItem>
+//                   )
+//                 )}
+
+//               </SelectContent>
+//             </Select>
+
+//             {/* Status */}
+//             <Select
+//               value={only}
+//               onValueChange={setOnly}
+//             >
+//               <SelectTrigger className="w-32 h-9">
+//                 <SelectValue />
+//               </SelectTrigger>
+
+//               <SelectContent>
+
+//                 <SelectItem value="overdue">
+//                   Overdue only
+//                 </SelectItem>
+
+//                 <SelectItem value="all">
+//                   All students
+//                 </SelectItem>
+
+//               </SelectContent>
+//             </Select>
+
+//             {/* Class */}
+//             <Select
+//               value={cls}
+//               onValueChange={setCls}
+//             >
+//               <SelectTrigger className="w-24 h-9">
+//                 <SelectValue placeholder="Class" />
+//               </SelectTrigger>
+
+//               <SelectContent>
+
+//                 {classes.map(
+//                   (c) => (
+//                     <SelectItem
+//                       key={c}
+//                       value={c}
+//                     >
+//                       {c}
+//                     </SelectItem>
+//                   )
+//                 )}
+
+//               </SelectContent>
+//             </Select>
+
+//             {/* Section */}
+//             <Select
+//               value={sec}
+//               onValueChange={setSec}
+//             >
+//               <SelectTrigger className="w-24 h-9">
+//                 <SelectValue placeholder="Section" />
+//               </SelectTrigger>
+
+//               <SelectContent>
+
+//                 {sectionsFor.map(
+//                   (s) => (
+//                     <SelectItem
+//                       key={s}
+//                       value={s}
+//                     >
+//                       {s}
+//                     </SelectItem>
+//                   )
+//                 )}
+
+//               </SelectContent>
+//             </Select>
+
+//             {/* Search */}
+//             <Input
+//               value={q}
+//               onChange={(e) =>
+//                 setQ(e.target.value)
+//               }
+//               placeholder="Search..."
+//               className="h-9 w-40"
+//             />
+
+//             {/* Refresh */}
+//             <Button
+//               size="sm"
+//               variant="outline"
+//               onClick={fetchDues}
+//             >
+//               <RefreshCcw className="h-4 w-4" />
+//               Refresh
+//             </Button>
+
+//             {/* Export */}
+//             <Button
+//               size="sm"
+//               variant="outline"
+//               onClick={() =>
+//                 exportRowsCsv(
+//                   rows.map((r) => ({
+//                     student_name:
+//                       r.student_name,
+
+//                     student_no:
+//                       r.student_no,
+
+//                     class_name:
+//                       r.class_name,
+
+//                     fee_month:
+//                       isMonthSelected
+//                         ? formatMonthLabel(
+//                             selectedMonth
+//                           )
+//                         : "All Months",
+
+//                     month_amount:
+//                       isMonthSelected
+//                         ? r.month_amount
+//                         : "—",
+
+//                     month_discount:
+//                       isMonthSelected
+//                         ? r.month_discount
+//                         : "—",
+
+//                     month_late_fee:
+//                       isMonthSelected
+//                         ? r.month_late_fee
+//                         : "—",
+
+//                     month_paid:
+//                       isMonthSelected
+//                         ? r.month_paid
+//                         : "—",
+
+//                     month_balance:
+//                       isMonthSelected
+//                         ? r.month_balance
+//                         : "—",
+
+//                     year_total_amount:
+//                       r.year_total_amount ||
+//                       "—",
+
+//                     year_total_paid:
+//                       r.year_total_paid ||
+//                       "—",
+
+//                     year_total_discount:
+//                       r.year_total_discount ||
+//                       "—",
+
+//                     year_total_late_fee:
+//                       r.year_total_late_fee ||
+//                       "—",
+
+//                     year_balance_amount:
+//                       r.year_balance_amount ||
+//                       "—",
+
+//                     status:
+//                       r.status,
+
+//                     components:
+//                       r.components
+//                         ?.map(
+//                           (c) =>
+//                             `${c.component_name}(${c.status})`
+//                         )
+//                         .join("; ") || "",
+//                   })),
+//                   `dues-${
+//                     isMonthSelected
+//                       ? selectedMonth
+//                       : "all"
+//                   }.csv`
+//                 )
+//               }
+//             >
+//               <Download className="h-4 w-4" />
+//               Export
+//             </Button>
+
+//           </div>
+//         </CardHeader>
+
+//         {/* ======================================================
+//             SELECTED ACTIONS
+//         ====================================================== */}
+//         {picked.size > 0 && (
+//           <div className="mx-4 mb-3 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+
+//             <Badge>
+//               {picked.size} selected
+//             </Badge>
+
+//             <Button
+//               size="sm"
+//               variant="outline"
+//               onClick={remind}
+//             >
+//               <Send className="h-4 w-4" />
+//               Send Reminders
+//             </Button>
+
+//             <Button
+//               size="sm"
+//               variant="outline"
+//               onClick={genInvoice}
+//             >
+//               <FileText className="h-4 w-4" />
+//               Generate Invoices
+//             </Button>
+
+//             <Button
+//               size="sm"
+//               variant="ghost"
+//               onClick={() =>
+//                 setPicked(new Set())
+//               }
+//               className="ml-auto"
+//             >
+//               <X className="h-4 w-4" />
+//               Clear
+//             </Button>
+
+//           </div>
+//         )}
+
+//         {/* ======================================================
+//             TABLE
+//         ====================================================== */}
+//         <CardContent className="p-0 overflow-x-auto">
+
+//           <Table>
+
+//             {/* ==================================================
+//                 TABLE HEADER
+//             ================================================== */}
+//             <TableHeader>
+
+//               <TableRow className="bg-muted/30">
+
+//                 <TableHead className="w-8">
+//                 </TableHead>
+
+//                 <TableHead>
+//                   Student
+//                 </TableHead>
+
+//                 <TableHead>
+//                   Class
+//                 </TableHead>
+
+//                 <TableHead>
+//                   Structure
+//                 </TableHead>
+
+//                 <TableHead>
+//                   Components & Status
+//                 </TableHead>
+
+//                 {/* Month columns */}
+//                 {isMonthSelected && (
+//                   <>
+//                     <TableHead className="text-right text-xs">
+//                       Month Amount
+//                     </TableHead>
+
+//                     <TableHead className="text-right text-xs">
+//                       Month Discount
+//                     </TableHead>
+
+//                     <TableHead className="text-right text-xs">
+//                       Month Late Fee
+//                     </TableHead>
+
+//                     <TableHead className="text-right text-xs">
+//                       Month Paid
+//                     </TableHead>
+
+//                     <TableHead className="text-right text-xs">
+//                       Month Balance
+//                     </TableHead>
+//                   </>
+//                 )}
+
+//                 {/* Year columns */}
+//                 <TableHead className="text-right text-xs">
+//                   Year Amount
+//                 </TableHead>
+
+//                 <TableHead className="text-right text-xs">
+//                   Year Paid
+//                 </TableHead>
+
+//                 <TableHead className="text-right text-xs">
+//                   Year Discount
+//                 </TableHead>
+
+//                 <TableHead className="text-right text-xs">
+//                   Year Late Fee
+//                 </TableHead>
+
+//                 <TableHead className="text-right text-xs font-bold text-primary">
+//                   Year Balance
+//                 </TableHead>
+
+//                 <TableHead>
+//                   Status
+//                 </TableHead>
+
+//                 <TableHead className="w-10">
+//                 </TableHead>
+
+//               </TableRow>
+
+//             </TableHeader>
+
+//             {/* ==================================================
+//                 TABLE BODY
+//             ================================================== */}
+//             <TableBody>
+
+//               {/* Loading */}
+//               {loadingDues && (
+//                 <TableRow>
+
+//                   <TableCell
+//                     colSpan={16}
+//                     className="text-center text-sm text-muted-foreground py-8"
+//                   >
+//                     <div className="flex items-center justify-center gap-2">
+
+//                       <RefreshCcw className="h-4 w-4 animate-spin" />
+
+//                       Loading dues...
+
+//                     </div>
+//                   </TableCell>
+
+//                 </TableRow>
+//               )}
+
+//               {/* Empty */}
+//               {!loadingDues &&
+//                 rows.length === 0 && (
+//                   <TableRow>
+
+//                     <TableCell
+//                       colSpan={16}
+//                       className="text-center text-sm text-muted-foreground py-8"
+//                     >
+//                       {isMonthSelected
+//                         ? `No dues found for ${formatMonthLabel(
+//                             selectedMonth
+//                           )}`
+//                         : "No dues found"}
+//                     </TableCell>
+
+//                   </TableRow>
+//                 )}
+
+//               {/* Rows */}
+//               {!loadingDues &&
+//                 rows
+//                   .slice(0, 300)
+//                   .map((r) => (
+//                     <TableRow
+//                       key={r.student_uuid}
+//                       className="hover:bg-muted/30"
+//                     >
+
+//                       {/* Checkbox */}
+//                       <TableCell>
+
+//                         <Checkbox
+//                           checked={picked.has(
+//                             r.student_uuid
+//                           )}
+//                           onCheckedChange={(
+//                             v
+//                           ) => {
+//                             const n =
+//                               new Set(
+//                                 picked
+//                               );
+
+//                             if (v) {
+//                               n.add(
+//                                 r.student_uuid
+//                               );
+//                             } else {
+//                               n.delete(
+//                                 r.student_uuid
+//                               );
+//                             }
+
+//                             setPicked(n);
+//                           }}
+//                         />
+
+//                       </TableCell>
+
+//                       {/* Student */}
+//                       <TableCell>
+
+//                         <div className="text-sm font-medium">
+//                           {r.student_name}
+//                         </div>
+
+//                         <div className="text-xs text-muted-foreground">
+//                           {r.student_no}
+//                         </div>
+
+//                       </TableCell>
+
+//                       {/* Class */}
+//                       <TableCell className="text-xs">
+//                         {r.class_name ??
+//                           "—"}
+//                       </TableCell>
+
+//                       {/* Structure */}
+//                       <TableCell className="text-xs">
+//                         {r.structure_name ??
+//                           "—"}
+//                       </TableCell>
+
+//                       {/* Components */}
+//                       <TableCell>
+
+//                         <div className="flex flex-col gap-0.5">
+
+//                           {r.components?.map(
+//                             (comp, idx) => (
+//                               <div
+//                                 key={
+//                                   comp.due_uuid ||
+//                                   idx
+//                                 }
+//                                 className="flex items-center gap-1.5 text-xs"
+//                               >
+
+//                                 <span className="truncate max-w-[100px]">
+//                                   {
+//                                     comp.component_name
+//                                   }
+//                                 </span>
+
+//                                 <Badge
+//                                   className={`text-[9px] px-1.5 py-0 h-4 ${getStatusColor(
+//                                     comp.status
+//                                   )}`}
+//                                 >
+//                                   {
+//                                     comp.status
+//                                   }
+//                                 </Badge>
+
+//                                 <span className="text-muted-foreground text-[10px]">
+//                                   {inr(
+//                                     comp.balance_amount
+//                                   )}
+//                                 </span>
+
+//                               </div>
+//                             )
+//                           )}
+
+//                         </div>
+
+//                       </TableCell>
+
+//                       {/* Month */}
+//                       {isMonthSelected && (
+//                         <>
+//                           <TableCell className="text-right font-semibold text-xs">
+//                             {inr(
+//                               r.month_amount ||
+//                                 0
+//                             )}
+//                           </TableCell>
+
+//                           <TableCell className="text-right text-orange-500 text-xs">
+//                             {inr(
+//                               r.month_discount ||
+//                                 0
+//                             )}
+//                           </TableCell>
+
+//                           <TableCell className="text-right text-amber-600 text-xs">
+//                             {inr(
+//                               r.month_late_fee ||
+//                                 0
+//                             )}
+//                           </TableCell>
+
+//                           <TableCell className="text-right text-emerald-600 text-xs">
+//                             {inr(
+//                               r.month_paid ||
+//                                 0
+//                             )}
+//                           </TableCell>
+
+//                           <TableCell className="text-right font-semibold text-xs">
+//                             {inr(
+//                               r.month_balance ||
+//                                 0
+//                             )}
+//                           </TableCell>
+//                         </>
+//                       )}
+
+//                       {/* Year Amount */}
+//                       <TableCell className="text-right text-xs">
+//                         {inr(
+//                           r.year_total_amount ||
+//                             0
+//                         )}
+//                       </TableCell>
+
+//                       {/* Year Paid */}
+//                       <TableCell className="text-right text-emerald-600 text-xs">
+//                         {inr(
+//                           r.year_total_paid ||
+//                             0
+//                         )}
+//                       </TableCell>
+
+//                       {/* Year Discount */}
+//                       <TableCell className="text-right text-orange-500 text-xs">
+//                         {inr(
+//                           r.year_total_discount ||
+//                             0
+//                         )}
+//                       </TableCell>
+
+//                       {/* Year Late */}
+//                       <TableCell className="text-right text-amber-600 text-xs">
+//                         {inr(
+//                           r.year_total_late_fee ||
+//                             0
+//                         )}
+//                       </TableCell>
+
+//                       {/* Year Balance */}
+//                       <TableCell className="text-right font-bold text-primary text-xs">
+//                         {inr(
+//                           r.year_balance_amount ||
+//                             0
+//                         )}
+//                       </TableCell>
+
+//                       {/* Status */}
+//                       <TableCell>
+
+//                         <Badge
+//                           className={`${getStatusColor(
+//                             r.status
+//                           )} text-xs font-medium`}
+//                         >
+//                           {r.status ||
+//                             "PENDING"}
+//                         </Badge>
+
+//                       </TableCell>
+
+//                       {/* ACTIONS */}
+//                       <TableCell>
+//                         <Button
+//                           variant="ghost"
+//                           size="icon"
+//                           className="h-7 w-7"
+//                           onClick={() => openDueDetails(r)}
+//                           title="View fee details"
+//                         >
+//                           <MoreHorizontal className="h-4 w-4" />
+//                         </Button>
+//                       </TableCell>
+
+//                     </TableRow>
+//                   ))}
+
+//             </TableBody>
+
+//           </Table>
+
+//         </CardContent>
+
+//       </Card>
+
+//       {/* ========================================================
+//           VIEW DETAILS DIALOG
+//       ======================================================== */}
+//       <Dialog
+//         open={detailsOpen}
+//         onOpenChange={(open) => {
+//           setDetailsOpen(open);
+
+//           if (!open) {
+//             setSelectedDueStudent(
+//               null
+//             );
+//           }
+//         }}
+//       >
+
+//         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+
+//           <DialogHeader>
+
+//             <DialogTitle className="text-lg">
+//               Student Fee Details
+//             </DialogTitle>
+
+//             <DialogDescription>
+//               Complete fee component,
+//               payment and balance details.
+//             </DialogDescription>
+
+//           </DialogHeader>
+
+//           {selectedDueStudent && (
+//             <div className="space-y-5">
+
+//               {/* ==================================================
+//                   STUDENT INFORMATION
+//               ================================================== */}
+//               <div className="rounded-lg border bg-muted/30 p-4">
+
+//                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+
+//                   <div>
+//                     <div className="text-xs text-muted-foreground">
+//                       Student
+//                     </div>
+
+//                     <div className="font-semibold text-sm mt-1">
+//                       {selectedDueStudent.student_name ||
+//                         "—"}
+//                     </div>
+//                   </div>
+
+//                   <div>
+//                     <div className="text-xs text-muted-foreground">
+//                       Student No
+//                     </div>
+
+//                     <div className="font-medium text-sm mt-1">
+//                       {selectedDueStudent.student_no ||
+//                         "—"}
+//                     </div>
+//                   </div>
+
+//                   <div>
+//                     <div className="text-xs text-muted-foreground">
+//                       Class
+//                     </div>
+
+//                     <div className="font-medium text-sm mt-1">
+//                       {selectedDueStudent.class_name ||
+//                         "—"}
+//                     </div>
+//                   </div>
+
+//                   <div>
+//                     <div className="text-xs text-muted-foreground">
+//                       Section
+//                     </div>
+
+//                     <div className="font-medium text-sm mt-1">
+//                       {selectedDueStudent.section_name ||
+//                         "—"}
+//                     </div>
+//                   </div>
+
+//                   <div>
+//                     <div className="text-xs text-muted-foreground">
+//                       Structure
+//                     </div>
+
+//                     <div className="font-medium text-sm mt-1">
+//                       {selectedDueStudent.structure_name ||
+//                         "—"}
+//                     </div>
+//                   </div>
+
+//                 </div>
+
+//               </div>
+
+//               {/* ==================================================
+//                   STATUS
+//               ================================================== */}
+//               <div className="flex items-center justify-between">
+
+//                 <div>
+//                   <div className="font-semibold text-sm">
+//                     Payment Status
+//                   </div>
+
+//                   <div className="text-xs text-muted-foreground">
+//                     Current overall fee status
+//                   </div>
+//                 </div>
+
+//                 <Badge
+//                   className={`text-xs ${getStatusColor(
+//                     selectedDueStudent.status
+//                   )}`}
+//                 >
+//                   {selectedDueStudent.status ||
+//                     "PENDING"}
+//                 </Badge>
+
+//               </div>
+
+//               {/* ==================================================
+//                   MONTH SUMMARY
+//               ================================================== */}
+//               {isMonthSelected && (
+//                 <div>
+
+//                   <div className="font-semibold text-sm mb-2">
+//                     {formatMonthLabel(
+//                       selectedMonth
+//                     )}{" "}
+//                     Summary
+//                   </div>
+
+//                   <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+
+//                     <div className="border rounded-lg p-3">
+//                       <div className="text-xs text-muted-foreground">
+//                         Amount
+//                       </div>
+
+//                       <div className="font-semibold mt-1">
+//                         {inr(
+//                           selectedDueStudent.month_amount ||
+//                             0
+//                         )}
+//                       </div>
+//                     </div>
+
+//                     <div className="border rounded-lg p-3">
+//                       <div className="text-xs text-muted-foreground">
+//                         Discount
+//                       </div>
+
+//                       <div className="font-semibold text-orange-500 mt-1">
+//                         {inr(
+//                           selectedDueStudent.month_discount ||
+//                             0
+//                         )}
+//                       </div>
+//                     </div>
+
+//                     <div className="border rounded-lg p-3">
+//                       <div className="text-xs text-muted-foreground">
+//                         Late Fee
+//                       </div>
+
+//                       <div className="font-semibold text-amber-600 mt-1">
+//                         {inr(
+//                           selectedDueStudent.month_late_fee ||
+//                             0
+//                         )}
+//                       </div>
+//                     </div>
+
+//                     <div className="border rounded-lg p-3">
+//                       <div className="text-xs text-muted-foreground">
+//                         Paid
+//                       </div>
+
+//                       <div className="font-semibold text-emerald-600 mt-1">
+//                         {inr(
+//                           selectedDueStudent.month_paid ||
+//                             0
+//                         )}
+//                       </div>
+//                     </div>
+
+//                     <div className="border rounded-lg p-3 bg-primary/5">
+//                       <div className="text-xs text-muted-foreground">
+//                         Balance
+//                       </div>
+
+//                       <div className="font-bold text-primary text-lg mt-1">
+//                         {inr(
+//                           selectedDueStudent.month_balance ||
+//                             0
+//                         )}
+//                       </div>
+//                     </div>
+
+//                   </div>
+
+//                 </div>
+//               )}
+
+//               {/* ==================================================
+//                   COMPONENT DETAILS
+//               ================================================== */}
+//               <div>
+
+//                 <div className="font-semibold text-sm mb-2">
+//                   Components & Status
+//                 </div>
+
+//                 <div className="border rounded-lg overflow-hidden">
+
+//                   <Table>
+
+//                     <TableHeader>
+
+//                       <TableRow className="bg-muted/30">
+
+//                         <TableHead>
+//                           Component
+//                         </TableHead>
+
+//                         <TableHead className="text-right">
+//                           Amount
+//                         </TableHead>
+
+//                         <TableHead className="text-right">
+//                           Discount
+//                         </TableHead>
+
+//                         <TableHead className="text-right">
+//                           Late Fee
+//                         </TableHead>
+
+//                         <TableHead className="text-right">
+//                           Paid
+//                         </TableHead>
+
+//                         <TableHead className="text-right">
+//                           Balance
+//                         </TableHead>
+
+//                         <TableHead>
+//                           Status
+//                         </TableHead>
+
+//                       </TableRow>
+
+//                     </TableHeader>
+
+//                     <TableBody>
+
+//                       {(
+//                         selectedDueStudent.components ||
+//                         []
+//                       ).map(
+//                         (comp, index) => (
+//                           <TableRow
+//                             key={
+//                               comp.due_uuid ||
+//                               index
+//                             }
+//                           >
+
+//                             <TableCell>
+
+//                               <div className="font-medium text-sm">
+//                                 {
+//                                   comp.component_name
+//                                 }
+//                               </div>
+
+//                               {comp.fee_month && (
+//                                 <div className="text-[10px] text-muted-foreground">
+//                                   {formatMonthLabel(
+//                                     comp.fee_month.slice(
+//                                       0,
+//                                       7
+//                                     )
+//                                   )}
+//                                 </div>
+//                               )}
+
+//                             </TableCell>
+
+//                             <TableCell className="text-right text-sm">
+//                               {inr(
+//                                 comp.amount ||
+//                                   0
+//                               )}
+//                             </TableCell>
+
+//                             <TableCell className="text-right text-sm text-orange-500">
+//                               {inr(
+//                                 comp.discount ||
+//                                   0
+//                               )}
+//                             </TableCell>
+
+//                             <TableCell className="text-right text-sm text-amber-600">
+//                               {inr(
+//                                 comp.late_fee ||
+//                                   0
+//                               )}
+//                             </TableCell>
+
+//                             <TableCell className="text-right text-sm text-emerald-600">
+//                               {inr(
+//                                 comp.paid_amount ||
+//                                   0
+//                               )}
+//                             </TableCell>
+
+//                             <TableCell className="text-right text-sm font-semibold">
+//                               {inr(
+//                                 comp.balance_amount ||
+//                                   0
+//                               )}
+//                             </TableCell>
+
+//                             <TableCell>
+
+//                               <Badge
+//                                 className={`text-[10px] ${getStatusColor(
+//                                   comp.status
+//                                 )}`}
+//                               >
+//                                 {comp.status ||
+//                                   "PENDING"}
+//                               </Badge>
+
+//                             </TableCell>
+
+//                           </TableRow>
+//                         )
+//                       )}
+
+//                       {(!selectedDueStudent.components ||
+//                         selectedDueStudent
+//                           .components
+//                           .length ===
+//                           0) && (
+//                         <TableRow>
+
+//                           <TableCell
+//                             colSpan={7}
+//                             className="text-center py-8 text-sm text-muted-foreground"
+//                           >
+//                             No component details
+//                             available.
+//                           </TableCell>
+
+//                         </TableRow>
+//                       )}
+
+//                     </TableBody>
+
+//                   </Table>
+
+//                 </div>
+
+//               </div>
+
+//               {/* ==================================================
+//                   YEAR SUMMARY
+//               ================================================== */}
+//               <div>
+
+//                 <div className="font-semibold text-sm mb-2">
+//                   Academic Year Summary
+//                 </div>
+
+//                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+
+//                   {/* Year Amount */}
+//                   <div className="border rounded-lg p-3">
+
+//                     <div className="text-xs text-muted-foreground">
+//                       Year Amount
+//                     </div>
+
+//                     <div className="font-semibold mt-1">
+//                       {inr(
+//                         selectedDueStudent.year_total_amount ||
+//                           0
+//                       )}
+//                     </div>
+
+//                   </div>
+
+//                   {/* Year Paid */}
+//                   <div className="border rounded-lg p-3">
+
+//                     <div className="text-xs text-muted-foreground">
+//                       Year Paid
+//                     </div>
+
+//                     <div className="font-semibold text-emerald-600 mt-1">
+//                       {inr(
+//                         selectedDueStudent.year_total_paid ||
+//                           0
+//                       )}
+//                     </div>
+
+//                   </div>
+
+//                   {/* Year Discount */}
+//                   <div className="border rounded-lg p-3">
+
+//                     <div className="text-xs text-muted-foreground">
+//                       Year Discount
+//                     </div>
+
+//                     <div className="font-semibold text-orange-500 mt-1">
+//                       {inr(
+//                         selectedDueStudent.year_total_discount ||
+//                           0
+//                       )}
+//                     </div>
+
+//                   </div>
+
+//                   {/* Year Late Fee */}
+//                   <div className="border rounded-lg p-3">
+
+//                     <div className="text-xs text-muted-foreground">
+//                       Year Late Fee
+//                     </div>
+
+//                     <div className="font-semibold text-amber-600 mt-1">
+//                       {inr(
+//                         selectedDueStudent.year_total_late_fee ||
+//                           0
+//                       )}
+//                     </div>
+
+//                   </div>
+
+//                   {/* Year Balance */}
+//                   <div className="border rounded-lg p-3 bg-primary/5">
+
+//                     <div className="text-xs text-muted-foreground">
+//                       Year Balance
+//                     </div>
+
+//                     <div className="font-bold text-primary text-lg mt-1">
+//                       {inr(
+//                         selectedDueStudent.year_balance_amount ||
+//                           0
+//                       )}
+//                     </div>
+
+//                   </div>
+
+//                 </div>
+
+//               </div>
+
+//             </div>
+//           )}
+
+//           {/* ======================================================
+//               DIALOG FOOTER
+//           ====================================================== */}
+//           <DialogFooter className="gap-2">
+
+//             <Button
+//               variant="outline"
+//               onClick={closeDueDetails}
+//             >
+//               Close
+//             </Button>
+
+//             <Button
+//               className="gradient-primary border-0"
+//               onClick={() => {
+//                 if (!selectedDueStudent) {
+//                   toast.error("Student not selected");
+//                   return;
+//                 }
+
+//                 toast.success(
+//                   `Reminder sent to ${
+//                     selectedDueStudent.student_name ||
+//                     "student"
+//                   }`
+//                 );
+//               }}
+//             >
+//               <Send className="h-4 w-4 mr-2" />
+//               Send Reminder
+//             </Button>
+
+//           </DialogFooter>
+
+//         </DialogContent>
+
+//       </Dialog>
+//     </>
+//   );
+// }
+
+
 function DuesPanel({ students, onGenInvoices }) {
   const [cls, setCls] = useState("");
   const [sec, setSec] = useState("");
@@ -17719,7 +17820,8 @@ function DuesPanel({ students, onGenInvoices }) {
                   .map((r) => (
                     <TableRow
                       key={r.student_uuid}
-                      className="hover:bg-muted/30"
+                      className="hover:bg-muted/30 cursor-pointer"
+                      onClick={() => openDueDetails(r)}
                     >
 
                       {/* Checkbox */}
@@ -17729,6 +17831,9 @@ function DuesPanel({ students, onGenInvoices }) {
                           checked={picked.has(
                             r.student_uuid
                           )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
                           onCheckedChange={(
                             v
                           ) => {
@@ -17917,78 +18022,7 @@ function DuesPanel({ students, onGenInvoices }) {
 
                       </TableCell>
 
-                      {/* ACTIONS */}
-                      <TableCell>
-
-                        <DropdownMenu>
-
-                          <DropdownMenuTrigger
-                            asChild
-                          >
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-
-                          <DropdownMenuContent align="end">
-
-                            {/* =================================
-                                VIEW DETAILS
-                            ================================= */}
-                            <DropdownMenuItem
-                              onClick={() =>
-                                openDueDetails(
-                                  r
-                                )
-                              }
-                            >
-                              <Eye className="h-4 w-4 mr-2" />
-
-                              View Details
-                            </DropdownMenuItem>
-
-                            {/* =================================
-                                INVOICE
-                            ================================= */}
-                            <DropdownMenuItem
-                              onClick={() =>
-                                toast.info(
-                                  "Generate invoice"
-                                )
-                              }
-                            >
-                              <FileText className="h-4 w-4 mr-2" />
-
-                              Invoice
-                            </DropdownMenuItem>
-
-                            <DropdownMenuSeparator />
-
-                            {/* =================================
-                                REMINDER
-                            ================================= */}
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() =>
-                                toast.info(
-                                  "Send reminder"
-                                )
-                              }
-                            >
-                              <Send className="h-4 w-4 mr-2" />
-
-                              Send Reminder
-                            </DropdownMenuItem>
-
-                          </DropdownMenuContent>
-
-                        </DropdownMenu>
-
-                      </TableCell>
+                      {/* ACTIONS REMOVED - ENTIRE ROW OPENS DETAILS */}
 
                     </TableRow>
                   ))}
@@ -18475,13 +18509,33 @@ function DuesPanel({ students, onGenInvoices }) {
           {/* ======================================================
               DIALOG FOOTER
           ====================================================== */}
-          <DialogFooter>
+          <DialogFooter className="gap-2">
 
             <Button
               variant="outline"
               onClick={closeDueDetails}
             >
               Close
+            </Button>
+
+            <Button
+              className="gradient-primary border-0"
+              onClick={() => {
+                if (!selectedDueStudent) {
+                  toast.error("Student not selected");
+                  return;
+                }
+
+                toast.success(
+                  `Reminder sent to ${
+                    selectedDueStudent.student_name ||
+                    "student"
+                  }`
+                );
+              }}
+            >
+              <Send className="h-4 w-4 mr-2" />
+              Send Reminder
             </Button>
 
           </DialogFooter>
@@ -18492,6 +18546,7 @@ function DuesPanel({ students, onGenInvoices }) {
     </>
   );
 }
+
 /* ================================================================== */
 /*  7. TRANSACTIONS — By Student (grouped) / Timeline views            */
 /* ================================================================== */

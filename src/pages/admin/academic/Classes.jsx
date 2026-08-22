@@ -2401,7 +2401,7 @@ const promote = async () => {
       toast.warning(`${res.skipped_count} student(s) were skipped`);
     }
 
-    fetchPromotionStudents(fromSession); // 👈 refresh using the current FROM filter
+    fetchPromotionStudents(); 
     setSelected(new Set());
   } catch (err) {
     console.error(err);

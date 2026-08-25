@@ -214,15 +214,15 @@ const teacherGroups = [
         url: "/teacher/attendance",
         icon: CalendarCheck,
       },
-      { title: "Assignments", url: "/assignments", icon: ClipboardList },
-      { title: "Examinations", url: "/exams", icon: BookOpen },
+      { title: "Assignments", url: "/teacher/assignments", icon: ClipboardList },
+      { title: "Examinations", url: "/teacher/exams", icon: BookOpen },
       {
         title: "Lesson Plans",
         url: "/teacher/lesson-plans",
         icon: NotebookPen,
       },
       { title: "Study Materials", url: "/teacher/materials", icon: FileBox },
-      { title: "Notices", url: "/notices", icon: Megaphone },
+      { title: "Notices", url: "/teacher/notices", icon: Megaphone },
       { title: "Timetable", url: "/timetable", icon: CalendarDays },
     ],
   },
@@ -368,32 +368,120 @@ const flattenPermissions = (raw = []) =>
  * (as is the case for institute administrators in the current API response).
  */
 export function navForUser(role, source = {}) {
-  // Professors may be assigned institute modules beyond the teacher portal
-  // (for example Admissions and Students), so filter the complete institute
-  // navigation for them rather than starting with the narrow teacher menu.
-  const groups = String(role).toUpperCase() === "PROFESSOR" ? adminGroups : navForRole(role);
-  const permissions = Array.isArray(source) ? source : source.permissions || [];
-  const rolePermissions = Array.isArray(source) ? [] : source.rolePermissions || [];
-  const temporaryPermissions = Array.isArray(source) ? [] : source.temporaryPermissions || [];
-  const allowed = new Set(flattenPermissions([...permissions, ...rolePermissions, ...temporaryPermissions]));
-  const denied = new Set(flattenPermissions(Array.isArray(source) ? [] : source.overrideDeniedPermissions || []));
-  flattenPermissions(Array.isArray(source) ? [] : source.overrideAllowedPermissions || []).forEach((code) => allowed.add(code));
+  const normalizedRole = String(role || "").toUpperCase();
 
-  if (allowed.has("*")) return groups;
+  const permissions = Array.isArray(source)
+    ? source
+    : source.permissions || [];
 
-  // System admins have unrestricted navigation when the backend correctly
-  // represents full access as an empty permission list.
-  if (allowed.size === 0 && ["ADMIN", "SUPER_ADMIN"].includes(String(role).toUpperCase())) return groups;
+  const rolePermissions = Array.isArray(source)
+    ? []
+    : source.rolePermissions || [];
+
+  const temporaryPermissions = Array.isArray(source)
+    ? []
+    : source.temporaryPermissions || [];
+
+  const allowed = new Set(
+    flattenPermissions([
+      ...permissions,
+      ...rolePermissions,
+      ...temporaryPermissions,
+    ])
+  );
+
+  const denied = new Set(
+    flattenPermissions(
+      Array.isArray(source)
+        ? []
+        : source.overrideDeniedPermissions || []
+    )
+  );
+
+  flattenPermissions(
+    Array.isArray(source)
+      ? []
+      : source.overrideAllowedPermissions || []
+  ).forEach((code) => allowed.add(code));
+
+    // =====================================================
+  // TEACHER / PROFESSOR
+  // =====================================================
+  if (["TEACHER", "PROFESSOR"].includes(normalizedRole)) {
+    // Always show the normal teacher sidebar
+    const teacherMenu = teacherGroups.map((group) => ({
+      ...group,
+      items: [...group.items],
+    }));
+
+    // Add extra sidebar items based on permissions
+    const additionalGroups = adminGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          // Don't duplicate teacher menu items
+          const alreadyExists = teacherGroups.some((teacherGroup) =>
+            teacherGroup.items.some(
+              (teacherItem) =>
+                teacherItem.title === item.title ||
+                teacherItem.url === item.url
+            )
+          );
+
+          if (alreadyExists) return false;
+
+          const moduleCodes = NAV_MODULE_CODES[item.title] || [];
+
+          return moduleCodes.some((code) => {
+            const normalizedCode = normalisePermissionValue(code);
+
+            return (
+              allowed.has(normalizedCode) &&
+              !denied.has(normalizedCode)
+            );
+          });
+        }),
+      }))
+      .filter((group) => group.items.length > 0);
+
+    return [...teacherMenu, ...additionalGroups];
+  }
+
+  // =====================================================
+  // OTHER ROLES
+  // =====================================================
+  const groups = navForRole(normalizedRole);
+
+  if (allowed.has("*")) {
+    return groups;
+  }
+
+  if (
+    allowed.size === 0 &&
+    ["ADMIN", "SUPER_ADMIN"].includes(normalizedRole)
+  ) {
+    return groups;
+  }
 
   return groups
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
-        if (["Dashboard", "My Profile", "Settings"].includes(item.title)) return true;
+        if (
+          ["Dashboard", "My Profile", "Settings"].includes(item.title)
+        ) {
+          return true;
+        }
+
         const moduleCodes = NAV_MODULE_CODES[item.title] || [];
+
         return moduleCodes.some((code) => {
           const normalisedCode = normalisePermissionValue(code);
-          return allowed.has(normalisedCode) && !denied.has(normalisedCode);
+
+          return (
+            allowed.has(normalisedCode) &&
+            !denied.has(normalisedCode)
+          );
         });
       }),
     }))

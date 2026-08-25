@@ -82,7 +82,8 @@ import StudentWallet from "./pages/students/Wallet";
 import StudentGatePass from "./pages/students/Gatepass";
 import StudentTransport from "./pages/students/Transport";
 import InstituteSelection from "./pages/InstituteSelection";
-
+import TeacherAssignments from "./pages/teacher/TeacherAssignments";
+import TeacherExams from "./pages/teacher/TeacherExams";
 const router = createBrowserRouter([
   {
     element: <AppLayout />,
@@ -147,6 +148,8 @@ const router = createBrowserRouter([
       { path: "/teacher/materials", element: <TeacherMaterials /> },
       { path: "/teacher/materials/:id", element: <TeacherMaterialsDetails /> },
       { path: "/notices", element: <SuperadminNotices /> },
+      { path: "/teacher/assignments", element: <TeacherAssignments /> },   
+      { path: "/teacher/exams", element: <TeacherExams /> }   ,
       //instution admin routes
       
       { path: "/admin/audit", element: <AdminAudit /> },

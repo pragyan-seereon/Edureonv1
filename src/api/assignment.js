@@ -156,3 +156,22 @@ export const getClasses = async () => {
 
   return data.data;
 };
+
+export const getAssignmentSubmissions = async (assignmentUuid) => {
+  const { instituteUUID } = useAuthStore.getState();
+  const { data } = await api.get(`/assignments/${assignmentUuid}/submissions`, {
+    params: { institute_uuid: instituteUUID },
+    headers: getHeaders(),
+  });
+  return data;
+};
+
+export const downloadAssignmentSubmission = async (assignmentUuid, submissionUuid, fileIdentifier) => {
+  const { instituteUUID } = useAuthStore.getState();
+  const { data } = await api.get(`/assignments/${assignmentUuid}/submissions/${submissionUuid}/download`, {
+    params: { institute_uuid: instituteUUID, ...(fileIdentifier !== undefined ? { file_uuid: fileIdentifier } : {}) },
+    headers: getHeaders(),
+    responseType: "blob",
+  });
+  return data;
+};

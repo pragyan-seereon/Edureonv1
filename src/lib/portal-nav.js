@@ -26,7 +26,7 @@ import {
   FolderArchive,
   KanbanSquare,
   Network,
-  NotebookPen,
+  // NotebookPen,
   Plane,
   CalendarCheck,
   Trophy,
@@ -35,7 +35,8 @@ import {
   // eslint-disable-next-line no-unused-vars
   Wallet,
   IdCard,
-  ShieldCheck
+  ShieldCheck,
+  
 } from "lucide-react";
 const adminGroups = [
   {
@@ -216,21 +217,22 @@ const teacherGroups = [
       },
       { title: "Assignments", url: "/teacher/assignments", icon: ClipboardList },
       { title: "Examinations", url: "/teacher/exams", icon: BookOpen },
-      {
-        title: "Lesson Plans",
-        url: "/teacher/lesson-plans",
-        icon: NotebookPen,
-      },
-      { title: "Study Materials", url: "/teacher/materials", icon: FileBox },
-      { title: "Notices", url: "/teacher/notices", icon: Megaphone },
-      { title: "Timetable", url: "/timetable", icon: CalendarDays },
+      // {
+      //   title: "Lesson Plans",
+      //   url: "/teacher/lesson-plans",
+      //   icon: NotebookPen,
+      // },
+      // { title: "Study Materials", url: "/teacher/materials", icon: FileBox },
+      { title: "Notices & Events", url: "/teacher/notices", icon: Megaphone },
+      { title: "Timetable", url: "/teacher/timetable", icon: CalendarDays },
     ],
   },
   {
     label: "Personal",
     items: [
       { title: "Leave Application", url: "/teacher/leave", icon: Plane },
-      { title: "Communication", url: "/communication", icon: MessageSquare },
+      { title: "My Documents", url: "/teacher/documents", icon: FolderArchive },
+      // { title: "Communication", url: "/communication", icon: MessageSquare },
       { title: "Notifications", url: "/notifications", icon: Bell },
       { title: "My Profile", url: "/profile", icon: UserIcon },
     ],
@@ -240,7 +242,7 @@ const studentGroups = [
   {
     label: "Learning",
     items: [
-      { title: "Dashboard", url: "/student/dashboard", icon: LayoutDashboard },
+      { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
       { title: "My Timetable", url: "/student/timetable", icon: CalendarDays },
       {
         title: "My Attendance",

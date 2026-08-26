@@ -84,6 +84,9 @@ import StudentTransport from "./pages/students/Transport";
 import InstituteSelection from "./pages/InstituteSelection";
 import TeacherAssignments from "./pages/teacher/TeacherAssignments";
 import TeacherExams from "./pages/teacher/TeacherExams";
+import TeacherTimetable from "./pages/teacher/Teachertimetable";
+import TeacherNotices from "./pages/teacher/TeacherNotices";
+import TeacherDocuments from "./pages/teacher/TeacherDocuments";
 const router = createBrowserRouter([
   {
     element: <AppLayout />,
@@ -116,6 +119,8 @@ const router = createBrowserRouter([
       { path: "/notifications",element: <NotificationsPage />},
       { path: "/notifications/send" , element: <SendNotificationPage /> },
       { path: "transactions", element: <TransactionsPage /> },
+      { path: "/notices", element: <SuperadminNotices /> },
+
 
       //account routes
       { path: "/profile", element: <Profile />},
@@ -147,9 +152,11 @@ const router = createBrowserRouter([
       { path: "/teacher/lesson-plans/:id",  element: <TeacherLessonPlansDetails />, },
       { path: "/teacher/materials", element: <TeacherMaterials /> },
       { path: "/teacher/materials/:id", element: <TeacherMaterialsDetails /> },
-      { path: "/notices", element: <SuperadminNotices /> },
       { path: "/teacher/assignments", element: <TeacherAssignments /> },   
       { path: "/teacher/exams", element: <TeacherExams /> }   ,
+      { path: "/teacher/timetable", element: <TeacherTimetable /> },
+      { path: "/teacher/notices", element: <TeacherNotices /> },
+      { path: "/teacher/documents", element: <TeacherDocuments /> },
       //instution admin routes
       
       { path: "/admin/audit", element: <AdminAudit /> },

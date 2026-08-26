@@ -127,7 +127,7 @@ const router = createBrowserRouter([
       { path: "/account", element: <Account />},
       { path: "/settings", element: <Settings />},
       //student routes
-      { path: "/dashboard", element: <Dashboard /> },
+      { path: "/student/dashboard", element: <Dashboard /> },
       { path: "/student/timetable", element: <Timetable /> },
       { path: "/student/attendance", element: <Attendance /> },
       { path: "/student/assignments", element: <Assignments /> },

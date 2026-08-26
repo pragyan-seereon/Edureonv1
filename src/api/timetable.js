@@ -127,8 +127,8 @@ export async function uploadTimetable({
   formData.append("academic_year", academicYear);
   formData.append("file", file);
 
-  const response = await api.post("/regular-timetable/upload", formData, {
-    headers: { ...getHeaders(), "Content-Type": "multipart/form-data" },
+   const response = await api.post("/regular-timetable/upload", formData, {
+    headers: { ...getHeaders(academicYear), "Content-Type": "multipart/form-data" },
   });
   return response.data;
 }
@@ -146,8 +146,8 @@ export async function uploadSummerTimetable({
   formData.append("academic_year", academicYear);
   formData.append("file", file);
 
-  const response = await api.post("/summer-timetable/upload", formData, {
-    headers: { ...getHeaders(), "Content-Type": "multipart/form-data" },
+   const response = await api.post("/summer-timetable/upload", formData, {
+    headers: { ...getHeaders(academicYear), "Content-Type": "multipart/form-data" },
   });
   return response.data;
 }
@@ -170,7 +170,7 @@ async function uploadSpecialTimetable(path, {
   formData.append("file", file);
 
   const response = await api.post(path, formData, {
-    headers: { ...getHeaders(), "Content-Type": "multipart/form-data" },
+    headers: { ...getHeaders(academicYear), "Content-Type": "multipart/form-data" },
   });
   return response.data;
 }
@@ -183,7 +183,7 @@ export function uploadAdditionalTimetable(payload) {
   return uploadSpecialTimetable("/additional-timetable/upload", payload);
 }
 
-export async function deleteTimetable(timetableUUID, timetableType = "regular") {
+export async function deleteTimetable(timetableUUID, timetableType = "regular", academicYear) {
   const pathByType = {
     regular: "/regular-timetable",
     summer: "/summer-timetable",
@@ -194,10 +194,8 @@ export async function deleteTimetable(timetableUUID, timetableType = "regular") 
   const response = await api.delete(
     `${pathByType[timetableType] || pathByType.regular}/${timetableUUID}`,
     {
-      // Summer deletion is documented with this query parameter; it is safe
-      // for the other timetable APIs and keeps deletion consistent.
       params: { institute_uuid: instituteUUID },
-      headers: getHeaders(),
+      headers: getHeaders(academicYear),
     },
   );
   return response.data;

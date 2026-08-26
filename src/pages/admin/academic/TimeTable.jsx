@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/immutability */
 /* eslint-disable react-hooks/set-state-in-effect */
 import { PageContainer, PageHeader } from "../../../components/page-shell";
 import {
@@ -158,10 +159,12 @@ export default function TimeTable() {
   const [schedule, setSchedule] = useState([]); // array of period rows
 
   const [activeView, setActiveView] = useState("class");
-  const [timetableType, setTimetableType] = useState("regular");
-  const [viewingTimetable, setViewingTimetable] = useState(false);
+  const [timetableType, setTimetableType] = useState(
+    () => sessionStorage.getItem("tt_active_type") || "regular"
+  );  const [viewingTimetable, setViewingTimetable] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [timetableRows, setTimetableRows] = useState([]);
+  // eslint-disable-next-line no-unused-vars
   const [reloadKey, setReloadKey] = useState(0);
   const timetablePage = usePagination(timetableRows, 10);
 
@@ -197,6 +200,9 @@ export default function TimeTable() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+   useEffect(() => {
+    sessionStorage.setItem("tt_active_type", timetableType);
+  }, [timetableType]);
   const loadSectionsForClass = async (classUUID, setList, setLoading) => {
     if (!classUUID) {
       setList([]);
@@ -252,38 +258,51 @@ export default function TimeTable() {
 
   // Load the full list for the active type first. A timetable is only opened
   // into the grid when its View action is selected.
-  useEffect(() => {
+ useEffect(() => {
     setViewingTimetable(false);
     setSchedule([]);
     setTimetableMeta(null);
     if (!academicYear.trim()) return;
-    (async () => {
-      setLoadingTimetable(true);
-      try {
-        const fetchByType = {
-          regular: getRegularTimetables,
-          summer: getSummerTimetables,
-          examination: getExaminationTimetables,
-          additional: getAdditionalTimetables,
-        };
-        const response = await fetchByType[timetableType](academicYear.trim());
-        setTimetableRows(Array.isArray(response) ? response : response?.data ?? []);
-      } catch {
-        setTimetableRows([]);
-        toast.error(`Could not load ${timetableType} timetables`);
-      } finally {
-        setLoadingTimetable(false);
-      }
-    })();
-  }, [academicYear, timetableType, reloadKey]);
+    setLoadingTimetable(true);
+    fetchTimetableList(timetableType, academicYear).finally(() =>
+      setLoadingTimetable(false),
+    );
+  }, [academicYear, timetableType]);
 
-  const labelFor = (list, uuid, keys) => {
+   const labelFor = (list, uuid, keys) => {
     const item = list.find((x) =>
       [x.class_uuid, x.section_uuid, x.uuid, x.id].includes(uuid),
     );
     if (!item) return "";
     for (const k of keys) if (item[k]) return item[k];
     return "";
+  };
+
+  const getItemAcademicYear = (item) =>
+    item.academic_year ||
+    item.academic_year_uuid ||
+    item.academicYear ||
+    item.academicYearUuid ||
+    item.academic_session ||
+    item.session_year ||
+    item.sessionYear ||
+    item.year ||
+    "";
+
+    const fetchTimetableList = async (type = timetableType, year = academicYear) => {
+    if (!year.trim()) return;
+    try {
+      const fetchByType = {
+        regular: getRegularTimetables,
+        summer: getSummerTimetables,
+        examination: getExaminationTimetables,
+        additional: getAdditionalTimetables,
+      };
+      const response = await fetchByType[type](year.trim());
+      setTimetableRows(Array.isArray(response) ? response : response?.data ?? []);
+    } catch {
+      toast.error(`Could not load ${type} timetables`);
+    }
   };
 
   const selectedClassLabel = labelFor(classes, selectedClassUUID, [
@@ -294,6 +313,15 @@ export default function TimeTable() {
     "name",
     "section_name",
   ]);
+  const academicYearOptions = useMemo(() => {
+  const startYear = new Date().getFullYear() - 3;
+  const years = Array.from({ length: 8 }, (_, i) => {
+    const y = startYear + i;
+    return `${y}-${String(y + 1).slice(-2)}`;
+  });
+  if (academicYear && !years.includes(academicYear)) years.push(academicYear);
+  return years.sort();
+}, [academicYear]);
 
   // eslint-disable-next-line no-unused-vars
   const handleClassFilterChange = (classUUID) => {
@@ -415,9 +443,9 @@ export default function TimeTable() {
           teacher: row.teacher || row.Teacher,
         })),
       );
-      setTimetableMeta(meta);
+           setTimetableMeta(meta);
       setViewingTimetable(false);
-      setReloadKey((key) => key + 1);
+      await fetchTimetableList(importTimetableType, importYear.trim());
 
       toast.success(`Imported ${meta.file_name || file.name}`);
       setImportDialogOpen(false);
@@ -493,10 +521,10 @@ export default function TimeTable() {
   // eslint-disable-next-line no-unused-vars
   const maxTablePage = 1;
 
-  const handleViewTimetable = (item) => {
+    const handleViewTimetable = (item) => {
     setSelectedClassUUID(item.class_uuid || item.classUUID || "");
     setSelectedSectionUUID(item.section_uuid || item.sectionUUID || "");
-    setAcademicYear(item.academic_year || item.academicYear || "2026-27");
+    setAcademicYear(getItemAcademicYear(item) || academicYear);
     const { timetable, ...meta } = item;
     setSchedule(
       (timetable || []).map((row) => ({
@@ -513,7 +541,7 @@ export default function TimeTable() {
     setViewingTimetable(true);
   };
 
-  const handleDeleteTimetable = async (item) => {
+    const handleDeleteTimetable = async (item) => {
     const timetableUUID = item?.timetable_uuid || item?.uuid || timetableMeta?.timetable_uuid || timetableMeta?.uuid;
     if (!timetableUUID) return;
     if (!window.confirm("Delete this timetable? This cannot be undone.")) return;
@@ -521,10 +549,18 @@ export default function TimeTable() {
     setDeleting(true);
     try {
       await deleteTimetable(timetableUUID, timetableType);
-      setSchedule([]);
-      setTimetableMeta(null);
-      setViewingTimetable(false);
-      setReloadKey((key) => key + 1);
+
+      const wasViewingThis =
+        viewingTimetable &&
+        (timetableMeta?.timetable_uuid === timetableUUID || timetableMeta?.uuid === timetableUUID);
+
+      if (wasViewingThis) {
+        setSchedule([]);
+        setTimetableMeta(null);
+        setViewingTimetable(false);
+      }
+
+      await fetchTimetableList();
       toast.success("Timetable deleted");
     } catch {
       toast.error("Could not delete the timetable");
@@ -773,9 +809,28 @@ export default function TimeTable() {
         <CardContent className="p-0 overflow-auto">
           {!viewingTimetable ? (
             <div className="min-w-[720px]">
-              <div className="flex items-center justify-between border-b bg-slate-50 px-5 py-4 dark:bg-slate-900/40">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-slate-50 px-5 py-4 dark:bg-slate-900/40">
                 <h2 className="text-base font-semibold">Timetables</h2>
-                <RowsPerPageSelect {...timetablePage} />
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                      Academic Year
+                    </Label>
+                    <Select value={academicYear} onValueChange={setAcademicYear}>
+                      <SelectTrigger className="h-8 w-32">
+                        <SelectValue placeholder="Year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {academicYearOptions.map((year) => (
+                          <SelectItem key={year} value={year}>
+                            {year}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <RowsPerPageSelect {...timetablePage} />
+                </div>
               </div>
               <table className="w-full text-sm">
                 <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -794,8 +849,7 @@ export default function TimeTable() {
                     <tr key={item.timetable_uuid || item.uuid} className="border-b last:border-0">
                       <td className="px-5 py-4 font-medium">{item.class_name || item.class?.name || labelFor(classes, item.class_uuid, ["name", "class_name"]) || "—"}</td>
                       <td className="px-5 py-4">{item.section_name || item.section?.name || labelFor(allSections, item.section_uuid, ["name", "section_name"]) || "—"}</td>
-                      <td className="px-5 py-4">{item.academic_year || item.academic_year_uuid || item.academicYear || academicYear}</td>
-                      <td className="px-5 py-4"><span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700">{item.status || "Active"}</span></td>
+                      <td className="px-5 py-4">{getItemAcademicYear(item) || academicYear}</td>                      <td className="px-5 py-4"><span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700">{item.status || "Active"}</span></td>
                       <td className="px-5 py-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => handleViewTimetable(item)}><Eye className="h-4 w-4" />View</Button><Button size="sm" variant="destructive" onClick={() => handleDeleteTimetable(item)} disabled={deleting}><Trash2 className="h-4 w-4" />{deleting ? "Deleting..." : "Delete"}</Button></div></td>
                     </tr>
                   )) : (

@@ -1186,11 +1186,11 @@ const handleUpdate = async () => {
       </Card>
 
       <Tabs defaultValue="table">
-        {/* <TabsList>
+        <TabsList>
           <TabsTrigger value="table">All Assignments</TabsTrigger>
           <TabsTrigger value="cards">Card View</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList> */}
+        </TabsList>
 
         <TabsContent value="table" className="mt-4">
           <Card className="border-border/60">
@@ -1222,8 +1222,8 @@ const handleUpdate = async () => {
                     <TableHead>Class</TableHead>
                     <TableHead>Teacher</TableHead>
                     <TableHead>Due</TableHead>
-                    {/* <TableHead>Submissions</TableHead> */}
-                    {/* <TableHead>Status</TableHead> */}
+                    <TableHead>Submissions</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead className="w-20">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1269,15 +1269,15 @@ const handleUpdate = async () => {
                           <TableCell>{a.klass}</TableCell>
                           <TableCell className="text-xs">{a.teacher}</TableCell>
                           <TableCell className="text-xs">{a.due}</TableCell>
-                          {/* <TableCell>
+                          <TableCell>
                             <div className="flex items-center gap-2 w-40">
                               <Progress value={pct} className="h-1.5" />
                               <span className="text-xs tabular-nums">
                                 {subs}/{tot}
                               </span>
                             </div>
-                          </TableCell> */}
-                          {/* <TableCell>
+                          </TableCell>
+                          <TableCell>
                             <Badge
                               variant={
                                 a.status === "Published"
@@ -1289,7 +1289,7 @@ const handleUpdate = async () => {
                             >
                               {a.status}
                             </Badge>
-                          </TableCell> */}
+                          </TableCell>
                           <TableCell data-no-row>
                             <div className="flex items-center gap-1">
                               <Button
@@ -1444,7 +1444,7 @@ const handleUpdate = async () => {
                   <div className="text-xs text-muted-foreground">
                     submission rate · {subjItems.length} assigned
                   </div>
-                  <Progress value={rate} className="h-1.5 mt-3" />
+                  <Progress value={rate} className="h-1.5 mt-3" /> 
                 </CardContent>
               </Card>
             );

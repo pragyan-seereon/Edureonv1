@@ -159,9 +159,7 @@ export default function TeacherExams() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Teacher Portal · Examinations"
         title="My Examinations"
-        description="Exam categories, schedules for your classes, internal class tests you create, and marks for your subjects only."
         actions={
           <Dialog open={openTest} onOpenChange={setOpenTest}>
             <DialogTrigger asChild>

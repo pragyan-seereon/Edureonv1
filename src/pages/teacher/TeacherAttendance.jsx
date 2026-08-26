@@ -68,9 +68,7 @@ export default function TeacherAttendance() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Teacher Portal"
         title="Take Attendance"
-        description="Tap P / A / L per student. Date defaults to today; tap to mark past sessions."
       />
 
       <Card className="border-border/60 mb-5">

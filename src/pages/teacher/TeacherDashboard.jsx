@@ -11,6 +11,7 @@ import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { KpiCard } from "../../components/kpi-card";
 import {
+  // eslint-disable-next-line no-unused-vars
   CalendarCheck,
   ClipboardList,
   BookOpen,
@@ -116,12 +117,11 @@ export default function TeacherDashboard() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Teacher Portal"
         title={`Good morning, ${name}`}
         description={`${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · ${todayPeriods.length} periods today.`}
         actions={
           <>
-            <Button variant="outline" size="sm" asChild>
+            {/* <Button variant="outline" size="sm" asChild>
               <Link to="/teacher/attendance">
                 <CalendarCheck className="h-4 w-4" />
                 Take Attendance
@@ -132,7 +132,7 @@ export default function TeacherDashboard() {
                 <ClipboardList className="h-4 w-4" />
                 Assignments
               </Link>
-            </Button>
+            </Button> */}
           </>
         }
       />
@@ -174,7 +174,7 @@ export default function TeacherDashboard() {
               <CardDescription>{todayPeriods.length} sessions</CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild>
-              <Link to="/timetable">
+              <Link to="/teacher/timetable">
                 Full timetable
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>

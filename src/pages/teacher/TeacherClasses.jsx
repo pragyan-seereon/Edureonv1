@@ -10,9 +10,11 @@ import {
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import {
+  // eslint-disable-next-line no-unused-vars
   Users,
   CalendarCheck,
   ClipboardList,
+  // eslint-disable-next-line no-unused-vars
   ArrowRight,
   Crown,
 } from "lucide-react";
@@ -54,9 +56,7 @@ export default function TeacherClasses() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Teacher Portal"
         title="My Classes & Sections"
-        description="Sections assigned to you this term, with mentor status, headcount and live attendance."
       />
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
         {classes.map((c) => (
@@ -109,18 +109,18 @@ export default function TeacherClasses() {
                   </Link>
                 </Button>
                 <Button variant="outline" size="sm" asChild>
-                  <Link to="/assignments">
+                  <Link to="/teacher/assignments">
                     <ClipboardList className="h-4 w-4" />
                     Assignments
                   </Link>
                 </Button>
-                <Button variant="ghost" size="sm" asChild>
+                {/* <Button variant="ghost" size="sm" asChild>
                   <Link to="/students">
                     <Users className="h-4 w-4" />
                     Roster
                     <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
-                </Button>
+                </Button> */}
               </div>
             </CardContent>
           </Card>

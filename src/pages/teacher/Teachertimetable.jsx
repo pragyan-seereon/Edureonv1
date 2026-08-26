@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
+// eslint-disable-next-line no-unused-vars
 import { Download, Eye } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -136,9 +137,7 @@ export default function TeacherTimetable() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Teacher Portal · Academics"
         title="Timetable"
-        description="Read-only. You can view the weekly grid for classes assigned to you and your own teaching schedule."
         actions={
           <Button size="sm" variant="outline" onClick={download}>
             <Download className="h-4 w-4" />
@@ -147,9 +146,9 @@ export default function TeacherTimetable() {
         }
       />
 
-      <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+      {/* <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
         <Eye className="h-3.5 w-3.5" /> View-only mode — timetable changes are managed by the Admin.
-      </div>
+      </div> */}
 
       <Tabs defaultValue="class">
         <TabsList>

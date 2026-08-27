@@ -434,7 +434,15 @@ import {
 
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
+import { Checkbox } from "../../components/ui/checkbox";
 import { Progress } from "../../components/ui/progress";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "../../components/ui/sheet";
 
 import {
   Tabs,
@@ -460,6 +468,8 @@ import {
   CreditCard,
   Loader2,
   RefreshCw,
+  Printer,
+  Eye,
 } from "lucide-react";
 
 import { KpiCard } from "../../components/kpi-card";
@@ -467,6 +477,8 @@ import { KpiCard } from "../../components/kpi-card";
 import { toast } from "sonner";
 
 import studentModel from "../../api/studentModel";
+import { getStudentDiscounts } from "../../api/feeAssignment";
+import { getFeeDiscounts } from "../../api/feeDiscount";
 
 import useSessionStore from "../../store/sessionStore";
 
@@ -523,6 +535,14 @@ const getStatus = (due) => {
   }
 
   if (
+    status === "ADVANCE_RECEIVED" ||
+    status === "ADVANCE_PAID" ||
+    status === "ADVANCE"
+  ) {
+    return "ADVANCE_RECEIVED";
+  }
+
+  if (
     status === "OVERDUE" ||
     status === "LATE"
   ) {
@@ -530,6 +550,38 @@ const getStatus = (due) => {
   }
 
   return "DUE";
+};
+
+const toErrorMessage = (value, fallback = "Something went wrong.") => {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    const nestedMessage =
+      value.message ||
+      value.detail ||
+      value.error ||
+      value.error_code;
+
+    if (typeof nestedMessage === "string" && nestedMessage.trim()) {
+      return nestedMessage;
+    }
+
+    if (value.required_permission) {
+      return `No permission (${value.required_permission}).`;
+    }
+  }
+
+  return fallback;
+};
+
+const getPaymentKind = (payment) => {
+  const kind = String(
+    payment?.payment_type || payment?.kind || payment?.transaction_type || ""
+  ).toUpperCase();
+
+  return kind.includes("ADVANCE") ? "Advance" : "Payment";
 };
 
 
@@ -632,6 +684,27 @@ export default function Fees() {
   const [payLoading, setPayLoading] =
     useState(false);
 
+  const [selectedDueIds, setSelectedDueIds] = useState([]);
+
+  const [discountMetadata, setDiscountMetadata] = useState([]);
+
+  const [discountTemplates, setDiscountTemplates] = useState([]);
+
+  const [historyView, setHistoryView] = useState("timeline");
+
+  const [financialHistoryOpen, setFinancialHistoryOpen] = useState(false);
+
+  const paymentHistoryTotal = useMemo(
+    () => paymentHistory.reduce(
+      (total, payment) =>
+        total + toNumber(
+          payment?.amount ?? payment?.paid_amount ?? payment?.total_amount
+        ),
+      0
+    ),
+    [paymentHistory]
+  );
+
 
   // ==========================================================
   // Load Student Dues
@@ -663,6 +736,51 @@ export default function Fees() {
 
       setDues(rows);
 
+      const studentUuid = rows.find((row) => row?.student_uuid)?.student_uuid;
+
+      if (studentUuid) {
+        try {
+          const [discountResult, templateResult] = await Promise.allSettled([
+            getStudentDiscounts(studentUuid),
+            getFeeDiscounts({ is_active: true }),
+          ]);
+          const discountResponse =
+            discountResult.status === "fulfilled" ? discountResult.value : null;
+          const discountBody = discountResponse?.data?.data ?? discountResponse?.data ?? [];
+          const discountRows = Array.isArray(discountBody)
+            ? discountBody
+            : Array.isArray(discountBody?.discounts)
+            ? discountBody.discounts
+            : discountBody?.discount_uuid ? [discountBody] : [];
+          setDiscountMetadata(
+            discountRows.flatMap((row) =>
+              Array.isArray(row?.discounts) ? row.discounts : [row]
+            )
+          );
+
+          const templateResponse =
+            templateResult.status === "fulfilled" ? templateResult.value : null;
+          const templateBody =
+            templateResponse?.data?.data ?? templateResponse?.data ?? [];
+          setDiscountTemplates(
+            Array.isArray(templateBody)
+              ? templateBody
+              : Array.isArray(templateBody?.items)
+              ? templateBody.items
+              : Array.isArray(templateBody?.results)
+              ? templateBody.results
+              : []
+          );
+        } catch (discountError) {
+          console.error("Failed to load assigned discount details:", discountError);
+          setDiscountMetadata([]);
+          setDiscountTemplates([]);
+        }
+      } else {
+        setDiscountMetadata([]);
+        setDiscountTemplates([]);
+      }
+
     } catch (err) {
 
       console.error(
@@ -670,14 +788,16 @@ export default function Fees() {
         err
       );
 
-      const message =
-        err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        "Failed to load your fee details.";
+      const message = toErrorMessage(
+        err?.response?.data?.detail || err?.response?.data,
+        "Failed to load your fee details."
+      );
 
       setError(message);
 
       setDues([]);
+      setDiscountMetadata([]);
+      setDiscountTemplates([]);
 
     } finally {
 
@@ -1050,6 +1170,205 @@ export default function Fees() {
   // Open Payment
   // ==========================================================
 
+  const payableDues = useMemo(
+    () => dues.filter(
+      (due) =>
+        due?.due_uuid &&
+        getStatus(due) !== "ADVANCE_RECEIVED" &&
+        toNumber(due?.balance_amount) > 0
+    ),
+    [dues]
+  );
+
+  const discountedDues = useMemo(
+    () => dues.filter((due) => toNumber(due?.discount) > 0),
+    [dues]
+  );
+
+  const assignedDiscounts = useMemo(() => {
+    const grouped = new Map();
+
+    discountedDues.forEach((due, index) => {
+      const name =
+        due?.discount_name || due?.discount?.name || "Assigned fee discount";
+      const rawType = String(
+        due?.discount_type || due?.discount?.type ||
+        (toNumber(due?.discount_percentage) > 0 ? "PERCENT" : "FIXED")
+      ).toUpperCase();
+      const type = rawType.startsWith("PERC") ? "Percentage" : "Fixed amount";
+      const configuredValue = toNumber(
+        due?.discount_value ?? due?.discount?.value ?? due?.discount_percentage
+      );
+      const key =
+        due?.discount_uuid ||
+        due?.assignment_student_discount_uuid ||
+        `${name}-${rawType}-${configuredValue || "applied"}-${due?.component_uuid || index}`;
+
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          name,
+          type,
+          configuredValue,
+          components: new Set(),
+          months: new Map(),
+          appliedAmount: 0,
+          originalAmount: 0,
+          occurrences: 0,
+          inferredPercentages: [],
+        });
+      }
+
+      const row = grouped.get(key);
+      row.components.add(due?.component_name || "Fee Component");
+      if (due?.fee_month) {
+        const monthDate = new Date(due.fee_month);
+        if (!Number.isNaN(monthDate.getTime())) {
+          row.months.set(monthDate.getTime(), formatMonth(due.fee_month));
+        }
+      }
+      row.appliedAmount += toNumber(due?.discount);
+      row.originalAmount += toNumber(due?.amount);
+      row.occurrences += 1;
+
+      if (toNumber(due?.amount) > 0) {
+        row.inferredPercentages.push(
+          (toNumber(due?.discount) / toNumber(due?.amount)) * 100
+        );
+      }
+    });
+
+    const assignedDiscountUuids = new Set(
+      discountMetadata.map((item) => item?.discount_uuid).filter(Boolean).map(String)
+    );
+    const assignedTemplates = discountTemplates.filter((template) =>
+      assignedDiscountUuids.has(String(template?.discount_uuid))
+    );
+
+    return Array.from(grouped.values()).map((discount) => {
+      const sortedMonths = Array.from(discount.months.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([, label]) => label);
+      const inferredPercentage = discount.inferredPercentages.length
+        ? discount.inferredPercentages.reduce((sum, value) => sum + value, 0) /
+          discount.inferredPercentages.length
+        : 0;
+      const inferredFixedValue = discount.occurrences
+        ? discount.appliedAmount / discount.occurrences
+        : 0;
+
+      const componentNames = Array.from(discount.components);
+      const assignmentMetadata =
+        discountMetadata.find((item) =>
+          item?.discount_uuid && String(item.discount_uuid) === String(discount.key)
+        ) ||
+        discountMetadata.find((item) => {
+          const metadataComponents = Array.isArray(item?.components)
+            ? item.components.map((component) =>
+                component?.component_name || component?.name || component
+              )
+            : [];
+          return metadataComponents.some((component) =>
+            componentNames.includes(component)
+          );
+        }) ||
+        (discountMetadata.length === 1 ? discountMetadata[0] : null);
+
+      const assignedDiscountUuid =
+        assignmentMetadata?.discount_uuid ||
+        (assignedTemplates.some((item) =>
+          String(item?.discount_uuid) === String(discount.key)
+        ) ? discount.key : null);
+      const templateMetadata =
+        assignedTemplates.find((item) =>
+          assignedDiscountUuid &&
+          String(item?.discount_uuid) === String(assignedDiscountUuid)
+        ) ||
+        assignedTemplates.find((item) => {
+          const templateComponents = Array.isArray(item?.components)
+            ? item.components.map((component) =>
+                component?.component_name || component?.name || component
+              )
+            : [];
+          return templateComponents.some((component) =>
+            componentNames.includes(component)
+          );
+        }) ||
+        null;
+      const matchingMetadata = templateMetadata || assignmentMetadata;
+
+      const metadataName =
+        matchingMetadata?.discount_name || matchingMetadata?.name;
+      const metadataType = String(
+        matchingMetadata?.discount_type || matchingMetadata?.type || ""
+      ).toUpperCase();
+      const resolvedType = metadataType
+        ? metadataType.startsWith("PERC") ? "Percentage" : "Fixed amount"
+        : discount.type;
+      const metadataValue = toNumber(
+        matchingMetadata?.discount_value ?? matchingMetadata?.value
+      );
+      const resolvedValue = metadataValue || discount.configuredValue;
+
+      return {
+        ...discount,
+        isAssigned: Boolean(
+          assignmentMetadata ||
+          templateMetadata ||
+          discount.name !== "Assigned fee discount"
+        ),
+        name: metadataName || discount.name,
+        rule:
+          matchingMetadata?.discount_scope ||
+          matchingMetadata?.rule ||
+          "—",
+        type: resolvedType,
+        configuredValue: resolvedValue,
+        components: Array.from(discount.components),
+        monthRange:
+          sortedMonths.length > 1
+            ? `${sortedMonths[0]} – ${sortedMonths[sortedMonths.length - 1]}`
+            : sortedMonths[0] || "—",
+        displayValue:
+          resolvedValue > 0
+            ? resolvedType === "Percentage"
+              ? `${resolvedValue}%`
+              : inr(resolvedValue)
+            : resolvedType === "Percentage"
+            ? `${Number(inferredPercentage.toFixed(2))}%`
+            : inr(inferredFixedValue),
+      };
+    }).filter((discount) => discount.isAssigned);
+  }, [discountedDues, discountMetadata, discountTemplates]);
+
+  const selectedDues = useMemo(
+    () => payableDues.filter((due) => selectedDueIds.includes(due.due_uuid)),
+    [payableDues, selectedDueIds]
+  );
+
+  const selectedAmount = useMemo(
+    () => selectedDues.reduce(
+      (total, due) => total + Math.max(0, toNumber(due?.balance_amount)),
+      0
+    ),
+    [selectedDues]
+  );
+
+  const allPayableSelected =
+    payableDues.length > 0 && selectedDues.length === payableDues.length;
+
+  const toggleDue = (dueUuid, checked) => {
+    setSelectedDueIds((current) =>
+      checked
+        ? [...new Set([...current, dueUuid])]
+        : current.filter((id) => id !== dueUuid)
+    );
+  };
+
+  const toggleAllDues = (checked) => {
+    setSelectedDueIds(checked ? payableDues.map((due) => due.due_uuid) : []);
+  };
+
   const openPay = (
     amount,
     label,
@@ -1104,6 +1423,19 @@ export default function Fees() {
 
     setPayOpen(true);
 
+  };
+
+  const openPaySelected = () => {
+    if (selectedDues.length === 0) {
+      toast.info("Select at least one fee item to pay.");
+      return;
+    }
+
+    openPay(
+      selectedAmount,
+      `${selectedDues.length} selected fee item${selectedDues.length === 1 ? "" : "s"}`,
+      selectedDues
+    );
   };
 
 
@@ -1219,6 +1551,8 @@ export default function Fees() {
   // ==========================================================
 
   const handlePay = async () => {
+
+    let checkoutOpened = false;
 
     if (
       !payTarget ||
@@ -1633,6 +1967,8 @@ export default function Fees() {
 
               setPayTarget(null);
 
+              setSelectedDueIds([]);
+
 
               // ==============================================
               // Refresh dues and history
@@ -1651,11 +1987,12 @@ export default function Fees() {
               );
 
 
-              const message =
+              const message = toErrorMessage(
                 err?.response?.data?.detail ||
-                err?.response?.data?.message ||
-                err?.message ||
-                "Payment verification failed.";
+                  err?.response?.data ||
+                  err?.message,
+                "Payment verification failed."
+              );
 
 
               toast.error(
@@ -1740,6 +2077,7 @@ export default function Fees() {
       // ======================================================
 
       razorpay.open();
+      checkoutOpened = true;
 
     } catch (err) {
 
@@ -1749,11 +2087,16 @@ export default function Fees() {
       );
 
 
-      const message =
-        err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        err?.message ||
-        "Unable to initiate payment.";
+      const status = err?.response?.status;
+
+      const message = status === 403
+        ? "No permission to make this payment. Fee details have been refreshed."
+        : toErrorMessage(
+            err?.response?.data?.detail ||
+              err?.response?.data ||
+              err?.message,
+            "Unable to initiate payment."
+          );
 
 
       toast.error(
@@ -1763,13 +2106,22 @@ export default function Fees() {
           : "Unable to initiate payment."
       );
 
+      if (status === 403) {
+        setPayOpen(false);
+        setPayTarget(null);
+        setSelectedDueIds([]);
+
+        await Promise.allSettled([
+          loadDues(),
+          loadPaymentHistory(),
+        ]);
+      }
+
     } finally {
 
-      /*
-       * Do NOT close payLoading here while Razorpay is open.
-       *
-       * The Razorpay callback controls the loading state.
-       */
+      if (!checkoutOpened) {
+        setPayLoading(false);
+      }
 
     }
   };
@@ -1778,6 +2130,38 @@ export default function Fees() {
   // ==========================================================
   // Download Receipt
   // ==========================================================
+
+  const viewReceipt = async (payment) => {
+    const transactionUuid = payment?.transaction_uuid;
+
+    if (!transactionUuid) {
+      toast.error("Receipt is not available.");
+      return;
+    }
+
+    const receiptWindow = window.open("", "_blank");
+
+    try {
+      const response = await studentModel.getReceipt(transactionUuid);
+      const url = window.URL.createObjectURL(response.data);
+
+      if (receiptWindow) {
+        receiptWindow.location.href = url;
+      } else {
+        window.open(url, "_blank");
+      }
+
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      receiptWindow?.close();
+      console.error("Receipt preview failed:", err);
+      toast.error(
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Unable to open receipt."
+      );
+    }
+  };
 
   const downloadReceipt = async (
     payment
@@ -1962,7 +2346,7 @@ export default function Fees() {
 
             <p className="text-sm text-destructive">
 
-              {error}
+              {toErrorMessage(error, "Unable to load fee details.")}
 
             </p>
 
@@ -2042,7 +2426,7 @@ export default function Fees() {
       ===================================================== */}
 
       <Card
-        className="border-border/60 mb-6"
+        className="hidden"
       >
 
         <CardContent className="p-5 flex flex-col md:flex-row md:items-center gap-4">
@@ -2154,6 +2538,13 @@ export default function Fees() {
           </TabsTrigger>
 
 
+          <TabsTrigger value="discounts">
+
+            Discounts
+
+          </TabsTrigger>
+
+
           <TabsTrigger value="history">
 
             Payment History
@@ -2176,7 +2567,9 @@ export default function Fees() {
             className="border-border/60"
           >
 
-            <CardHeader className="pb-2">
+            <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
+
+              <div>
 
               <CardTitle className="font-display text-base">
 
@@ -2191,6 +2584,17 @@ export default function Fees() {
 
               </CardDescription>
 
+              </div>
+
+              <Button
+                className="gradient-primary border-0 shrink-0"
+                disabled={selectedDues.length === 0 || payLoading}
+                onClick={openPaySelected}
+              >
+                <CreditCard className="h-4 w-4" />
+                Pay selected{selectedAmount > 0 ? ` · ${inr(selectedAmount)}` : ""}
+              </Button>
+
             </CardHeader>
 
 
@@ -2202,8 +2606,20 @@ export default function Fees() {
 
                   <TableRow>
 
+                    <TableHead className="w-10">
+                      <Checkbox
+                        aria-label="Select all unpaid fees"
+                        checked={allPayableSelected}
+                        onCheckedChange={(checked) => toggleAllDues(checked === true)}
+                      />
+                    </TableHead>
+
                     <TableHead>
                       Month
+                    </TableHead>
+
+                    <TableHead>
+                      Component
                     </TableHead>
 
 
@@ -2232,10 +2648,6 @@ export default function Fees() {
                     </TableHead>
 
 
-                    <TableHead className="text-right">
-                      Action
-                    </TableHead>
-
                   </TableRow>
 
                 </TableHeader>
@@ -2243,49 +2655,65 @@ export default function Fees() {
 
                 <TableBody>
 
-                  {monthLines.map(
-                    (month) => {
+                  {dues.map(
+                    (due, index) => {
 
-                      const status =
-                        month.statuses.includes(
-                          "OVERDUE"
-                        )
-                          ? "OVERDUE"
-                          : month.balance_amount <= 0
-                          ? "PAID"
-                          : "DUE";
-
-
-                      const payable =
-                        Math.max(
-                          0,
-                          month.amount -
-                            month.discount +
-                            month.late_fee
-                        );
+                      const status = getStatus(due);
+                      const isAdvanceReceived = status === "ADVANCE_RECEIVED";
+                      const isPayable =
+                        !isAdvanceReceived && toNumber(due?.balance_amount) > 0;
+                      const dueId = due?.due_uuid || `due-${index}`;
 
 
                       return (
 
                         <TableRow
                           key={
-                            month.key
+                            dueId
+                          }
+                          className={
+                            status === "PAID"
+                              ? "opacity-60"
+                              : isAdvanceReceived
+                              ? "bg-blue-50/60 dark:bg-blue-950/20"
+                              : ""
                           }
                         >
+
+                          <TableCell>
+                            <Checkbox
+                              aria-label={`Select ${due?.component_name || "fee item"}`}
+                              disabled={!isPayable}
+                              checked={selectedDueIds.includes(due?.due_uuid)}
+                              onCheckedChange={(checked) =>
+                                toggleDue(due.due_uuid, checked === true)
+                              }
+                            />
+                          </TableCell>
 
                           <TableCell className="font-medium">
 
                             {formatMonth(
-                              month.fee_month
+                              due?.fee_month
                             )}
 
+                            {isAdvanceReceived && (
+                              <Badge className="ml-1.5 h-4 bg-blue-600 px-1 py-0 text-[10px] text-white hover:bg-blue-600">
+                                Advance Paid
+                              </Badge>
+                            )}
+
+                          </TableCell>
+
+                          <TableCell className="font-medium">
+                            {due?.component_name || "Fee Component"}
                           </TableCell>
 
 
                           <TableCell className="text-right">
 
                             {inr(
-                              month.amount
+                              due?.amount
                             )}
 
                           </TableCell>
@@ -2293,11 +2721,9 @@ export default function Fees() {
 
                           <TableCell className="text-right">
 
-                            {month.discount
+                            {toNumber(due?.discount)
 
-                              ? inr(
-                                  month.discount
-                                )
+                              ? <span className="text-orange-500">- {inr(due?.discount)}</span>
 
                               : "—"}
 
@@ -2306,12 +2732,12 @@ export default function Fees() {
 
                           <TableCell className="text-right">
 
-                            {month.late_fee ? (
+                            {toNumber(due?.late_fee) ? (
 
                               <span className="text-destructive">
 
                                 {inr(
-                                  month.late_fee
+                                    due?.late_fee
                                 )}
 
                               </span>
@@ -2327,17 +2753,12 @@ export default function Fees() {
 
                           <TableCell className="text-right font-semibold">
 
-                            {status ===
-                            "PAID"
-
-                              ? "—"
-
-                              : inr(
-                                  Math.max(
-                                    0,
-                                    month.balance_amount
-                                  )
-                                )}
+                            {inr(
+                              Math.max(
+                                0,
+                                toNumber(due?.amount) - toNumber(due?.discount)
+                              )
+                            )}
 
                           </TableCell>
 
@@ -2347,10 +2768,13 @@ export default function Fees() {
                             <Badge
                               variant="outline"
                               className={
-                                status ===
-                                "PAID"
+                                status === "PAID"
 
                                   ? "bg-success/10 text-success border-success/20"
+
+                                  : isAdvanceReceived
+
+                                  ? "border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
 
                                   : status ===
                                     "OVERDUE"
@@ -2361,10 +2785,13 @@ export default function Fees() {
                               }
                             >
 
-                              {status ===
-                              "PAID"
+                              {status === "PAID"
 
                                 ? "Paid"
+
+                                : isAdvanceReceived
+
+                                ? "Advance received"
 
                                 : status ===
                                   "OVERDUE"
@@ -2377,33 +2804,6 @@ export default function Fees() {
 
                           </TableCell>
 
-
-                          <TableCell className="text-right">
-
-                            {month.balance_amount >
-                              0 && (
-
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  openPayMonth(
-                                    month
-                                  )
-                                }
-                                disabled={
-                                  payLoading
-                                }
-                              >
-
-                                Pay
-
-                              </Button>
-
-                            )}
-
-                          </TableCell>
-
                         </TableRow>
 
                       );
@@ -2412,13 +2812,13 @@ export default function Fees() {
                   )}
 
 
-                  {monthLines.length ===
+                  {dues.length ===
                     0 && (
 
                     <TableRow>
 
                       <TableCell
-                        colSpan={7}
+                        colSpan={8}
                         className="text-center text-sm text-muted-foreground py-8"
                       >
 
@@ -2575,6 +2975,84 @@ export default function Fees() {
 
 
         {/* ===================================================
+            DISCOUNTS
+        =================================================== */}
+
+        <TabsContent value="discounts" className="mt-4">
+          <Card className="border-border/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="font-display text-base">
+                Assigned Discounts
+              </CardTitle>
+              <CardDescription>
+                Discounts applied to your assigned fee components.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="p-0 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Discount Name</TableHead>
+                    <TableHead>Rule</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Value</TableHead>
+                    <TableHead>Applies to Components</TableHead>
+                    <TableHead>Months</TableHead>
+                    <TableHead className="text-right">Total Discount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {assignedDiscounts.map((discount) => (
+                    <TableRow key={discount.key}>
+                      <TableCell className="font-medium">{discount.name}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-normal">
+                          {discount.rule}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{discount.type}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-semibold">{discount.displayValue}</span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex max-w-md flex-wrap gap-1">
+                          {discount.components.map((component) => (
+                            <Badge key={component} variant="secondary" className="font-normal">
+                              {component}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-56 text-xs text-muted-foreground">
+                        {discount.monthRange}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-orange-500">
+                        - {inr(discount.appliedAmount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+
+                  {assignedDiscounts.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7}
+                        className="py-10 text-center text-sm text-muted-foreground"
+                      >
+                        No discounts are assigned to your fees.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+
+        {/* ===================================================
             PAYMENT HISTORY
         =================================================== */}
 
@@ -2587,7 +3065,9 @@ export default function Fees() {
             className="border-border/60"
           >
 
-            <CardHeader className="pb-2">
+            <CardHeader className="pb-3 flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
+
+              <div>
 
               <CardTitle className="font-display text-base flex items-center gap-2">
 
@@ -2600,14 +3080,105 @@ export default function Fees() {
 
               <CardDescription>
 
-                Your completed fee payments.
+                {historyLoading
+                  ? "Loading transactions..."
+                  : `${paymentHistory.length} transactions · Total Paid: ${inr(paymentHistoryTotal)}`}
 
               </CardDescription>
+
+              </div>
+
+              <div className="flex items-center gap-2">
+
+                <div className="inline-flex h-9 items-center rounded-lg bg-muted p-1 text-muted-foreground">
+                  <button
+                    type="button"
+                    onClick={() => setHistoryView("students")}
+                    className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                      historyView === "students"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "hover:text-foreground"
+                    }`}
+                  >
+                    By Student
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryView("timeline")}
+                    className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                      historyView === "timeline"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "hover:text-foreground"
+                    }`}
+                  >
+                    Timeline
+                  </button>
+                </div>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={loadPaymentHistory}
+                  disabled={historyLoading}
+                >
+                  <RefreshCw className={`h-4 w-4 ${historyLoading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+
+              </div>
 
             </CardHeader>
 
 
-            <CardContent className="p-0 overflow-x-auto">
+            {historyView === "students" && (
+              <CardContent className="p-0 overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Account</TableHead>
+                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead className="text-right">Discount</TableHead>
+                      <TableHead className="text-right">Late Fee</TableHead>
+                      <TableHead className="text-right">Transactions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow
+                      role="button"
+                      tabIndex={0}
+                      className="cursor-pointer hover:bg-muted/40"
+                      onClick={() => setFinancialHistoryOpen(true)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setFinancialHistoryOpen(true);
+                        }
+                      }}
+                    >
+                      <TableCell className="font-medium">My payments</TableCell>
+                      <TableCell className="text-right font-semibold text-success">
+                        {inr(paymentHistoryTotal)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {inr(paymentHistory.reduce(
+                          (total, payment) => total + toNumber(payment?.discount || payment?.discount_amount),
+                          0
+                        ))}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {inr(paymentHistory.reduce(
+                          (total, payment) => total + toNumber(payment?.late_fee || payment?.late_fee_amount),
+                          0
+                        ))}
+                      </TableCell>
+                      <TableCell className="text-right">{paymentHistory.length}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </CardContent>
+            )}
+
+            <CardContent className={`${historyView === "timeline" ? "" : "hidden"} p-0 overflow-x-auto`}>
 
               <Table>
 
@@ -2621,7 +3192,7 @@ export default function Fees() {
 
 
                     <TableHead>
-                      Date
+                      Kind
                     </TableHead>
 
 
@@ -2634,9 +3205,13 @@ export default function Fees() {
                       Amount
                     </TableHead>
 
+                    <TableHead className="text-right">Discount</TableHead>
+                    <TableHead className="text-right">Late Fee</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Status</TableHead>
 
                     <TableHead className="text-right">
-                      Slip
+                      Action
                     </TableHead>
 
                   </TableRow>
@@ -2651,7 +3226,7 @@ export default function Fees() {
                     <TableRow>
 
                       <TableCell
-                        colSpan={5}
+                        colSpan={9}
                         className="text-center py-8"
                       >
 
@@ -2698,6 +3273,10 @@ export default function Fees() {
                           payment?.mode ||
                           "—";
 
+                        const kind = getPaymentKind(payment);
+                        const discount = toNumber(payment?.discount || payment?.discount_amount);
+                        const lateFee = toNumber(payment?.late_fee || payment?.late_fee_amount);
+
 
                         return (
 
@@ -2717,17 +3296,9 @@ export default function Fees() {
 
 
                             <TableCell>
-
-                              {paymentDate
-
-                                ? new Date(
-                                    paymentDate
-                                  ).toLocaleDateString(
-                                    "en-IN"
-                                  )
-
-                                : "—"}
-
+                              <Badge variant="outline" className="bg-muted/50 font-normal">
+                                {kind}
+                              </Badge>
                             </TableCell>
 
 
@@ -2746,24 +3317,49 @@ export default function Fees() {
 
                             </TableCell>
 
+                            <TableCell className="text-right text-orange-500">
+                              {discount ? `−${inr(discount)}` : "—"}
+                            </TableCell>
+
+                            <TableCell className="text-right text-orange-500">
+                              {lateFee ? inr(lateFee) : "—"}
+                            </TableCell>
+
+                            <TableCell className="whitespace-nowrap">
+                              {paymentDate
+                                ? new Date(paymentDate).toLocaleDateString("en-IN")
+                                : "—"}
+                            </TableCell>
+
+                            <TableCell>
+                              <Badge className="border-0 bg-primary text-primary-foreground hover:bg-primary">
+                                Success
+                              </Badge>
+                            </TableCell>
+
 
                             <TableCell className="text-right">
 
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() =>
-                                  downloadReceipt(
-                                    payment
-                                  )
-                                }
-                              >
-
-                                <Download
-                                  className="h-4 w-4"
-                                />
-
-                              </Button>
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  title="View receipt"
+                                  aria-label={`View receipt ${receipt}`}
+                                  onClick={() => viewReceipt(payment)}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  title="Download receipt"
+                                  aria-label={`Download receipt ${receipt}`}
+                                  onClick={() => downloadReceipt(payment)}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </div>
 
                             </TableCell>
 
@@ -2782,7 +3378,7 @@ export default function Fees() {
                     <TableRow>
 
                       <TableCell
-                        colSpan={5}
+                        colSpan={9}
                         className="text-center text-sm text-muted-foreground py-8"
                       >
 
@@ -2805,6 +3401,170 @@ export default function Fees() {
         </TabsContent>
 
       </Tabs>
+
+      <Sheet open={financialHistoryOpen} onOpenChange={setFinancialHistoryOpen}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-3xl">
+          <SheetHeader>
+            <SheetTitle>My Financial History</SheetTitle>
+            <SheetDescription>
+              {sessionYear ? `${sessionYear} · ` : ""}
+              {paymentHistory.length} transactions · Paid: {inr(paymentHistoryTotal)}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="grid grid-cols-2 gap-2 py-4 md:grid-cols-4">
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Total Fee</div>
+              <div className="truncate text-sm font-medium">{inr(summary.payable)}</div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Outstanding</div>
+              <div className="text-lg font-semibold text-warning">{inr(summary.remaining)}</div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Total Paid</div>
+              <div className="text-lg font-semibold text-success">{inr(paymentHistoryTotal)}</div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Advance Payments</div>
+              <div className="text-lg font-semibold text-primary">
+                {paymentHistory.filter((payment) =>
+                  getPaymentKind(payment) === "Advance"
+                ).length}
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            Month-wise ledger
+          </div>
+          <div className="max-h-[42vh] overflow-auto rounded-md border">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-background">
+                <TableRow>
+                  <TableHead>Month</TableHead>
+                  <TableHead>Component</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dues.map((due, index) => {
+                  const status = getStatus(due);
+                  const advance = status === "ADVANCE_RECEIVED";
+                  return (
+                    <TableRow key={due?.due_uuid || index}>
+                      <TableCell className="whitespace-nowrap text-xs">
+                        {formatMonth(due?.fee_month)}
+                        {advance && (
+                          <span className="block text-[10px] text-primary">Advance payment</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {due?.component_name || "Fee Component"}
+                        {advance && <span className="ml-1 text-xs text-primary">[Advance]</span>}
+                        {toNumber(due?.discount) > 0 && (
+                          <span className="ml-1 text-xs text-orange-500">
+                            (-{inr(due.discount)})
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">{inr(due?.amount)}</TableCell>
+                      <TableCell className="text-right font-medium text-success">
+                        {inr(toNumber(due?.paid_amount) || Math.max(0, toNumber(due?.amount) - toNumber(due?.discount)))}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={advance ? "bg-muted text-xs" : "bg-success/10 text-xs text-success"}
+                        >
+                          {advance ? "ADVANCE" : status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="mb-2 mt-5 text-xs font-semibold uppercase text-muted-foreground">
+            Transaction history
+          </div>
+          <div className="max-h-[35vh] overflow-auto rounded-md border">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-background">
+                <TableRow>
+                  <TableHead>Receipt</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Mode</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Discount</TableHead>
+                  <TableHead>Months Covered</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paymentHistory.map((payment, index) => {
+                  const receipt = payment?.receipt_no || payment?.receipt_uuid || payment?.transaction_uuid || `PAY-${index + 1}`;
+                  const kind = getPaymentKind(payment);
+                  const paymentDate = payment?.payment_date || payment?.created_at;
+                  const discount = toNumber(payment?.discount || payment?.discount_amount);
+                  const monthsCovered = [...new Set(
+                    (Array.isArray(payment?.details) ? payment.details : [])
+                      .map((detail) => detail?.fee_month)
+                      .filter(Boolean)
+                      .map((month) => new Date(month).toLocaleDateString("en-IN", {
+                        month: "short",
+                        year: "numeric",
+                      }))
+                  )].join(", ");
+                  return (
+                    <TableRow key={payment?.transaction_uuid || payment?.receipt_uuid || index}>
+                      <TableCell className="font-mono text-xs">{receipt}</TableCell>
+                      <TableCell><Badge variant="secondary" className="text-xs">{kind}</Badge></TableCell>
+                      <TableCell className="text-xs">{payment?.payment_method || payment?.payment_mode || payment?.mode || "—"}</TableCell>
+                      <TableCell className="text-right font-semibold">{inr(payment?.amount ?? payment?.paid_amount ?? payment?.total_amount)}</TableCell>
+                      <TableCell className="text-right text-orange-500">
+                        {discount ? `−${inr(discount)}` : "—"}
+                      </TableCell>
+                      <TableCell className="max-w-48 text-xs text-muted-foreground">
+                        {monthsCovered || "—"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                        {paymentDate
+                          ? new Date(paymentDate).toLocaleDateString("en-CA")
+                          : "—"}
+                      </TableCell>
+                      <TableCell><Badge className="text-xs">Success</Badge></TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer className="h-4 w-4" />
+              Print
+            </Button>
+            <Button
+              variant="outline"
+              onClick={loadPaymentHistory}
+              disabled={historyLoading}
+            >
+              <RefreshCw className={`h-4 w-4 ${historyLoading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button onClick={() => setFinancialHistoryOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
 
       {/* =====================================================

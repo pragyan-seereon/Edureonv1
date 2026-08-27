@@ -7647,12 +7647,24 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
                   <TableHead className="text-right">Late Fee</TableHead>
                   <TableHead className="text-right">Discount</TableHead>
                   <TableHead className="text-right">Transactions</TableHead>
-                  <TableHead className="w-24"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {grouped.slice(0, 400).map((g) => (
-                  <TableRow key={g.student_uuid} className="cursor-pointer hover:bg-muted/40" onClick={() => setOpenStudentId(g.student_uuid)}>
+                  <TableRow
+                    key={g.student_uuid}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${g.name} financial history`}
+                    className="cursor-pointer hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                    onClick={() => setOpenStudentId(g.student_uuid)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setOpenStudentId(g.student_uuid);
+                      }
+                    }}
+                  >
                     <TableCell className="text-sm font-medium">{g.name}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{g.class_name}{g.section ? "-" + g.section : ""}</TableCell>
                     <TableCell className="text-right text-success font-semibold">{inr(g.paid)}</TableCell>
@@ -7660,16 +7672,11 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
                     <TableCell className="text-right text-xs">{inr(g.late)}</TableCell>
                     <TableCell className="text-right text-xs">{inr(g.discount)}</TableCell>
                     <TableCell className="text-right text-xs">{g.entries.length}</TableCell>
-                    <TableCell>
-                      <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setOpenStudentId(g.student_uuid); }}>
-                        <Eye className="h-3.5 w-3.5" />View
-                      </Button>
-                    </TableCell>
                   </TableRow>
                 ))}
                 {grouped.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
+                    <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
                       No transactions found.
                     </TableCell>
                   </TableRow>

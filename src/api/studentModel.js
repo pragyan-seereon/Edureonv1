@@ -1,0 +1,396 @@
+// import api from "./axios";
+
+// import useAuthStore from "../store/authStore";
+// import useSessionStore from "../store/sessionStore";
+
+// // ============================================================
+// // Common Headers
+// // ============================================================
+
+// const getHeaders = () => {
+//   const { instituteUUID } = useAuthStore.getState();
+
+//   return {
+//     "X-Institute-UUID": instituteUUID,
+//   };
+// };
+
+// // ============================================================
+// // Active Session
+// // ============================================================
+
+// const getSessionYear = () => {
+//   return useSessionStore.getState().sessionYear;
+// };
+
+// // ============================================================
+// // Student Model API
+// // ============================================================
+
+// const studentModel = {
+//   // ==========================================================
+//   // Get logged-in student's dues
+//   //
+//   // Backend ownership logic must resolve the current user
+//   // to the linked student and return only that student's data.
+//   // ==========================================================
+
+//   getMyDues: async ({
+//     academicYear = null,
+//     paymentStatus = null,
+//   } = {}) => {
+//     const params = {};
+
+//     const year = academicYear || getSessionYear();
+
+//     if (year) {
+//       params.academic_year = year;
+//     }
+
+//     if (paymentStatus) {
+//       params.payment_status = paymentStatus;
+//     }
+
+//     const response = await api.get("/student-dues", {
+//       params,
+//       headers: getHeaders(),
+//     });
+
+//     return response.data;
+//   },
+
+//   // ==========================================================
+//   // Get one student's dues
+//   //
+//   // Use only when backend confirms ownership.
+//   // Student users should NOT be able to access another student.
+//   // ==========================================================
+
+//   getStudentDues: async (studentUuid, {
+//     academicYear = null,
+//     paymentStatus = null,
+//   } = {}) => {
+//     const params = {};
+
+//     const year = academicYear || getSessionYear();
+
+//     if (year) {
+//       params.academic_year = year;
+//     }
+
+//     if (paymentStatus) {
+//       params.payment_status = paymentStatus;
+//     }
+
+//     const response = await api.get(
+//       `/fee-assignments/student/${studentUuid}`,
+//       {
+//         params,
+//         headers: getHeaders(),
+//       }
+//     );
+
+//     return response.data;
+//   },
+
+//   // ==========================================================
+//   // Create Payment
+//   //
+//   // Change ONLY the URL here if your payment backend uses
+//   // another endpoint.
+//   // ==========================================================
+
+//   createPayment: async (payload) => {
+//     const response = await api.post(
+//       "/payments",
+//       payload,
+//       {
+//         headers: getHeaders(),
+//       }
+//     );
+
+//     return response.data;
+//   },
+
+//   // ==========================================================
+//   // Get Payment History
+//   // ==========================================================
+
+//   getPaymentHistory: async ({
+//     academicYear = null,
+//   } = {}) => {
+//     const params = {};
+
+//     const year = academicYear || getSessionYear();
+
+//     if (year) {
+//       params.academic_year = year;
+//     }
+
+//     const response = await api.get(
+//       "/payments",
+//       {
+//         params,
+//         headers: getHeaders(),
+//       }
+//     );
+
+//     return response.data;
+//   },
+
+//   // ==========================================================
+//   // Get Payment Receipt
+//   // ==========================================================
+
+//   getReceipt: async (paymentUuid) => {
+//     const response = await api.get(
+//       `/payments/${paymentUuid}/receipt`,
+//       {
+//         headers: getHeaders(),
+//         responseType: "blob",
+//       }
+//     );
+
+//     return response;
+//   },
+// };
+
+// export default studentModel;
+
+
+
+import api from "./axios";
+
+import useAuthStore from "../store/authStore";
+import useSessionStore from "../store/sessionStore";
+
+// ============================================================
+// Common Headers
+// ============================================================
+
+const getHeaders = () => {
+  const { instituteUUID } = useAuthStore.getState();
+
+  return {
+    "X-Institute-UUID": instituteUUID,
+  };
+};
+
+// ============================================================
+// Active Session
+// ============================================================
+
+const getSessionYear = () => {
+  return useSessionStore.getState().sessionYear;
+};
+
+// ============================================================
+// Student Model API
+// ============================================================
+
+const studentModel = {
+  // ==========================================================
+  // Get logged-in student's dues
+  //
+  // Backend ownership logic must resolve the current user
+  // to the linked student and return only that student's data.
+  // ==========================================================
+
+  getMyDues: async ({
+    academicYear = null,
+    paymentStatus = null,
+  } = {}) => {
+    const params = {};
+
+    const year = academicYear || getSessionYear();
+
+    if (year) {
+      params.academic_year = year;
+    }
+
+    if (paymentStatus) {
+      params.payment_status = paymentStatus;
+    }
+
+    const response = await api.get("/student-dues", {
+      params,
+      headers: getHeaders(),
+    });
+
+    return response.data;
+  },
+
+  // ==========================================================
+  // Get one student's dues
+  //
+  // Use only when backend confirms ownership.
+  // Student users should NOT be able to access another student.
+  // ==========================================================
+
+  getStudentDues: async (studentUuid, {
+    academicYear = null,
+    paymentStatus = null,
+  } = {}) => {
+    const params = {};
+
+    const year = academicYear || getSessionYear();
+
+    if (year) {
+      params.academic_year = year;
+    }
+
+    if (paymentStatus) {
+      params.payment_status = paymentStatus;
+    }
+
+    const response = await api.get(
+      `/fee-assignments/student/${studentUuid}`,
+      {
+        params,
+        headers: getHeaders(),
+      }
+    );
+
+    return response.data;
+  },
+
+  // ==========================================================
+  // Create Payment
+  //
+  // Change ONLY the URL here if your payment backend uses
+  // another endpoint.
+  // ==========================================================
+
+  createPayment: async (payload) => {
+    const response = await api.post(
+      "/payments",
+      payload,
+      {
+        headers: getHeaders(),
+      }
+    );
+
+    return response.data;
+  },
+
+  // ==========================================================
+  // Create Razorpay Order
+  //
+  // Called from Fees.jsx before opening the Razorpay checkout
+  // widget. Expected to return something like:
+  //
+  // {
+  //   order_id: "order_xxx",
+  //   amount_paise: 832500,
+  //   currency: "INR",
+  //   razorpay_key_id: "rzp_test_xxx"
+  // }
+  //
+  // ADJUST THE URL to match your actual backend route if it
+  // differs from "/payments/razorpay/create-order".
+  // ==========================================================
+
+  createRazorpayOrder: async ({
+    studentUuid,
+    assignmentUuid = null,
+    dueUuids = [],
+  } = {}) => {
+    const response = await api.post(
+      "/payments/razorpay/create-order",
+      {
+        student_uuid: studentUuid,
+        assignment_uuid: assignmentUuid,
+        due_uuids: dueUuids,
+      },
+      {
+        headers: getHeaders(),
+      }
+    );
+
+    return response.data;
+  },
+
+  // ==========================================================
+  // Verify Razorpay Payment
+  //
+  // Called from the Razorpay checkout success handler in
+  // Fees.jsx once the user completes payment on Razorpay's
+  // side. The backend should validate the signature and mark
+  // the relevant dues as paid.
+  //
+  // ADJUST THE URL to match your actual backend route if it
+  // differs from "/payments/razorpay/verify".
+  // ==========================================================
+
+  verifyRazorpayPayment: async ({
+    studentUuid,
+    assignmentUuid = null,
+    dueUuids = [],
+    razorpayOrderId,
+    razorpayPaymentId,
+    razorpaySignature,
+    remarks = null,
+  } = {}) => {
+    const response = await api.post(
+      "/payments/razorpay/verify",
+      {
+        student_uuid: studentUuid,
+        assignment_uuid: assignmentUuid,
+        due_uuids: dueUuids,
+        razorpay_order_id: razorpayOrderId,
+        razorpay_payment_id: razorpayPaymentId,
+        razorpay_signature: razorpaySignature,
+        remarks,
+      },
+      {
+        headers: getHeaders(),
+      }
+    );
+
+    return response.data;
+  },
+
+  // ==========================================================
+  // Get Payment History
+  // ==========================================================
+
+  getPaymentHistory: async ({
+    academicYear = null,
+  } = {}) => {
+    const params = {};
+
+    const year = academicYear || getSessionYear();
+
+    if (year) {
+      params.academic_year = year;
+    }
+
+    const response = await api.get(
+      "/payments",
+      {
+        params,
+        headers: getHeaders(),
+      }
+    );
+
+    return response.data;
+  },
+
+  // ==========================================================
+  // Get Payment Receipt
+  // ==========================================================
+
+  getReceipt: async (paymentUuid) => {
+    const response = await api.get(
+      `/payments/${paymentUuid}/receipt`,
+      {
+        headers: getHeaders(),
+        responseType: "blob",
+      }
+    );
+
+    return response;
+  },
+};
+
+export default studentModel;

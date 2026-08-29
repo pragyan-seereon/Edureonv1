@@ -930,8 +930,6 @@ export default function Fees() {
 
     let lateFee = 0;
 
-    let paid = 0;
-
     let remaining = 0;
 
 
@@ -949,16 +947,19 @@ export default function Fees() {
         due?.late_fee
       );
 
-      paid += toNumber(
-        due?.paid_amount
-      );
-
-      remaining += Math.max(
-        0,
-        toNumber(
-          due?.balance_amount
-        )
-      );
+      // PAID and ADVANCE_RECEIVED rows are already settled. The API may
+      // retain their original balance_amount for allocation/audit purposes,
+      // so including that value makes the KPI show advance-covered fees as
+      // still due.
+      const status = getStatus(due);
+      if (status !== "PAID" && status !== "ADVANCE_RECEIVED") {
+        remaining += Math.max(
+          0,
+          toNumber(
+            due?.balance_amount
+          )
+        );
+      }
 
     });
 
@@ -971,6 +972,11 @@ export default function Fees() {
           lateFee
       );
 
+    remaining = Math.min(remaining, payable);
+
+    // Amount settled against this fee structure, including advance payments.
+    // This keeps the KPIs consistent: Total Fee = Fees Paid + Fees Due.
+    const paid = Math.max(0, payable - remaining);
 
     const collectionPercentage =
       payable > 0
@@ -1199,6 +1205,7 @@ export default function Fees() {
       const configuredValue = toNumber(
         due?.discount_value ?? due?.discount?.value ?? due?.discount_percentage
       );
+
       const key =
         due?.discount_uuid ||
         due?.assignment_student_discount_uuid ||

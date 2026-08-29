@@ -7548,15 +7548,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 
 import {
   getAdmissionPipeline,
@@ -8446,20 +8437,45 @@ export default function Admissions() {
     }
 
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    const title = `MPSAT ${mpsLoadedReportType} Report`;
-    doc.setFontSize(17);
-    doc.text(title, 14, 16);
-    doc.setFontSize(9);
-    doc.setTextColor(90);
+
+    // Premium report header.
+    doc.setFillColor(9, 42, 91);
+    doc.rect(0, 0, 297, 25, "F");
+    doc.setTextColor(255);
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("MPSAT PERFORMANCE REPORT", 14, 11);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
     doc.text(
-      `Session: ${sessionYear}  |  Qualified: ${mpsReportStats.total}  |  Average: ${mpsReportStats.average}%  |  Highest: ${mpsReportStats.highest}%`,
+      `${mpsLoadedReportType.toUpperCase()} REPORT  |  SESSION ${sessionYear}  |  80% AND ABOVE`,
       14,
-      23
+      18
     );
+    doc.text(`Generated ${new Date().toLocaleDateString()}`, 283, 18, { align: "right" });
+
+    const statCards = [
+      { label: "QUALIFIED STUDENTS", value: String(mpsReportStats.total), color: [239, 246, 255] },
+      { label: "AVERAGE PERCENTAGE", value: `${mpsReportStats.average}%`, color: [240, 249, 255] },
+      { label: "HIGHEST PERCENTAGE", value: `${mpsReportStats.highest}%`, color: [240, 253, 250] },
+    ];
+    statCards.forEach((stat, index) => {
+      const x = 14 + index * 91;
+      doc.setFillColor(...stat.color);
+      doc.setDrawColor(218, 226, 236);
+      doc.roundedRect(x, 30, 84, 20, 2, 2, "FD");
+      doc.setTextColor(80, 96, 120);
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      doc.text(stat.label, x + 5, 37);
+      doc.setTextColor(9, 42, 91);
+      doc.setFontSize(14);
+      doc.text(stat.value, x + 5, 46);
+    });
 
     // Draw the same score-distribution graph in the downloaded PDF.
     const chartX = 14;
-    const chartY = 31;
+    const chartY = 58;
     const chartWidth = 269;
     const chartHeight = 43;
     const plotBottom = chartY + chartHeight - 9;
@@ -8470,6 +8486,7 @@ export default function Admissions() {
 
     doc.setTextColor(35);
     doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
     doc.text("Score Distribution", chartX, chartY);
     doc.setDrawColor(220);
     doc.line(chartX, plotBottom, chartX + chartWidth, plotBottom);
@@ -8492,7 +8509,7 @@ export default function Admissions() {
     });
 
     autoTable(doc, {
-      startY: 82,
+      startY: 109,
       head: [mpsReportColumns.map((column) => column.header)],
       body: mpsReportRows.map((row) =>
         mpsReportColumns.map((column) => {
@@ -8500,9 +8517,9 @@ export default function Admissions() {
           return value == null || value === "" ? "-" : String(value);
         })
       ),
-      styles: { fontSize: 7, cellPadding: 2, overflow: "linebreak" },
-      headStyles: { fillColor: [37, 99, 235] },
-      alternateRowStyles: { fillColor: [245, 247, 250] },
+      styles: { fontSize: 7, cellPadding: 2.4, overflow: "linebreak", textColor: [35, 48, 68] },
+      headStyles: { fillColor: [9, 42, 91], textColor: [255, 255, 255], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [246, 249, 252] },
       margin: { left: 14, right: 14 },
       didDrawPage: ({ pageNumber }) => {
         doc.setFontSize(8);
@@ -9223,11 +9240,21 @@ const activeAdmissions = useMemo(
             </CardHeader>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
+          <Card className="overflow-hidden border-border/60 shadow-sm">
+            <CardHeader className="border-b bg-gradient-to-r from-primary/[0.07] via-background to-info/[0.06] pb-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle className="text-base">MPSAT Report &mdash; 80% and above</CardTitle>
-                <div className="flex items-center gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+                      <TrendingUp className="h-4 w-4" />
+                    </span>
+                    MPSAT Premium Report
+                  </CardTitle>
+                  <p className="mt-1 pl-11 text-xs text-muted-foreground">
+                    Performance analytics for students scoring 80% and above
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
                   <Select value={mpsReportType} onValueChange={setMpsReportType}>
                     <SelectTrigger className="h-8 w-40 text-xs">
                       <SelectValue placeholder="Report type" />
@@ -9254,8 +9281,17 @@ const activeAdmissions = useMemo(
                     rows={mpsReportRows}
                     columns={mpsReportColumns}
                     fileName={`mpsat-${mpsLoadedReportType}-${sessionYear}.xlsx`}
-                    label="Download Report"
+                    label="Excel"
                   />
+                  <Button
+                    size="sm"
+                    className="gap-2 shadow-sm"
+                    onClick={downloadMpsReportPdf}
+                    disabled={mpsReportLoading || mpsReportRows.length === 0}
+                  >
+                    <Download className="h-4 w-4" />
+                    Download PDF
+                  </Button>
                   <Button
                     size="icon"
                     variant="ghost"
@@ -9268,23 +9304,23 @@ const activeAdmissions = useMemo(
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="pb-4">
+            <CardContent className="bg-muted/[0.15] pb-5 pt-5">
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border bg-gradient-to-br from-primary/10 to-background p-4">
+                <div className="rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/15 via-background to-background p-5 shadow-sm">
                   <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Qualified Students
                   </div>
                   <div className="mt-1 text-2xl font-semibold">{mpsReportStats.total}</div>
                   <div className="text-xs text-muted-foreground">80% and above</div>
                 </div>
-                <div className="rounded-xl border bg-gradient-to-br from-info/10 to-background p-4">
+                <div className="rounded-2xl border border-info/15 bg-gradient-to-br from-info/15 via-background to-background p-5 shadow-sm">
                   <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Average Percentage
                   </div>
                   <div className="mt-1 text-2xl font-semibold">{mpsReportStats.average}%</div>
                   <div className="text-xs text-muted-foreground">Current report</div>
                 </div>
-                <div className="rounded-xl border bg-gradient-to-br from-success/10 to-background p-4">
+                <div className="rounded-2xl border border-success/15 bg-gradient-to-br from-success/15 via-background to-background p-5 shadow-sm">
                   <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Highest Percentage
                   </div>
@@ -9292,8 +9328,9 @@ const activeAdmissions = useMemo(
                   <div className="text-xs text-muted-foreground">Session {sessionYear}</div>
                 </div>
               </div>
+
             </CardContent>
-            <CardContent className="p-0 overflow-x-auto">
+            <CardContent className="overflow-x-auto border-t p-0">
               <Table>
                 <TableHeader>
                   <TableRow>

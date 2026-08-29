@@ -7546,6 +7546,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import {
   getAdmissionPipeline,
@@ -7634,6 +7645,7 @@ import {
   CalendarClock,
   Loader2,
   RefreshCw,
+  Download,
 } from "lucide-react";
 
 import { toast } from "sonner";
@@ -8407,6 +8419,101 @@ export default function Admissions() {
 
     return columns;
   }, [mpsLoadedReportType]);
+
+  const mpsScoreDistribution = useMemo(() => {
+    const ranges = [
+      { range: "80-84%", min: 80, max: 85, students: 0 },
+      { range: "85-89%", min: 85, max: 90, students: 0 },
+      { range: "90-94%", min: 90, max: 95, students: 0 },
+      { range: "95-100%", min: 95, max: Infinity, students: 0 },
+    ];
+
+    mpsReportRows.forEach((row) => {
+      const percentage = Number(row.percentage);
+      const bucket = ranges.find(
+        ({ min, max }) => Number.isFinite(percentage) && percentage >= min && percentage < max
+      );
+      if (bucket) bucket.students += 1;
+    });
+
+    return ranges.map(({ range, students }) => ({ range, students }));
+  }, [mpsReportRows]);
+
+  const downloadMpsReportPdf = () => {
+    if (!mpsReportRows.length) {
+      toast.error("No MPSAT report data available to download");
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const title = `MPSAT ${mpsLoadedReportType} Report`;
+    doc.setFontSize(17);
+    doc.text(title, 14, 16);
+    doc.setFontSize(9);
+    doc.setTextColor(90);
+    doc.text(
+      `Session: ${sessionYear}  |  Qualified: ${mpsReportStats.total}  |  Average: ${mpsReportStats.average}%  |  Highest: ${mpsReportStats.highest}%`,
+      14,
+      23
+    );
+
+    // Draw the same score-distribution graph in the downloaded PDF.
+    const chartX = 14;
+    const chartY = 31;
+    const chartWidth = 269;
+    const chartHeight = 43;
+    const plotBottom = chartY + chartHeight - 9;
+    const maxStudents = Math.max(
+      1,
+      ...mpsScoreDistribution.map((item) => item.students)
+    );
+
+    doc.setTextColor(35);
+    doc.setFontSize(11);
+    doc.text("Score Distribution", chartX, chartY);
+    doc.setDrawColor(220);
+    doc.line(chartX, plotBottom, chartX + chartWidth, plotBottom);
+
+    const slotWidth = chartWidth / mpsScoreDistribution.length;
+    mpsScoreDistribution.forEach((item, index) => {
+      const barWidth = 25;
+      const availableHeight = chartHeight - 17;
+      const barHeight = (item.students / maxStudents) * availableHeight;
+      const barX = chartX + index * slotWidth + (slotWidth - barWidth) / 2;
+      const barY = plotBottom - barHeight;
+
+      doc.setFillColor(37, 99, 235);
+      if (barHeight > 0) doc.roundedRect(barX, barY, barWidth, barHeight, 1.5, 1.5, "F");
+      doc.setFontSize(8);
+      doc.setTextColor(45);
+      doc.text(String(item.students), barX + barWidth / 2, barY - 2, { align: "center" });
+      doc.setTextColor(90);
+      doc.text(item.range, barX + barWidth / 2, plotBottom + 5, { align: "center" });
+    });
+
+    autoTable(doc, {
+      startY: 82,
+      head: [mpsReportColumns.map((column) => column.header)],
+      body: mpsReportRows.map((row) =>
+        mpsReportColumns.map((column) => {
+          const value = column.accessor(row);
+          return value == null || value === "" ? "-" : String(value);
+        })
+      ),
+      styles: { fontSize: 7, cellPadding: 2, overflow: "linebreak" },
+      headStyles: { fillColor: [37, 99, 235] },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+      margin: { left: 14, right: 14 },
+      didDrawPage: ({ pageNumber }) => {
+        doc.setFontSize(8);
+        doc.setTextColor(120);
+        doc.text(`Page ${pageNumber}`, 278, 202, { align: "right" });
+      },
+    });
+
+    doc.save(`mpsat-${mpsLoadedReportType}-${sessionYear}.pdf`);
+    toast.success("MPSAT PDF downloaded");
+  };
 
   // ---- analytics ----
   // Calculated from ACTIVE admissions within the active session only.

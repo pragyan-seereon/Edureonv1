@@ -74,6 +74,7 @@ import { CrudDialog } from "../../../components/crud-dialog";
 import { ExcelUpload } from "../../../components/excel-upload";
 import { ImageOcrUpload } from "../../../components/image-ocr-upload";
 import { MultiQuestionDialog } from "../../../components/multi-question-dialog";
+import { MultiPaperDialog } from "../../../components/multi-paper-dialog";
 import { stripHtml } from "../../../components/rich-text-editor";
 import { ReportCardDialog } from "../../../components/report-card-dialog";
 import { BlueprintsTab, TemplatesTab } from "../../../components/exam-blueprints";
@@ -270,7 +271,9 @@ export default function Exams() {
     { id: "p3", category: "Term 1", className: "X", subject: "English", paper: "Paper 1", date: "2025-09-16", time: "09:30", duration: 180, maxMarks: 80, room: "Hall B" },
   ]);
   const [paperOpen, setPaperOpen] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [paperEdit, setPaperEdit] = useState(null);
+  const [multiPaperOpen, setMultiPaperOpen] = useState(false);
 
   // ---- Solutions ----
   const [solutions, setSolutions] = useState([]);
@@ -413,14 +416,13 @@ export default function Exams() {
       <PageHeader
         eyebrow="Academic"
         title="Examination Engine"
-        description="CBSE-aligned scholastic & co-scholastic assessments with auto report cards, grading and analytics."
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => toast.success("Marks CSV exported")}>
               <Download className="h-4 w-4" />
               Export Marks
             </Button>
-            <Button
+            {/* <Button
               size="sm"
               className="gradient-primary border-0"
               onClick={() => {
@@ -430,7 +432,7 @@ export default function Exams() {
             >
               <Plus className="h-4 w-4" />
               New Exam
-            </Button>
+            </Button> */}
           </>
         }
       />
@@ -466,14 +468,14 @@ export default function Exams() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="dash">Dashboard</TabsTrigger>
+          {/* <TabsTrigger value="dash">Dashboard</TabsTrigger> */}
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
           <TabsTrigger value="papers">Subjects & Papers</TabsTrigger>
           <TabsTrigger value="qb">Question Bank</TabsTrigger>
-          <TabsTrigger value="blueprints">Blueprints</TabsTrigger>
-          <TabsTrigger value="templates">Templates</TabsTrigger>
-          <TabsTrigger value="solutions">Solutions</TabsTrigger>
+          {/* <TabsTrigger value="blueprints">Blueprints</TabsTrigger> */}
+          {/* <TabsTrigger value="templates">Templates</TabsTrigger> */}
+          {/* <TabsTrigger value="solutions">Solutions</TabsTrigger> */}
           <TabsTrigger value="marks">Marks Entry</TabsTrigger>
           <TabsTrigger value="results">Results</TabsTrigger>
         </TabsList>
@@ -621,7 +623,6 @@ export default function Exams() {
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
                 <CardTitle className="text-base">Exam Categories</CardTitle>
-                <CardDescription>Term 1, Term 2, Pre-Board, Olympiad… use these to group papers and results.</CardDescription>
               </div>
               <Button size="sm" className="gradient-primary border-0" onClick={() => setCatOpen(true)}>
                 <Plus className="h-4 w-4" /> New Category
@@ -633,7 +634,6 @@ export default function Exams() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead>Weightage</TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -642,7 +642,7 @@ export default function Exams() {
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell className="text-muted-foreground">{c.description}</TableCell>
-                      <TableCell>{c.weight}%</TableCell>
+                      {/* <TableCell>{c.weight}%</TableCell> */}
                       <TableCell>
                         <Button
                           variant="ghost"
@@ -666,6 +666,21 @@ export default function Exams() {
 
         <TabsContent value="schedule" className="mt-4">
           <Card className="border-border/60">
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle className="text-base">Exam Schedule</CardTitle>
+              </div>
+              <Button
+                size="sm"
+                className="gradient-primary border-0"
+                onClick={() => {
+                  setExamEdit(null);
+                  setExamOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4" /> New Exam
+              </Button>
+            </CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
@@ -715,50 +730,38 @@ export default function Exams() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() =>
-                                toast.info(`${u.name} · ${u.class} · ${u.from} – ${u.to}`)
-                              }
-                            >
-                              <Eye className="h-4 w-4" />
-                              View
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setExamEdit(u);
-                                setExamOpen(true);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                examsApi.update(u.id, {
-                                  status:
-                                    u.status === "Draft"
-                                      ? "Scheduled"
-                                      : u.status === "Scheduled"
-                                        ? "In Progress"
-                                        : "Completed",
-                                });
-                                toast.success("Status advanced");
-                              }}
-                            >
-                              Advance status
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => {
-                                examsApi.remove(u.id);
-                                toast.success("Exam deleted");
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
+  <DropdownMenuItem
+    onClick={(e) => {
+      e.stopPropagation();
+      toast.info(`${u.name} · ${u.class} · ${u.from} – ${u.to}`);
+    }}
+  >
+    <Eye className="h-4 w-4" />
+    View
+  </DropdownMenuItem>
+  <DropdownMenuItem
+    onClick={(e) => {
+      e.stopPropagation();
+      setExamEdit(u);
+      setExamOpen(true);
+    }}
+  >
+    <Pencil className="h-4 w-4" />
+    Edit
+  </DropdownMenuItem>
+  <DropdownMenuSeparator />
+  <DropdownMenuItem
+    className="text-destructive focus:text-destructive"
+    onClick={(e) => {
+      e.stopPropagation();
+      examsApi.remove(u.id);
+      toast.success("Exam deleted");
+    }}
+  >
+    <Trash2 className="h-4 w-4" />
+    Delete
+  </DropdownMenuItem>
+</DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
@@ -774,7 +777,6 @@ export default function Exams() {
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
                 <CardTitle className="text-base">Subjects & Papers</CardTitle>
-                <CardDescription>Per-class subject papers with date, time, room and max marks.</CardDescription>
               </div>
               <div className="flex gap-2">
                 <ExcelUpload
@@ -800,10 +802,7 @@ export default function Exams() {
                 <Button
                   size="sm"
                   className="gradient-primary border-0"
-                  onClick={() => {
-                    setPaperEdit(null);
-                    setPaperOpen(true);
-                  }}
+                  onClick={() => setMultiPaperOpen(true)}
                 >
                   <Plus className="h-4 w-4" /> Add Subject / Paper
                 </Button>
@@ -1198,7 +1197,6 @@ export default function Exams() {
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
                 <CardTitle className="text-base">Marks Entry · Class X-B · Term 2 · AY 2025-26</CardTitle>
-                <CardDescription>Click any cell to edit · auto-saves · teachers can lock & publish to generate the class report</CardDescription>
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => setReportOpen(true)}>Preview Report Card</Button>
@@ -1276,7 +1274,6 @@ export default function Exams() {
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
                 <CardTitle className="text-base">Class-wise Result Mapping</CardTitle>
-                <CardDescription>Select course, class, section and exam — then enter marks per student per subject.</CardDescription>
               </div>
               <div className="flex gap-2">
                 <ExcelUpload
@@ -1608,11 +1605,9 @@ export default function Exams() {
         open={catOpen}
         onOpenChange={setCatOpen}
         title="New Exam Category"
-        description="Group exams under a labelled category, e.g. Term 1 or Pre-Board."
         fields={[
           { name: "name", label: "Category Name" },
           { name: "description", label: "Description", type: "textarea" },
-          { name: "weight", label: "Weightage %", type: "number" },
         ]}
         submitLabel="Create Category"
         onSubmit={(d) => {
@@ -1657,6 +1652,17 @@ export default function Exams() {
           };
           setPapers((p) => (paperEdit ? p.map((x) => (x.id === paperEdit.id ? payload : x)) : [...p, payload]));
           toast.success(paperEdit ? "Paper updated" : "Paper added");
+        }}
+      />
+
+      <MultiPaperDialog
+        open={multiPaperOpen}
+        onOpenChange={setMultiPaperOpen}
+        categories={categories.map((c) => c.name)}
+        classOptions={["VI", "VII", "VIII", "IX", "X", "XI", "XII"]}
+        onSubmit={(newPapers) => {
+          setPapers((p) => [...p, ...newPapers]);
+          toast.success(`${newPapers.length} paper(s) added`);
         }}
       />
 

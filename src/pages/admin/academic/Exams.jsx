@@ -72,7 +72,7 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CrudDialog } from "../../../components/crud-dialog";
 import { ExcelUpload } from "../../../components/excel-upload";
-import { ImageOcrUpload } from "../../../components/image-ocr-upload";
+// import { ImageOcrUpload } from "../../../components/image-ocr-upload";
 import { MultiQuestionDialog } from "../../../components/multi-question-dialog";
 import { MultiPaperDialog } from "../../../components/multi-paper-dialog";
 import { stripHtml } from "../../../components/rich-text-editor";
@@ -231,7 +231,7 @@ function buildDashRows(students) {
 }
 
 export default function Exams() {
-  const [tab, setTab] = useState("dash");
+  const [tab, setTab] = useState("categories");
   const [reportOpen, setReportOpen] = useState(false);
   const [reportStudent, setReportStudent] = useState(null);
   const exams = useExams();
@@ -866,7 +866,7 @@ export default function Exams() {
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
                 <CardTitle className="text-base">Question Bank</CardTitle>
-                <CardDescription>{questions.length} questions · Bloom's tagged</CardDescription>
+                {/* <CardDescription>{questions.length} questions · Bloom's tagged</CardDescription> */}
               </div>
               <div className="flex gap-2 flex-wrap">
                 <Input
@@ -896,7 +896,7 @@ export default function Exams() {
                     {examTypeOptions.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <ImageOcrUpload
+                {/* <ImageOcrUpload
                   label="Scan Question Sheet"
                   sample={{
                     subject: "Math",
@@ -911,7 +911,7 @@ export default function Exams() {
                     setQOpen(true);
                     toast.info("Open the form — sample extracted values shown below");
                   }}
-                />
+                /> */}
                 <ExcelUpload
                   label="Import Questions"
                   templateHeaders={["subject", "chapter", "question", "answer", "diff", "marks"]}
@@ -1190,7 +1190,7 @@ export default function Exams() {
                 <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Exam" /></SelectTrigger>
                 <SelectContent>{["Term 1", "Term 2", "Final"].map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
               </Select>
-              <span className="text-xs text-muted-foreground ml-2">Subjects & students refresh based on selected class</span>
+              {/* <span className="text-xs text-muted-foreground ml-2">Subjects & students refresh based on selected class</span> */}
             </CardContent>
           </Card>
           <Card className="border-border/60">

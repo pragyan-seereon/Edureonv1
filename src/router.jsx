@@ -25,7 +25,6 @@ import Library from "./pages/students/Library";
 import StudyMaterials from "./pages/students/Studymaterials";
 import Notices from "./pages/students/Notices";
 import Results from "./pages/students/Results";
-import Timetable from "./pages/admin/Timetable";
 import TeacherAttendance from "./pages/teacher/TeacherAttendance";
 import TeacherClasses from "./pages/teacher/TeacherClasses";
 import TeacherDashboard from "./pages/teacher/TeacherDashboard";
@@ -127,8 +126,7 @@ const router = createBrowserRouter([
       { path: "/account", element: <Account />},
       { path: "/settings", element: <Settings />},
       //student routes
-      { path: "/dashboard", element: <Dashboard /> },
-      { path: "/student/timetable", element: <Timetable /> },
+      { path: "/student/dashboard", element: <Dashboard /> },
       { path: "/student/attendance", element: <Attendance /> },
       { path: "/student/assignments", element: <Assignments /> },
       { path: "/student/results", element: <Results /> },

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { PageContainer, PageHeader } from "../../components/page-shell";
 import { KpiCard } from "../../components/kpi-card";
 import {
@@ -13,6 +14,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { Progress } from "../../components/ui/progress";
+import { Checkbox } from "../../components/ui/checkbox";
 import {
   Tabs,
   TabsContent,
@@ -53,12 +55,15 @@ import {
   Clock,
   ArrowLeft,
   Paperclip,
+  Video,
+  FileText,
   NotebookPen,
   Link2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  // eslint-disable-next-line no-unused-vars
   assignmentsApi,
   submissionsApi,
   materialsApi,
@@ -68,8 +73,77 @@ import {
   useMaterials,
   useLessonPlans,
 } from "../../lib/store";
+import {
+  // eslint-disable-next-line no-unused-vars
+  getSubjects,
+  // eslint-disable-next-line no-unused-vars
+  getSections,
+  // eslint-disable-next-line no-unused-vars
+  getClasses,
+  // eslint-disable-next-line no-unused-vars
+  getStudentsBySection,
+  saveDraftAssignment,
+  publishAssignment,
+} from "../../api/assignment";
+// TODO: confirm this is the right store/key for the logged-in teacher's
+// identity (employee_uuid / user id). Admin's version lets an admin pick
+// any teacher from a dropdown; here we need "the current user" instead.
+import useSessionStore from "../../store/sessionStore";
 import { useTeacherCtx } from "../../lib/teacher-ctx";
 import { openPrintable, esc } from "../../lib/print";
+
+// ---------------------------------------------------------------------
+// DEMO DATA — stand-ins for getSubjects() / getClasses() / getSections()
+// until the real endpoints are wired up. Same shape the API is expected
+// to return (subject_uuid/subject_name, class_uuid/class_name,
+// section_uuid/section_name + class_uuid to link a section to its class).
+// Swap the useState initial values below back to [] once the API is live.
+// ---------------------------------------------------------------------
+const DEMO_SUBJECTS = [
+  { subject_uuid: "sub-math", subject_name: "Math" },
+  { subject_uuid: "sub-science", subject_name: "Science" },
+  { subject_uuid: "sub-english", subject_name: "English" },
+  { subject_uuid: "sub-social", subject_name: "Social Studies" },
+  { subject_uuid: "sub-hindi", subject_name: "Hindi" },
+];
+
+const DEMO_CLASSES = [
+  { class_uuid: "cls-9", class_name: "IX" },
+  { class_uuid: "cls-10", class_name: "X" },
+  { class_uuid: "cls-11", class_name: "XI" },
+  { class_uuid: "cls-12", class_name: "XII" },
+];
+
+const DEMO_SECTIONS = [
+  { section_uuid: "sec-9-a", section_name: "A", class_uuid: "cls-9" },
+  { section_uuid: "sec-9-b", section_name: "B", class_uuid: "cls-9" },
+  { section_uuid: "sec-10-a", section_name: "A", class_uuid: "cls-10" },
+  { section_uuid: "sec-10-b", section_name: "B", class_uuid: "cls-10" },
+  { section_uuid: "sec-11-a", section_name: "A", class_uuid: "cls-11" },
+  { section_uuid: "sec-11-b", section_name: "B", class_uuid: "cls-11" },
+  { section_uuid: "sec-12-a", section_name: "A", class_uuid: "cls-12" },
+];
+
+const DEMO_STUDENTS_BY_SECTION = {
+  "sec-10-b": [
+    { student_uuid: "stu-1", full_name: "Aarav Sharma" },
+    { student_uuid: "stu-2", full_name: "Diya Patel" },
+    { student_uuid: "stu-3", full_name: "Kabir Singh" },
+    { student_uuid: "stu-4", full_name: "Ishita Rao" },
+  ],
+  "sec-10-a": [
+    { student_uuid: "stu-5", full_name: "Vivaan Gupta" },
+    { student_uuid: "stu-6", full_name: "Ananya Iyer" },
+  ],
+};
+
+const ASSIGNMENT_TYPES = ["Homework", "Project", "Group Assignment", "Classwork"];
+const ASSIGN_TO_OPTIONS = ["Entire Class", "Selected Students", "Custom Group"];
+const ASSIGN_TO_MAP = {
+  "Entire Class": "ENTIRE_CLASS",
+  "Selected Students": "SELECTED_STUDENTS",
+  "Custom Group": "CUSTOM_GROUP",
+};
 
 export default function TeacherAssignmentsPage() {
   const { teacherName, classes, subjects } = useTeacherCtx();
@@ -108,62 +182,283 @@ export default function TeacherAssignmentsPage() {
   const subsFor = (id) => allSubs.filter((s) => s.assignmentId === id);
   const active = activeId ? mine.find((a) => a.id === activeId) : undefined;
 
+  // ---------------------------------------------------------------------
+  // Create-assignment form — ported from the admin "Create Assignment"
+  // dialog, minus the Teacher picker (the teacher is always "me" here).
+  // ---------------------------------------------------------------------
   const emptyA = {
     title: "",
-    subject: subjects[0] ?? "Math",
-    klass: classes[0] ?? "X-B",
-    due: "",
-    maxMarks: 20,
+    subject: "", // subject_uuid
+    classNum: "", // class_uuid
+    section: "", // section_uuid
+    type: "Homework",
+    assignTo: "Entire Class",
+    groupName: "",
+    studentIds: new Set(),
     instructions: "",
-    attachment: "",
+    due: "",
+    endDate: "",
+    duration: "",
+    maxMarks: 20,
+    pdfFile: null,
+    videoFile: null,
+    resourceLink: "",
+    draftUuid: null,
   };
   const [formA, setFormA] = useState(emptyA);
+  const [formErrors, setFormErrors] = useState({});
+  // DEMO DATA: seeded directly for now instead of loading from the API.
+  // Once getSubjects()/getSections()/getClasses() are live, switch these
+  // back to useState([]) and restore the loader effect below.
+  // eslint-disable-next-line no-unused-vars
+  const [subjectsList, setSubjectsList] = useState(DEMO_SUBJECTS);
+  // eslint-disable-next-line no-unused-vars
+  const [sectionsList, setSectionsList] = useState(DEMO_SECTIONS);
+  // eslint-disable-next-line no-unused-vars
+  const [classesList, setClassesList] = useState(DEMO_CLASSES);
+  const [filteredSections, setFilteredSections] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+
+  // --- Real API loader (disabled while using demo data above) ---
+  // Uncomment this once getSubjects/getSections/getClasses are ready, and
+  // switch the useState calls above back to empty arrays.
+  // useEffect(() => {
+  //   if (!openA && !openM) return;
+  //   if (subjectsList.length && sectionsList.length && classesList.length) return;
+  //
+  //   const load = async () => {
+  //     try {
+  //       const [subjectRes, sectionRes, classRes] = await Promise.all([
+  //         getSubjects(),
+  //         getSections(),
+  //         getClasses(),
+  //       ]);
+  //       setSubjectsList(subjectRes);
+  //       setSectionsList(sectionRes);
+  //       setClassesList(classRes || []);
+  //     } catch (err) {
+  //       console.log(err);
+  //       toast.error("Failed to load classes");
+  //     }
+  //   };
+  //
+  //   load();
+  // }, [openA, openM]);
+
+  // Filter sections whenever the chosen class changes, auto-pick the
+  // first section for a fresh form.
+  useEffect(() => {
+    const sec = sectionsList.filter((s) => s.class_uuid === formA.classNum);
+    setFilteredSections(sec);
+    setFormA((prev) => ({
+      ...prev,
+      section: sec.length ? sec[0].section_uuid : "",
+    }));
+  }, [formA.classNum, sectionsList]);
+
+  // Load students of the chosen class/section when needed for the
+  // "Selected Students" / "Custom Group" picker.
+  useEffect(() => {
+    if (!formA.classNum || !formA.section) {
+      setStudents([]);
+      return;
+    }
+    if (formA.assignTo !== "Selected Students" && formA.assignTo !== "Custom Group") {
+      return;
+    }
+
+    // DEMO DATA: pulled from DEMO_STUDENTS_BY_SECTION for now instead of
+    // calling getStudentsBySection(). Restore the real call below once
+    // the API is live.
+    setStudentsLoading(true);
+    const t = setTimeout(() => {
+      setStudents(DEMO_STUDENTS_BY_SECTION[formA.section] || []);
+      setStudentsLoading(false);
+    }, 200);
+    return () => clearTimeout(t);
+
+    // --- Real API loader (disabled while using demo data above) ---
+    // const sessionYear = useSessionStore.getState().sessionYear; // key name to confirm
+    // const load = async () => {
+    //   setStudentsLoading(true);
+    //   try {
+    //     const res = await getStudentsBySection(formA.classNum, formA.section, sessionYear);
+    //     setStudents(res || []);
+    //   } catch (err) {
+    //     console.log(err);
+    //     toast.error("Failed to load students");
+    //     setStudents([]);
+    //   } finally {
+    //     setStudentsLoading(false);
+    //   }
+    // };
+    // load();
+  }, [formA.classNum, formA.section, formA.assignTo]);
+
+  const toggleStudent = (uuid) =>
+    setFormA((f) => {
+      const n = new Set(f.studentIds);
+      n.has(uuid) ? n.delete(uuid) : n.add(uuid);
+      return { ...f, studentIds: n };
+    });
+
+  const validateAssignmentForm = () => {
+    const errors = {};
+    if (!formA.title.trim()) errors.title = "Title is required.";
+    if (!formA.subject) errors.subject = "Select a subject.";
+    if (!formA.classNum) errors.classNum = "Select a class.";
+    if (!formA.section) errors.section = "Select a section.";
+    if (!formA.due) errors.due = "Select the assignment date.";
+    if (!formA.endDate) errors.endDate = "Select the end date.";
+    if (formA.due && formA.endDate && formA.endDate < formA.due) {
+      errors.endDate = "End date cannot be before the assignment date.";
+    }
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const buildFormData = () => {
+    // TODO: confirm the correct field/store for the current teacher's id.
+    const teacherUserId = useSessionStore.getState().userId;
+
+    const fd = new FormData();
+    fd.append("title", formA.title);
+    fd.append("subject_uuid", formA.subject);
+    fd.append("class_uuid", formA.classNum);
+    fd.append("section_uuid", formA.section);
+    fd.append("teacher_user_id", teacherUserId);
+    fd.append("assignment_type", formA.type.toUpperCase().replace(/\s+/g, "_"));
+    fd.append("assign_to", ASSIGN_TO_MAP[formA.assignTo] || "ENTIRE_CLASS");
+
+    if (formA.assignTo === "Custom Group") fd.append("group_name", formA.groupName);
+    if (formA.assignTo !== "Entire Class") {
+      [...formA.studentIds].forEach((uuid) => fd.append("selected_student_uuids", uuid));
+    }
+
+    fd.append("instructions", formA.instructions);
+    fd.append("assignment_date", formA.due);
+    fd.append("due_date", formA.endDate);
+    fd.append("duration_minutes", formA.duration);
+    fd.append("max_marks", formA.maxMarks);
+
+    if (formA.pdfFile) fd.append("pdf_file", formA.pdfFile);
+    if (formA.videoFile) fd.append("video_file", formA.videoFile);
+    if (formA.resourceLink) fd.append("resource_url", formA.resourceLink);
+
+    return fd;
+  };
+
+  const handleSaveDraft = async () => {
+    if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
+
+    const fd = buildFormData();
+    fd.append("status", "DRAFT");
+    if (formA.draftUuid) fd.append("draft_uuid", formA.draftUuid);
+
+    setSavingDraft(true);
+    try {
+      const res = await saveDraftAssignment(fd);
+      if (res?.success) {
+        toast.success(res.message || "Draft saved");
+        setFormA((f) => ({ ...f, draftUuid: res.data?.draft_uuid || f.draftUuid }));
+      } else {
+        toast.error(res?.message || "Failed to save draft");
+      }
+    } catch (err) {
+      console.log(err);
+      toast.error(err?.response?.data?.message || "Failed to save draft");
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
+
+    const fd = buildFormData();
+    fd.append("status", "PUBLISHED");
+    if (formA.draftUuid) fd.append("draft_uuid", formA.draftUuid);
+
+    setPublishing(true);
+    try {
+      const res = await publishAssignment(fd);
+      if (res?.success) {
+        toast.success(res.message || "Published & notified");
+        setOpenA(false);
+        setFormA(emptyA);
+      } else {
+        toast.error(res?.message || "Failed to publish");
+      }
+    } catch (err) {
+      console.log(err);
+      toast.error(err?.response?.data?.message || "Failed to publish");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------
+  // Study materials
+  // ---------------------------------------------------------------------
   const emptyM = {
     title: "",
     type: "PDF",
     url: "",
-    subject: subjects[0] ?? "Math",
-    klass: classes[0] ?? "X-B",
+    subject: "", // subject_uuid — resolved against subjectsList on submit
+    classNum: "", // class_uuid
+    section: "", // section_uuid
     description: "",
   };
   const [formM, setFormM] = useState(emptyM);
 
-  const createAssignment = (status) => {
-    if (!formA.title.trim()) return toast.error("Title required");
-    const id = assignmentsApi.add({
-      title: formA.title,
-      subject: formA.subject,
-      klass: formA.klass,
-      section: formA.klass.split("-")[1],
-      teacher: teacherName,
-      due: formA.due,
-      endDate: formA.due,
-      maxMarks: formA.maxMarks,
-      instructions: formA.instructions,
-      attachments: formA.attachment ? [formA.attachment] : [],
-      resources: formA.attachment
-        ? [{ kind: "pdf", label: formA.attachment }]
-        : [],
-      status,
+  // Sections available for whichever class is currently picked in the
+  // "Share study material" form. Mirrors the assignment form's
+  // filteredSections, but kept independent so the two dialogs don't
+  // stomp on each other's selection.
+  const filteredSectionsM = useMemo(
+    () => sectionsList.filter((s) => s.class_uuid === formM.classNum),
+    [formM.classNum, sectionsList],
+  );
+
+  // Whenever the class changes in the material form, drop any
+  // section pick that no longer belongs to it.
+  useEffect(() => {
+    setFormM((prev) => {
+      if (!prev.section) return prev;
+      const stillValid = filteredSectionsM.some(
+        (s) => s.section_uuid === prev.section,
+      );
+      return stillValid ? prev : { ...prev, section: "" };
     });
-    setOpenA(false);
-    setFormA(emptyA);
-    if (status === "Published") {
-      const n = assignmentsApi.distribute(id);
-      toast.success(`Published to ${n} student(s) of ${formA.klass}`);
-    } else toast.success("Draft saved");
-  };
+  }, [filteredSectionsM]);
 
   const uploadMaterial = () => {
     if (!formM.title.trim()) return toast.error("Title required");
+    if (!formM.subject) return toast.error("Select a subject");
+    if (!formM.classNum) return toast.error("Select a class");
+    if (!formM.section) return toast.error("Select a section");
+
+    const subjectName =
+      subjectsList.find((s) => s.subject_uuid === formM.subject)?.subject_name ??
+      "";
+    const className =
+      classesList.find((c) => c.class_uuid === formM.classNum)?.class_name ?? "";
+    const sectionName =
+      filteredSectionsM.find((s) => s.section_uuid === formM.section)
+        ?.section_name ?? "";
+    const klass = sectionName ? `${className}-${sectionName}` : className;
+
     materialsApi.add({
       title: formM.title,
       type: formM.type,
       url:
         formM.url ||
         `/files/${formM.title.toLowerCase().replace(/\s+/g, "-")}.pdf`,
-      subject: formM.subject,
-      klasses: [formM.klass],
+      subject: subjectName,
+      klasses: [klass],
       teacher: teacherName,
       description: formM.description,
     });
@@ -205,6 +500,541 @@ export default function TeacherAssignmentsPage() {
     (s) =>
       mine.some((a) => a.id === s.assignmentId) && s.status === "Graded",
   ).length;
+
+  const existingPdf = null; // teacher's create form never opens pre-filled with attachments
+  const existingVideo = null;
+
+  // Shared dialog for creating a new assignment — rendered inside the
+  // Assignments tab so the trigger button lives with that tab's content.
+  const NewAssignmentDialog = (
+    <Dialog
+      open={openA}
+      onOpenChange={(v) => {
+        setOpenA(v);
+        if (!v) {
+          setFormA(emptyA);
+          setFormErrors({});
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button size="sm" className="gradient-primary border-0">
+          <Plus className="h-4 w-4" />
+          New Assignment
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Create assignment</DialogTitle>
+          {/* <DialogDescription>
+            Publishing attaches it to every student of the selected class.
+          </DialogDescription> */}
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Title */}
+          <div className="space-y-1.5">
+            <Label className="text-[11px] uppercase tracking-wider">
+              Title <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              placeholder="Title (e.g. Chapter 5 — Trigonometry)"
+              value={formA.title}
+              aria-invalid={Boolean(formErrors.title)}
+              onChange={(e) => {
+                setFormA({ ...formA, title: e.target.value });
+                setFormErrors((errors) => ({ ...errors, title: "" }));
+              }}
+            />
+            {formErrors.title && (
+              <p className="text-xs text-destructive">{formErrors.title}</p>
+            )}
+          </div>
+
+          {/* Subject */}
+          <div className="space-y-1.5">
+            <Label className="text-[11px] uppercase tracking-wider">
+              Subject <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={formA.subject}
+              onValueChange={(v) => {
+                setFormA({ ...formA, subject: v });
+                setFormErrors((errors) => ({ ...errors, subject: "" }));
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Subject" />
+              </SelectTrigger>
+              <SelectContent>
+                {subjectsList.map((item) => (
+                  <SelectItem key={item.subject_uuid} value={item.subject_uuid}>
+                    {item.subject_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {formErrors.subject && (
+              <p className="text-xs text-destructive">{formErrors.subject}</p>
+            )}
+          </div>
+
+          {/* Class + Section */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[11px] uppercase tracking-wider">
+                Class <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={formA.classNum}
+                onValueChange={(v) => {
+                  setFormA({ ...formA, classNum: v });
+                  setFormErrors((errors) => ({ ...errors, classNum: "", section: "" }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Class" />
+                </SelectTrigger>
+                <SelectContent>
+                  {classesList.map((item) => (
+                    <SelectItem key={item.class_uuid} value={item.class_uuid}>
+                      {item.class_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {formErrors.classNum && (
+                <p className="text-xs text-destructive">{formErrors.classNum}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] uppercase tracking-wider">
+                Section <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={formA.section}
+                onValueChange={(v) => {
+                  setFormA({ ...formA, section: v });
+                  setFormErrors((errors) => ({ ...errors, section: "" }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Section" />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredSections.map((item) => (
+                    <SelectItem key={item.section_uuid} value={item.section_uuid}>
+                      {item.section_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {formErrors.section && (
+                <p className="text-xs text-destructive">{formErrors.section}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Assignment Type */}
+          <div className="space-y-1.5">
+            <Label className="text-[11px] uppercase tracking-wider">
+              Assignment Type
+            </Label>
+            <Select
+              value={formA.type}
+              onValueChange={(v) => setFormA({ ...formA, type: v })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ASSIGNMENT_TYPES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Assign To */}
+          <div className="flex items-center justify-between gap-3">
+            <Label className="text-[11px] uppercase tracking-wider">
+              Assign To
+            </Label>
+            <Select
+              value={formA.assignTo}
+              onValueChange={(v) =>
+                setFormA({ ...formA, assignTo: v, studentIds: new Set() })
+              }
+            >
+              <SelectTrigger className="w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ASSIGN_TO_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Custom Group name */}
+          {formA.assignTo === "Custom Group" && (
+            <Input
+              placeholder="Group name (e.g. Team Alpha)"
+              value={formA.groupName}
+              onChange={(e) => setFormA({ ...formA, groupName: e.target.value })}
+            />
+          )}
+
+          {/* Student picker */}
+          {(formA.assignTo === "Selected Students" ||
+            formA.assignTo === "Custom Group") && (
+            <div className="rounded-md border border-border/60 p-3">
+              {!formA.classNum || !formA.section ? (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  Select a class and section first
+                </p>
+              ) : studentsLoading ? (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  Loading students...
+                </p>
+              ) : students.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  No students found for this class/section
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                  {students.map((s) => (
+                    <label
+                      key={s.student_uuid}
+                      className="flex items-center gap-2 text-sm cursor-pointer"
+                    >
+                      <Checkbox
+                        checked={formA.studentIds.has(s.student_uuid)}
+                        onCheckedChange={() => toggleStudent(s.student_uuid)}
+                      />
+                      {s.full_name}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Instructions */}
+          <div className="space-y-1.5">
+            <Label className="text-[11px] uppercase tracking-wider">
+              Instructions
+            </Label>
+            <Textarea
+              placeholder="Instructions"
+              rows={4}
+              value={formA.instructions}
+              onChange={(e) => setFormA({ ...formA, instructions: e.target.value })}
+            />
+          </div>
+
+          {/* Date / End date / Duration */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[11px] uppercase tracking-wider">
+                Date <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                type="date"
+                value={formA.due}
+                aria-invalid={Boolean(formErrors.due)}
+                onChange={(e) => {
+                  setFormA({ ...formA, due: e.target.value });
+                  setFormErrors((errors) => ({ ...errors, due: "" }));
+                }}
+              />
+              {formErrors.due && (
+                <p className="text-xs text-destructive">{formErrors.due}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] uppercase tracking-wider">
+                End Date <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                type="date"
+                value={formA.endDate}
+                min={formA.due || undefined}
+                aria-invalid={Boolean(formErrors.endDate)}
+                onChange={(e) => {
+                  setFormA({ ...formA, endDate: e.target.value });
+                  setFormErrors((errors) => ({ ...errors, endDate: "" }));
+                }}
+              />
+              {formErrors.endDate && (
+                <p className="text-xs text-destructive">{formErrors.endDate}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] uppercase tracking-wider">
+                Duration
+              </Label>
+              <Input
+                placeholder="e.g. 60 mins"
+                value={formA.duration}
+                onChange={(e) => setFormA({ ...formA, duration: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Max marks */}
+          <div className="space-y-1.5">
+            <Label className="text-[11px] uppercase tracking-wider">
+              Max Marks
+            </Label>
+            <Input
+              type="number"
+              value={formA.maxMarks}
+              onChange={(e) =>
+                setFormA({ ...formA, maxMarks: Number(e.target.value) })
+              }
+            />
+          </div>
+
+          {/* Attachments */}
+          <div className="space-y-1.5">
+            <Label className="text-[11px] uppercase tracking-wider">
+              Attachments
+            </Label>
+            <div className="space-y-2">
+              {/* PDF file upload */}
+              <div className="relative">
+                <Paperclip className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <label
+                  htmlFor="pdf-upload-teacher"
+                  className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
+                >
+                  <span className={formA.pdfFile ? "truncate" : "text-muted-foreground"}>
+                    {formA.pdfFile ? formA.pdfFile.name : "Attach PDF (file name)"}
+                  </span>
+                </label>
+                <input
+                  id="pdf-upload-teacher"
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={(e) =>
+                    setFormA({ ...formA, pdfFile: e.target.files?.[0] ?? null })
+                  }
+                />
+              </div>
+              {existingPdf && !formA.pdfFile && (
+                <a
+                  href={existingPdf.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 pl-1 text-xs text-primary hover:underline truncate"
+                >
+                  <FileText className="h-3 w-3 shrink-0" />
+                  {existingPdf.original_file_name}
+                </a>
+              )}
+
+              {/* Video file upload */}
+              <div className="relative">
+                <Video className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <label
+                  htmlFor="video-upload-teacher"
+                  className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
+                >
+                  <span className={formA.videoFile ? "truncate" : "text-muted-foreground"}>
+                    {formA.videoFile ? formA.videoFile.name : "Video file name"}
+                  </span>
+                </label>
+                <input
+                  id="video-upload-teacher"
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={(e) =>
+                    setFormA({ ...formA, videoFile: e.target.files?.[0] ?? null })
+                  }
+                />
+              </div>
+              {existingVideo && !formA.videoFile && (
+                <a
+                  href={existingVideo.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 pl-1 text-xs text-primary hover:underline truncate"
+                >
+                  <Video className="h-3 w-3 shrink-0" />
+                  {existingVideo.original_file_name}
+                </a>
+              )}
+
+              {/* Resource link */}
+              <div className="relative">
+                <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  className="pl-8"
+                  placeholder="Resource link (https://...)"
+                  value={formA.resourceLink}
+                  onChange={(e) =>
+                    setFormA({ ...formA, resourceLink: e.target.value })
+                  }
+                />
+              </div>
+              {formA.resourceLink && (
+                <a
+                  href={formA.resourceLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block pl-1 text-xs text-primary hover:underline truncate"
+                >
+                  {formA.resourceLink}
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={handleSaveDraft}
+            disabled={savingDraft || publishing}
+          >
+            {savingDraft ? "Saving..." : "Save draft"}
+          </Button>
+          <Button onClick={handlePublish} disabled={publishing || savingDraft}>
+            {publishing ? "Publishing..." : "Publish"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  // Shared dialog for sharing study material — rendered inside the
+  // Study Materials tab so the trigger button lives with that tab's content.
+  const UploadMaterialDialog = (
+    <Dialog
+      open={openM}
+      onOpenChange={(v) => {
+        setOpenM(v);
+        if (!v) setFormM(emptyM);
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button size="sm" className="gradient-primary border-0">
+          <FileBox className="h-4 w-4" />
+          Upload Material
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Share study material</DialogTitle>
+          {/* <DialogDescription>
+            Visible and downloadable for students of the selected class.
+          </DialogDescription> */}
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Title</Label>
+            <Input
+              value={formM.title}
+              onChange={(e) => setFormM({ ...formM, title: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Subject</Label>
+            <Select
+              value={formM.subject}
+              onValueChange={(v) => setFormM({ ...formM, subject: v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Subject" />
+              </SelectTrigger>
+              <SelectContent>
+                {subjectsList.map((item) => (
+                  <SelectItem key={item.subject_uuid} value={item.subject_uuid}>
+                    {item.subject_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Class + Section — Section only fills in once a Class is chosen */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Class</Label>
+              <Select
+                value={formM.classNum}
+                onValueChange={(v) =>
+                  setFormM({ ...formM, classNum: v, section: "" })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Class" />
+                </SelectTrigger>
+                <SelectContent>
+                  {classesList.map((item) => (
+                    <SelectItem key={item.class_uuid} value={item.class_uuid}>
+                      {item.class_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Section</Label>
+              <Select
+                value={formM.section}
+                onValueChange={(v) => setFormM({ ...formM, section: v })}
+                disabled={!formM.classNum}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      formM.classNum ? "Section" : "Select class first"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredSectionsM.map((item) => (
+                    <SelectItem key={item.section_uuid} value={item.section_uuid}>
+                      {item.section_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">File name / URL</Label>
+            <Input
+              placeholder="chapter-5-notes.pdf"
+              value={formM.url}
+              onChange={(e) => setFormM({ ...formM, url: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Description</Label>
+            <Textarea
+              rows={3}
+              value={formM.description}
+              onChange={(e) =>
+                setFormM({ ...formM, description: e.target.value })
+              }
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={uploadMaterial}>Share</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   // ---- Detail view: students of one assignment ----
   if (active) {
@@ -422,231 +1252,7 @@ export default function TeacherAssignmentsPage() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Teacher Portal · Academics"
         title="Assignments & Materials"
-        description="Create assignments for your assigned classes, review student submissions, and share downloadable study materials."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Dialog open={openM} onOpenChange={setOpenM}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline">
-                  <FileBox className="h-4 w-4" />
-                  Upload Material
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Share study material</DialogTitle>
-                  <DialogDescription>
-                    Visible and downloadable for students of the selected
-                    class.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Title</Label>
-                    <Input
-                      value={formM.title}
-                      onChange={(e) =>
-                        setFormM({ ...formM, title: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Subject</Label>
-                      <Select
-                        value={formM.subject}
-                        onValueChange={(v) =>
-                          setFormM({ ...formM, subject: v })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {subjects.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Class</Label>
-                      <Select
-                        value={formM.klass}
-                        onValueChange={(v) =>
-                          setFormM({ ...formM, klass: v })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {classes.map((c) => (
-                            <SelectItem key={c} value={c}>
-                              {c}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">File name / URL</Label>
-                    <Input
-                      placeholder="chapter-5-notes.pdf"
-                      value={formM.url}
-                      onChange={(e) =>
-                        setFormM({ ...formM, url: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Description</Label>
-                    <Textarea
-                      rows={3}
-                      value={formM.description}
-                      onChange={(e) =>
-                        setFormM({ ...formM, description: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={uploadMaterial}>Share</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-            <Dialog open={openA} onOpenChange={setOpenA}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="gradient-primary border-0">
-                  <Plus className="h-4 w-4" />
-                  New Assignment
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create assignment</DialogTitle>
-                  <DialogDescription>
-                    Publishing attaches it to every student of the selected
-                    class.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Title</Label>
-                    <Input
-                      value={formA.title}
-                      onChange={(e) =>
-                        setFormA({ ...formA, title: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Subject</Label>
-                      <Select
-                        value={formA.subject}
-                        onValueChange={(v) =>
-                          setFormA({ ...formA, subject: v })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {subjects.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Class</Label>
-                      <Select
-                        value={formA.klass}
-                        onValueChange={(v) =>
-                          setFormA({ ...formA, klass: v })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {classes.map((c) => (
-                            <SelectItem key={c} value={c}>
-                              {c}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Due date</Label>
-                      <Input
-                        type="date"
-                        value={formA.due}
-                        onChange={(e) =>
-                          setFormA({ ...formA, due: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Max marks</Label>
-                      <Input
-                        type="number"
-                        value={formA.maxMarks}
-                        onChange={(e) =>
-                          setFormA({
-                            ...formA,
-                            maxMarks: Number(e.target.value),
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Instructions</Label>
-                    <Textarea
-                      rows={4}
-                      value={formA.instructions}
-                      onChange={(e) =>
-                        setFormA({ ...formA, instructions: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Attachment (file name)</Label>
-                    <Input
-                      value={formA.attachment}
-                      onChange={(e) =>
-                        setFormA({ ...formA, attachment: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => createAssignment("Draft")}
-                  >
-                    Save draft
-                  </Button>
-                  <Button onClick={() => createAssignment("Published")}>
-                    Publish
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        }
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
@@ -685,20 +1291,23 @@ export default function TeacherAssignmentsPage() {
 
         <TabsContent value="assignments" className="mt-4 space-y-4">
           <Card className="border-border/60">
-            <CardContent className="p-3 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground">Class</span>
-              <Select value={classF} onValueChange={setClassF}>
-                <SelectTrigger className="h-8 w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {["All", ...classes].map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <CardContent className="p-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Class</span>
+                <Select value={classF} onValueChange={setClassF}>
+                  <SelectTrigger className="h-8 w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["All", ...classes].map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {NewAssignmentDialog}
             </CardContent>
           </Card>
 
@@ -764,7 +1373,16 @@ export default function TeacherAssignmentsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="materials" className="mt-4">
+        <TabsContent value="materials" className="mt-4 space-y-4">
+          <Card className="border-border/60">
+            <CardContent className="p-3 flex items-center justify-between gap-2">
+              <div className="text-xs text-muted-foreground flex items-center gap-2">
+                <FileBox className="h-3.5 w-3.5" />
+                {myMaterials.length} material(s) shared
+              </div>
+              {UploadMaterialDialog}
+            </CardContent>
+          </Card>
           <Card className="border-border/60">
             <CardContent className="p-0 overflow-x-auto">
               <Table>
@@ -931,10 +1549,6 @@ function LessonPlansTab({ teacherName, classes, subjects }) {
             <DialogContent className="max-w-xl">
               <DialogHeader>
                 <DialogTitle>Create lesson plan</DialogTitle>
-                <DialogDescription>
-                  Attach reference PDFs and URLs; the plan can be downloaded
-                  as a PDF.
-                </DialogDescription>
               </DialogHeader>
               <div className="grid gap-3 max-h-[65vh] overflow-y-auto pr-1">
                 <div className="space-y-1">

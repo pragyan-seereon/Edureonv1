@@ -75,8 +75,7 @@ export default function TeacherNotices() {
 
   return (
     <PageContainer>
-      <PageHeader eyebrow="Communication" title={canPublish ? "Notices" : "Notices, Circulars & Events"}
-        description={canPublish ? "Create, target, publish and track acknowledgements." : "Read-only notices, circulars and school events published by the administration."}
+      <PageHeader  title={canPublish ? "Notices" : "Notices, Circulars & Events"}
         actions={canPublish ? (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button size="sm" className="gradient-primary border-0"><Plus className="h-4 w-4" />New Notice</Button></DialogTrigger>

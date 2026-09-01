@@ -29,6 +29,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  // eslint-disable-next-line no-unused-vars
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -159,9 +160,7 @@ export default function TeacherExams() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Teacher Portal · Examinations"
         title="My Examinations"
-        description="Exam categories, schedules for your classes, internal class tests you create, and marks for your subjects only."
         actions={
           <Dialog open={openTest} onOpenChange={setOpenTest}>
             <DialogTrigger asChild>
@@ -173,9 +172,9 @@ export default function TeacherExams() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create internal test</DialogTitle>
-                <DialogDescription>
+                {/* <DialogDescription>
                   Assigned to students of your class only.
-                </DialogDescription>
+                </DialogDescription> */}
               </DialogHeader>
               <div className="grid gap-3">
                 <div className="space-y-1">
@@ -373,7 +372,7 @@ export default function TeacherExams() {
           <Card className="border-border/60">
             <CardHeader className="pb-2">
               <CardTitle className="font-display text-base">
-                Internal tests & question notes
+                Question Papers
               </CardTitle>
               <CardDescription>
                 Chapter/unit tests created by {teacherName} for assigned classes.

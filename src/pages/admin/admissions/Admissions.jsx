@@ -7546,6 +7546,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 import {
   getAdmissionPipeline,
@@ -7558,7 +7560,11 @@ import {
   createAdmission,
   importAdmissions,
   rejectAdmission,
-  reinstateAdmission
+  reinstateAdmission,
+  importMpsRegistrations,
+  importMpsetResults,
+  createQualifiedMpsAdmissions,
+  getMpsetReport,
 } from "../../../api/admissions";
 import { getClasses } from "../../../api/Class";
 import useAuthStore from "../../../store/authStore";
@@ -7628,6 +7634,9 @@ import {
   CheckCircle2,
   Clock3,
   CalendarClock,
+  Loader2,
+  RefreshCw,
+  Download,
 } from "lucide-react";
 
 import { toast } from "sonner";
@@ -7752,6 +7761,11 @@ export default function Admissions() {
   const [viewForm, setViewForm] = useState(null);
   const [testFilter, setTestFilter] = useState("all");
   const [stageFilter, setStageFilter] = useState("all");
+  const [mpsReportType, setMpsReportType] = useState("website");
+  const [mpsLoadedReportType, setMpsLoadedReportType] = useState("website");
+  const [mpsReportRows, setMpsReportRows] = useState([]);
+  const [mpsReportLoading, setMpsReportLoading] = useState(false);
+  const [mpsCreatingAdmissions, setMpsCreatingAdmissions] = useState(false);
 
   // ---- reject dialog ----
   const [rejectFor, setRejectFor] = useState(null);
@@ -8286,6 +8300,238 @@ export default function Admissions() {
     }
   };
 
+  const loadMpsReport = async (reportType = mpsReportType) => {
+    try {
+      setMpsReportLoading(true);
+      const response = await getMpsetReport(reportType);
+      setMpsReportRows(
+        Array.isArray(response?.data?.data) ? response.data.data : []
+      );
+      setMpsLoadedReportType(reportType);
+    } catch (err) {
+      setMpsReportRows([]);
+      toast.error(getApiErrorMessage(err, "Failed to load MPSAT report"));
+    } finally {
+      setMpsReportLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === "mpsat") {
+      loadMpsReport(mpsReportType);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, sessionYear]);
+
+  const handleMpsRegistrationImport = async (file) => {
+    try {
+      const response = await importMpsRegistrations(file);
+      toast.success(
+        response?.data?.message || "MPSAT registrations imported successfully"
+      );
+      await loadMpsReport();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to import MPSAT registrations"));
+    }
+  };
+
+  const handleMpsResultImport = async (file) => {
+    try {
+      const response = await importMpsetResults(file);
+      toast.success(
+        response?.data?.message || "MPSAT results imported successfully"
+      );
+      await loadMpsReport();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to import MPSAT results"));
+    }
+  };
+
+  const handleCreateQualifiedAdmissions = async () => {
+    try {
+      setMpsCreatingAdmissions(true);
+      const response = await createQualifiedMpsAdmissions();
+      toast.success(
+        response?.data?.message || "Qualified admissions created successfully"
+      );
+      await Promise.all([loadData(), loadMpsReport()]);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to create qualified admissions"));
+    } finally {
+      setMpsCreatingAdmissions(false);
+    }
+  };
+
+  const mpsReportStats = useMemo(() => {
+    const percentages = mpsReportRows
+      .map((row) => Number(row.percentage))
+      .filter((value) => Number.isFinite(value));
+
+    return {
+      total: mpsReportRows.length,
+      average: percentages.length
+        ? (percentages.reduce((sum, value) => sum + value, 0) / percentages.length).toFixed(2)
+        : "0.00",
+      highest: percentages.length ? Math.max(...percentages).toFixed(2) : "0.00",
+    };
+  }, [mpsReportRows]);
+
+  const mpsReportColumns = useMemo(() => {
+    const columns = [
+      { header: "Admission No", accessor: (row) => row.admission_no },
+      { header: "Student Name", accessor: (row) => row.student_name },
+      { header: "Percentage", accessor: (row) => row.percentage },
+    ];
+
+    if (mpsLoadedReportType === "website") {
+      return [
+        ...columns,
+        { header: "Score", accessor: (row) => row.score },
+        { header: "Total Marks", accessor: (row) => row.total_marks },
+        { header: "Passed", accessor: (row) => (row.is_passed ? "Yes" : "No") },
+      ];
+    }
+
+    columns.push(
+      { header: "Phone", accessor: (row) => row.contact_details?.phone || "" },
+      { header: "Email", accessor: (row) => row.contact_details?.email || "" },
+      { header: "Address", accessor: (row) => row.contact_details?.address || "" }
+    );
+
+    if (mpsLoadedReportType === "internal") {
+      columns.push(
+        { header: "Shift 1 Total", accessor: (row) => row.marks?.shift1_total },
+        { header: "Shift 2 Total", accessor: (row) => row.marks?.shift2_total },
+        { header: "Obtained Marks", accessor: (row) => row.marks?.obtained_marks },
+        { header: "Maximum Marks", accessor: (row) => row.marks?.maximum_marks },
+        { header: "Status", accessor: (row) => row.qualification_status }
+      );
+    }
+
+    return columns;
+  }, [mpsLoadedReportType]);
+
+  const mpsScoreDistribution = useMemo(() => {
+    const ranges = [
+      { range: "80-84%", min: 80, max: 85, students: 0 },
+      { range: "85-89%", min: 85, max: 90, students: 0 },
+      { range: "90-94%", min: 90, max: 95, students: 0 },
+      { range: "95-100%", min: 95, max: Infinity, students: 0 },
+    ];
+
+    mpsReportRows.forEach((row) => {
+      const percentage = Number(row.percentage);
+      const bucket = ranges.find(
+        ({ min, max }) => Number.isFinite(percentage) && percentage >= min && percentage < max
+      );
+      if (bucket) bucket.students += 1;
+    });
+
+    return ranges.map(({ range, students }) => ({ range, students }));
+  }, [mpsReportRows]);
+
+  const downloadMpsReportPdf = () => {
+    if (!mpsReportRows.length) {
+      toast.error("No MPSAT report data available to download");
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+    // Premium report header.
+    doc.setFillColor(9, 42, 91);
+    doc.rect(0, 0, 297, 25, "F");
+    doc.setTextColor(255);
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("MPSAT PERFORMANCE REPORT", 14, 11);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.text(
+      `${mpsLoadedReportType.toUpperCase()} REPORT  |  SESSION ${sessionYear}  |  80% AND ABOVE`,
+      14,
+      18
+    );
+    doc.text(`Generated ${new Date().toLocaleDateString()}`, 283, 18, { align: "right" });
+
+    const statCards = [
+      { label: "QUALIFIED STUDENTS", value: String(mpsReportStats.total), color: [239, 246, 255] },
+      { label: "AVERAGE PERCENTAGE", value: `${mpsReportStats.average}%`, color: [240, 249, 255] },
+      { label: "HIGHEST PERCENTAGE", value: `${mpsReportStats.highest}%`, color: [240, 253, 250] },
+    ];
+    statCards.forEach((stat, index) => {
+      const x = 14 + index * 91;
+      doc.setFillColor(...stat.color);
+      doc.setDrawColor(218, 226, 236);
+      doc.roundedRect(x, 30, 84, 20, 2, 2, "FD");
+      doc.setTextColor(80, 96, 120);
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      doc.text(stat.label, x + 5, 37);
+      doc.setTextColor(9, 42, 91);
+      doc.setFontSize(14);
+      doc.text(stat.value, x + 5, 46);
+    });
+
+    // Draw the same score-distribution graph in the downloaded PDF.
+    const chartX = 14;
+    const chartY = 58;
+    const chartWidth = 269;
+    const chartHeight = 43;
+    const plotBottom = chartY + chartHeight - 9;
+    const maxStudents = Math.max(
+      1,
+      ...mpsScoreDistribution.map((item) => item.students)
+    );
+
+    doc.setTextColor(35);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Score Distribution", chartX, chartY);
+    doc.setDrawColor(220);
+    doc.line(chartX, plotBottom, chartX + chartWidth, plotBottom);
+
+    const slotWidth = chartWidth / mpsScoreDistribution.length;
+    mpsScoreDistribution.forEach((item, index) => {
+      const barWidth = 25;
+      const availableHeight = chartHeight - 17;
+      const barHeight = (item.students / maxStudents) * availableHeight;
+      const barX = chartX + index * slotWidth + (slotWidth - barWidth) / 2;
+      const barY = plotBottom - barHeight;
+
+      doc.setFillColor(37, 99, 235);
+      if (barHeight > 0) doc.roundedRect(barX, barY, barWidth, barHeight, 1.5, 1.5, "F");
+      doc.setFontSize(8);
+      doc.setTextColor(45);
+      doc.text(String(item.students), barX + barWidth / 2, barY - 2, { align: "center" });
+      doc.setTextColor(90);
+      doc.text(item.range, barX + barWidth / 2, plotBottom + 5, { align: "center" });
+    });
+
+    autoTable(doc, {
+      startY: 109,
+      head: [mpsReportColumns.map((column) => column.header)],
+      body: mpsReportRows.map((row) =>
+        mpsReportColumns.map((column) => {
+          const value = column.accessor(row);
+          return value == null || value === "" ? "-" : String(value);
+        })
+      ),
+      styles: { fontSize: 7, cellPadding: 2.4, overflow: "linebreak", textColor: [35, 48, 68] },
+      headStyles: { fillColor: [9, 42, 91], textColor: [255, 255, 255], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [246, 249, 252] },
+      margin: { left: 14, right: 14 },
+      didDrawPage: ({ pageNumber }) => {
+        doc.setFontSize(8);
+        doc.setTextColor(120);
+        doc.text(`Page ${pageNumber}`, 278, 202, { align: "right" });
+      },
+    });
+
+    doc.save(`mpsat-${mpsLoadedReportType}-${sessionYear}.pdf`);
+    toast.success("MPSAT PDF downloaded");
+  };
+
   // ---- analytics ----
   // Calculated from ACTIVE admissions within the active session only.
 const activeAdmissions = useMemo(
@@ -8431,6 +8677,7 @@ const activeAdmissions = useMemo(
           <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
           <TabsTrigger value="forms">Forms</TabsTrigger>
           <TabsTrigger value="test">Admission Test</TabsTrigger>
+          <TabsTrigger value="mpsat">MPSAT Reports</TabsTrigger>
           <TabsTrigger value="rejected">Rejected ({rejectedTotal})</TabsTrigger>
           <TabsTrigger value="analytics">Conversion Analytics</TabsTrigger>
         </TabsList>
@@ -8948,6 +9195,222 @@ const activeAdmissions = useMemo(
                           Reinstate
                         </Button>
                       </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ---------------- MPSAT REPORTS ---------------- */}
+        <TabsContent value="mpsat" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">MPSAT Management</CardTitle>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Import registrations and results, create qualified admissions, and view 80%+ reports.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ExcelUpload
+                    label="Registrations"
+                    onFile={handleMpsRegistrationImport}
+                  />
+                  <ExcelUpload
+                    label="MPSAT Results"
+                    onFile={handleMpsResultImport}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleCreateQualifiedAdmissions}
+                    disabled={mpsCreatingAdmissions}
+                  >
+                    {mpsCreatingAdmissions ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4" />
+                    )}
+                    Create Qualified Admissions
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+          </Card>
+
+          <Card className="overflow-hidden border-border/60 shadow-sm">
+            <CardHeader className="border-b bg-gradient-to-r from-primary/[0.07] via-background to-info/[0.06] pb-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+                      <TrendingUp className="h-4 w-4" />
+                    </span>
+                    MPSAT Premium Report
+                  </CardTitle>
+                  <p className="mt-1 pl-11 text-xs text-muted-foreground">
+                    Performance analytics for students scoring 80% and above
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select value={mpsReportType} onValueChange={setMpsReportType}>
+                    <SelectTrigger className="h-8 w-40 text-xs">
+                      <SelectValue placeholder="Report type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="website">Website</SelectItem>
+                      <SelectItem value="marketing">Marketing</SelectItem>
+                      <SelectItem value="internal">Internal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    onClick={() => loadMpsReport(mpsReportType)}
+                    disabled={mpsReportLoading}
+                  >
+                    {mpsReportLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                    View Report
+                  </Button>
+                  <ExcelExport
+                    rows={mpsReportRows}
+                    columns={mpsReportColumns}
+                    fileName={`mpsat-${mpsLoadedReportType}-${sessionYear}.xlsx`}
+                    label="Excel"
+                  />
+                  <Button
+                    size="sm"
+                    className="gap-2 shadow-sm"
+                    onClick={downloadMpsReportPdf}
+                    disabled={mpsReportLoading || mpsReportRows.length === 0}
+                  >
+                    <Download className="h-4 w-4" />
+                    Download PDF
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    title="Refresh report"
+                    onClick={() => loadMpsReport(mpsLoadedReportType)}
+                    disabled={mpsReportLoading}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="bg-muted/[0.15] pb-5 pt-5">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/15 via-background to-background p-5 shadow-sm">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Qualified Students
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold">{mpsReportStats.total}</div>
+                  <div className="text-xs text-muted-foreground">80% and above</div>
+                </div>
+                <div className="rounded-2xl border border-info/15 bg-gradient-to-br from-info/15 via-background to-background p-5 shadow-sm">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Average Percentage
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold">{mpsReportStats.average}%</div>
+                  <div className="text-xs text-muted-foreground">Current report</div>
+                </div>
+                <div className="rounded-2xl border border-success/15 bg-gradient-to-br from-success/15 via-background to-background p-5 shadow-sm">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Highest Percentage
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold">{mpsReportStats.highest}%</div>
+                  <div className="text-xs text-muted-foreground">Session {sessionYear}</div>
+                </div>
+              </div>
+
+            </CardContent>
+            <CardContent className="overflow-x-auto border-t p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Admission No.</TableHead>
+                    <TableHead>Student Name</TableHead>
+                    <TableHead>Percentage</TableHead>
+                    {mpsLoadedReportType === "website" && (
+                      <>
+                        <TableHead>Score</TableHead>
+                        <TableHead>Total Marks</TableHead>
+                        <TableHead>Passed</TableHead>
+                      </>
+                    )}
+                    {mpsLoadedReportType !== "website" && (
+                      <>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Address</TableHead>
+                      </>
+                    )}
+                    {mpsLoadedReportType === "internal" && (
+                      <>
+                        <TableHead>Shift 1</TableHead>
+                        <TableHead>Shift 2</TableHead>
+                        <TableHead>Marks</TableHead>
+                        <TableHead>Status</TableHead>
+                      </>
+                    )}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mpsReportLoading && (
+                    <TableRow>
+                      <TableCell colSpan={12} className="py-10 text-center text-muted-foreground">
+                        <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!mpsReportLoading && mpsReportRows.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={12} className="py-10 text-center text-muted-foreground">
+                        No students with 80% or above for session {sessionYear}.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!mpsReportLoading && mpsReportRows.map((row) => (
+                    <TableRow key={`${row.admission_no}-${row.student_name}`}>
+                      <TableCell className="font-mono text-xs">{row.admission_no}</TableCell>
+                      <TableCell className="font-medium">{row.student_name}</TableCell>
+                      <TableCell>{row.percentage ?? "-"}%</TableCell>
+                      {mpsLoadedReportType === "website" && (
+                        <>
+                          <TableCell>{row.score ?? "-"}</TableCell>
+                          <TableCell>{row.total_marks ?? "-"}</TableCell>
+                          <TableCell>
+                            <Badge variant={row.is_passed ? "default" : "secondary"}>
+                              {row.is_passed ? "Passed" : "Not Passed"}
+                            </Badge>
+                          </TableCell>
+                        </>
+                      )}
+                      {mpsLoadedReportType !== "website" && (
+                        <>
+                          <TableCell>{row.contact_details?.phone || "-"}</TableCell>
+                          <TableCell>{row.contact_details?.email || "-"}</TableCell>
+                          <TableCell className="max-w-xs whitespace-normal">
+                            {row.contact_details?.address || "-"}
+                          </TableCell>
+                        </>
+                      )}
+                      {mpsLoadedReportType === "internal" && (
+                        <>
+                          <TableCell>{row.marks?.shift1_total ?? "-"}</TableCell>
+                          <TableCell>{row.marks?.shift2_total ?? "-"}</TableCell>
+                          <TableCell>
+                            {row.marks?.obtained_marks ?? "-"} / {row.marks?.maximum_marks ?? "-"}
+                          </TableCell>
+                          <TableCell>{row.qualification_status || "-"}</TableCell>
+                        </>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>

@@ -5,7 +5,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -16,7 +15,6 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogFooter,
-  DialogDescription,
 } from "../../components/ui/dialog";
 import { Label } from "../../components/ui/label";
 import { Input } from "../../components/ui/input";
@@ -36,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui/table";
-import { Plus, Plane, FileUp } from "lucide-react";
+import { Plus, Plane, FileUp, LogIn, LogOut, Clock } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -122,6 +120,7 @@ const statusColor = {
 export default function TeacherLeave() {
   const [items, setItems] = useState(seed);
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState("attendance"); // tracks active tab
   const [form, setForm] = useState({
     type: "Casual Leave",
     from: "",
@@ -157,100 +156,100 @@ export default function TeacherLeave() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Teacher Portal · HR"
         title="Attendance & Leave"
-        description="My own attendance record, leave balance and approval status from the Principal / HOD."
         actions={
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="gradient-primary border-0">
-                <Plus className="h-4 w-4" />
-                Apply Leave
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>New leave application</DialogTitle>
-                <DialogDescription>
-                  Goes to Principal for approval.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Leave Type</Label>
-                  <Select
-                    value={form.type}
-                    onValueChange={(v) => setForm((f) => ({ ...f, type: v }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[
-                        "Casual Leave",
-                        "Sick Leave",
-                        "Earned Leave",
-                        "Comp-off",
-                      ].map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+          tab === "leave" ? (
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="gradient-primary border-0">
+                  <Plus className="h-4 w-4" />
+                  Apply Leave
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>New leave application</DialogTitle>
+                  {/* <DialogDescription>
+                    Goes to Principal for approval.
+                  </DialogDescription> */}
+                </DialogHeader>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Leave Type</Label>
+                    <Select
+                      value={form.type}
+                      onValueChange={(v) => setForm((f) => ({ ...f, type: v }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[
+                          "Casual Leave",
+                          "Sick Leave",
+                          "Earned Leave",
+                          "Comp-off",
+                        ].map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="md:col-span-1"></div>
+                  <div className="space-y-1.5">
+                    <Label>From</Label>
+                    <Input
+                      type="date"
+                      value={form.from}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, from: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>To</Label>
+                    <Input
+                      type="date"
+                      value={form.to}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, to: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="md:col-span-2 space-y-1.5">
+                    <Label>Reason</Label>
+                    <Textarea
+                      rows={3}
+                      value={form.reason}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, reason: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Button variant="outline" className="w-full justify-start">
+                      <FileUp className="h-4 w-4" />
+                      Attach supporting document (optional)
+                    </Button>
+                  </div>
                 </div>
-                <div className="md:col-span-1"></div>
-                <div className="space-y-1.5">
-                  <Label>From</Label>
-                  <Input
-                    type="date"
-                    value={form.from}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, from: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>To</Label>
-                  <Input
-                    type="date"
-                    value={form.to}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, to: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="md:col-span-2 space-y-1.5">
-                  <Label>Reason</Label>
-                  <Textarea
-                    rows={3}
-                    value={form.reason}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, reason: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Button variant="outline" className="w-full justify-start">
-                    <FileUp className="h-4 w-4" />
-                    Attach supporting document (optional)
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setOpen(false)}>
+                    Cancel
                   </Button>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button className="gradient-primary border-0" onClick={submit}>
-                  Submit
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+                  <Button className="gradient-primary border-0" onClick={submit}>
+                    Submit
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          ) : null
         }
       />
 
-      <Tabs defaultValue="attendance">
+      <Tabs defaultValue="attendance" onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="attendance">My Attendance</TabsTrigger>
           <TabsTrigger value="leave">Leave Management</TabsTrigger>
@@ -296,7 +295,6 @@ export default function TeacherLeave() {
               <CardTitle className="font-display text-base">
                 Leave History
               </CardTitle>
-              <CardDescription>All applications submitted by me</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -352,10 +350,57 @@ export default function TeacherLeave() {
 
 /** Personal duty attendance for the signed-in faculty member. */
 function MyAttendance() {
+  // --- Punch in / out state ---
+  const [punchedIn, setPunchedIn] = useState(false);
+  const [punchInTime, setPunchInTime] = useState(null);
+  const [punchOutTime, setPunchOutTime] = useState(null);
+
+  const handlePunch = () => {
+    const now = new Date().toLocaleTimeString("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    if (!punchedIn) {
+      setPunchedIn(true);
+      setPunchInTime(now);
+      setPunchOutTime(null);
+      toast.success("Punched in at " + now);
+    } else {
+      setPunchedIn(false);
+      setPunchOutTime(now);
+      toast.success("Punched out at " + now);
+    }
+  };
+
   const days = Array.from({ length: 24 }).map((_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const wk = d.getDay();
+
+    // Today's row is driven live by the punch in/out state above,
+    // instead of the placeholder pattern used for past days.
+    if (i === 0) {
+      const status =
+        wk === 0
+          ? "Holiday"
+          : punchOutTime
+            ? "Present"
+            : punchedIn
+              ? "Present"
+              : "Not Marked";
+      return {
+        date: d.toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          weekday: "short",
+        }),
+        status,
+        inTime: punchInTime ?? "—",
+        outTime: punchOutTime ?? "—",
+        periods: status === "Present" ? 5 : 0,
+      };
+    }
+
     const status =
       wk === 0 ? "Holiday" : i % 11 === 0 ? "Leave" : i % 7 === 0 ? "Late" : "Present";
     return {
@@ -381,6 +426,47 @@ function MyAttendance() {
 
   return (
     <div className="space-y-4">
+      {/* Punch in / out card */}
+      <Card className="border-border/60">
+        <CardContent className="p-4 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div
+              className={`h-10 w-10 rounded-md flex items-center justify-center ${
+                punchedIn ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
+              }`}
+            >
+              <Clock className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-sm font-medium">
+                {punchedIn ? "Currently punched in" : "Not punched in"}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {punchInTime ? `In: ${punchInTime}` : "No punch-in yet today"}
+                {punchOutTime ? ` · Out: ${punchOutTime}` : ""}
+              </div>
+            </div>
+          </div>
+          <Button
+            onClick={handlePunch}
+            className={punchedIn ? "" : "gradient-primary border-0"}
+            variant={punchedIn ? "destructive" : "default"}
+          >
+            {punchedIn ? (
+              <>
+                <LogOut className="h-4 w-4" />
+                Punch Out
+              </>
+            ) : (
+              <>
+                <LogIn className="h-4 w-4" />
+                Punch In
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="border-border/60">
           <CardContent className="p-4">
@@ -423,7 +509,7 @@ function MyAttendance() {
       <Card className="border-border/60">
         <CardHeader className="pb-2">
           <CardTitle className="font-display text-base">Daily punch record</CardTitle>
-          <CardDescription>Last 24 days · read-only, maintained by HR</CardDescription>
+          {/* <CardDescription>Last 24 days · read-only, maintained by HR</CardDescription> */}
         </CardHeader>
         <CardContent className="p-0">
           <Table>

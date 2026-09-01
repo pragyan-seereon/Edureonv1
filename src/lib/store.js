@@ -2971,3 +2971,112 @@ export const tempAccessApi = {
     return new Date() > exp;
   },
 };
+
+// ============ Exam Blueprints & Question Templates ============
+export const QUESTION_CATEGORIES = [
+  "MCQ",
+  "Very Short Answer (1)",
+  "Short Answer (2-3)",
+  "Long Answer (5)",
+  "Case Study",
+  "Assertion-Reason",
+  "Fill in the Blanks",
+  "True/False",
+  "Match the Following",
+];
+
+const initBlueprints = [
+  {
+    id: "BP001",
+    name: "Term 2 — Standard 80-mark",
+    className: "X",
+    subject: "Math",
+    examType: "Term 2",
+    duration: 180,
+    rows: [
+      { id: "r1", category: "MCQ", chapter: "All chapters", count: 10, marksEach: 1, diff: "Easy" },
+      { id: "r2", category: "Short Answer (2-3)", chapter: "Trigonometry, Algebra", count: 8, marksEach: 3, diff: "Medium" },
+      { id: "r3", category: "Long Answer (5)", chapter: "Geometry", count: 6, marksEach: 5, diff: "Hard" },
+    ],
+    createdAt: new Date().toISOString(),
+  },
+];
+const blueprintStore = createStore(initBlueprints);
+export const useBlueprints = () => useStore(blueprintStore);
+
+let _bpN = 100;
+export const blueprintsApi = {
+  list: () => blueprintStore.get(),
+  get: (id) => blueprintStore.get().find((x) => x.id === id),
+  add: (b) => {
+    const id = "BP" + String(++_bpN).padStart(3, "0");
+    blueprintStore.set((arr) => [
+      { ...b, id, createdAt: new Date().toISOString() },
+      ...arr,
+    ]);
+    activityApi.log("blueprint", id, "Created");
+    return id;
+  },
+  update: (id, patch) => {
+    blueprintStore.set((arr) =>
+      arr.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    );
+    activityApi.log("blueprint", id, "Updated");
+  },
+  remove: (id) => {
+    blueprintStore.set((arr) => arr.filter((x) => x.id !== id));
+    activityApi.log("blueprint", id, "Deleted");
+  },
+};
+
+export function bpTotalMarks(b) {
+  return b.rows.reduce((a, r) => a + r.count * r.marksEach, 0);
+}
+export function bpTotalQuestions(b) {
+  return b.rows.reduce((a, r) => a + r.count, 0);
+}
+
+const initTemplates = [
+  {
+    id: "QT001",
+    name: "MCQ — single correct",
+    subject: "Math",
+    category: "MCQ",
+    diff: "Easy",
+    marks: 1,
+    body: "____________?\n(a) ____ (b) ____ (c) ____ (d) ____",
+  },
+  {
+    id: "QT002",
+    name: "Short Answer — derive/prove",
+    subject: "Science",
+    category: "Short Answer (2-3)",
+    diff: "Medium",
+    marks: 3,
+    body: "Derive/prove that ____________. Show all steps.",
+  },
+];
+const templateStore = createStore(initTemplates);
+export const useQuestionTemplates = () => useStore(templateStore);
+
+let _qtN = 100;
+export const templatesApi = {
+  list: () => templateStore.get(),
+  get: (id) => templateStore.get().find((x) => x.id === id),
+  add: (t) => {
+    const id = "QT" + String(++_qtN).padStart(3, "0");
+    templateStore.set((arr) => [{ ...t, id }, ...arr]);
+    activityApi.log("template", id, "Created");
+    return id;
+  },
+  update: (id, patch) => {
+    templateStore.set((arr) =>
+      arr.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    );
+    activityApi.log("template", id, "Updated");
+  },
+  remove: (id) => {
+    templateStore.set((arr) => arr.filter((x) => x.id !== id));
+    activityApi.log("template", id, "Deleted");
+  },
+};

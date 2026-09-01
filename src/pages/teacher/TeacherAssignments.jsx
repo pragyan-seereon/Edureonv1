@@ -74,9 +74,13 @@ import {
   useLessonPlans,
 } from "../../lib/store";
 import {
+  // eslint-disable-next-line no-unused-vars
   getSubjects,
+  // eslint-disable-next-line no-unused-vars
   getSections,
+  // eslint-disable-next-line no-unused-vars
   getClasses,
+  // eslint-disable-next-line no-unused-vars
   getStudentsBySection,
   saveDraftAssignment,
   publishAssignment,
@@ -87,6 +91,51 @@ import {
 import useSessionStore from "../../store/sessionStore";
 import { useTeacherCtx } from "../../lib/teacher-ctx";
 import { openPrintable, esc } from "../../lib/print";
+
+// ---------------------------------------------------------------------
+// DEMO DATA — stand-ins for getSubjects() / getClasses() / getSections()
+// until the real endpoints are wired up. Same shape the API is expected
+// to return (subject_uuid/subject_name, class_uuid/class_name,
+// section_uuid/section_name + class_uuid to link a section to its class).
+// Swap the useState initial values below back to [] once the API is live.
+// ---------------------------------------------------------------------
+const DEMO_SUBJECTS = [
+  { subject_uuid: "sub-math", subject_name: "Math" },
+  { subject_uuid: "sub-science", subject_name: "Science" },
+  { subject_uuid: "sub-english", subject_name: "English" },
+  { subject_uuid: "sub-social", subject_name: "Social Studies" },
+  { subject_uuid: "sub-hindi", subject_name: "Hindi" },
+];
+
+const DEMO_CLASSES = [
+  { class_uuid: "cls-9", class_name: "IX" },
+  { class_uuid: "cls-10", class_name: "X" },
+  { class_uuid: "cls-11", class_name: "XI" },
+  { class_uuid: "cls-12", class_name: "XII" },
+];
+
+const DEMO_SECTIONS = [
+  { section_uuid: "sec-9-a", section_name: "A", class_uuid: "cls-9" },
+  { section_uuid: "sec-9-b", section_name: "B", class_uuid: "cls-9" },
+  { section_uuid: "sec-10-a", section_name: "A", class_uuid: "cls-10" },
+  { section_uuid: "sec-10-b", section_name: "B", class_uuid: "cls-10" },
+  { section_uuid: "sec-11-a", section_name: "A", class_uuid: "cls-11" },
+  { section_uuid: "sec-11-b", section_name: "B", class_uuid: "cls-11" },
+  { section_uuid: "sec-12-a", section_name: "A", class_uuid: "cls-12" },
+];
+
+const DEMO_STUDENTS_BY_SECTION = {
+  "sec-10-b": [
+    { student_uuid: "stu-1", full_name: "Aarav Sharma" },
+    { student_uuid: "stu-2", full_name: "Diya Patel" },
+    { student_uuid: "stu-3", full_name: "Kabir Singh" },
+    { student_uuid: "stu-4", full_name: "Ishita Rao" },
+  ],
+  "sec-10-a": [
+    { student_uuid: "stu-5", full_name: "Vivaan Gupta" },
+    { student_uuid: "stu-6", full_name: "Ananya Iyer" },
+  ],
+};
 
 const ASSIGNMENT_TYPES = ["Homework", "Project", "Group Assignment", "Classwork"];
 const ASSIGN_TO_OPTIONS = ["Entire Class", "Selected Students", "Custom Group"];
@@ -158,39 +207,46 @@ export default function TeacherAssignmentsPage() {
   };
   const [formA, setFormA] = useState(emptyA);
   const [formErrors, setFormErrors] = useState({});
-  const [subjectsList, setSubjectsList] = useState([]);
-  const [sectionsList, setSectionsList] = useState([]);
-  const [classesList, setClassesList] = useState([]);
+  // DEMO DATA: seeded directly for now instead of loading from the API.
+  // Once getSubjects()/getSections()/getClasses() are live, switch these
+  // back to useState([]) and restore the loader effect below.
+  // eslint-disable-next-line no-unused-vars
+  const [subjectsList, setSubjectsList] = useState(DEMO_SUBJECTS);
+  // eslint-disable-next-line no-unused-vars
+  const [sectionsList, setSectionsList] = useState(DEMO_SECTIONS);
+  // eslint-disable-next-line no-unused-vars
+  const [classesList, setClassesList] = useState(DEMO_CLASSES);
   const [filteredSections, setFilteredSections] = useState([]);
   const [students, setStudents] = useState([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
-  // Load subject / class / section reference data the first time the
-  // dialog is opened (same pattern the admin page uses).
-  useEffect(() => {
-    if (!openA) return;
-    if (subjectsList.length && sectionsList.length && classesList.length) return;
-
-    const load = async () => {
-      try {
-        const [subjectRes, sectionRes, classRes] = await Promise.all([
-          getSubjects(),
-          getSections(),
-          getClasses(),
-        ]);
-        setSubjectsList(subjectRes);
-        setSectionsList(sectionRes);
-        setClassesList(classRes || []);
-      } catch (err) {
-        console.log(err);
-        toast.error("Failed to load classes");
-      }
-    };
-
-    load();
-  }, [openA]);
+  // --- Real API loader (disabled while using demo data above) ---
+  // Uncomment this once getSubjects/getSections/getClasses are ready, and
+  // switch the useState calls above back to empty arrays.
+  // useEffect(() => {
+  //   if (!openA && !openM) return;
+  //   if (subjectsList.length && sectionsList.length && classesList.length) return;
+  //
+  //   const load = async () => {
+  //     try {
+  //       const [subjectRes, sectionRes, classRes] = await Promise.all([
+  //         getSubjects(),
+  //         getSections(),
+  //         getClasses(),
+  //       ]);
+  //       setSubjectsList(subjectRes);
+  //       setSectionsList(sectionRes);
+  //       setClassesList(classRes || []);
+  //     } catch (err) {
+  //       console.log(err);
+  //       toast.error("Failed to load classes");
+  //     }
+  //   };
+  //
+  //   load();
+  // }, [openA, openM]);
 
   // Filter sections whenever the chosen class changes, auto-pick the
   // first section for a fresh form.
@@ -214,23 +270,32 @@ export default function TeacherAssignmentsPage() {
       return;
     }
 
-    const sessionYear = useSessionStore.getState().sessionYear; // key name to confirm
+    // DEMO DATA: pulled from DEMO_STUDENTS_BY_SECTION for now instead of
+    // calling getStudentsBySection(). Restore the real call below once
+    // the API is live.
+    setStudentsLoading(true);
+    const t = setTimeout(() => {
+      setStudents(DEMO_STUDENTS_BY_SECTION[formA.section] || []);
+      setStudentsLoading(false);
+    }, 200);
+    return () => clearTimeout(t);
 
-    const load = async () => {
-      setStudentsLoading(true);
-      try {
-        const res = await getStudentsBySection(formA.classNum, formA.section, sessionYear);
-        setStudents(res || []);
-      } catch (err) {
-        console.log(err);
-        toast.error("Failed to load students");
-        setStudents([]);
-      } finally {
-        setStudentsLoading(false);
-      }
-    };
-
-    load();
+    // --- Real API loader (disabled while using demo data above) ---
+    // const sessionYear = useSessionStore.getState().sessionYear; // key name to confirm
+    // const load = async () => {
+    //   setStudentsLoading(true);
+    //   try {
+    //     const res = await getStudentsBySection(formA.classNum, formA.section, sessionYear);
+    //     setStudents(res || []);
+    //   } catch (err) {
+    //     console.log(err);
+    //     toast.error("Failed to load students");
+    //     setStudents([]);
+    //   } finally {
+    //     setStudentsLoading(false);
+    //   }
+    // };
+    // load();
   }, [formA.classNum, formA.section, formA.assignTo]);
 
   const toggleStudent = (uuid) =>
@@ -336,28 +401,64 @@ export default function TeacherAssignmentsPage() {
   };
 
   // ---------------------------------------------------------------------
-  // Study materials (unchanged)
+  // Study materials
   // ---------------------------------------------------------------------
   const emptyM = {
     title: "",
     type: "PDF",
     url: "",
-    subject: subjects[0] ?? "Math",
-    klass: classes[0] ?? "X-B",
+    subject: "", // subject_uuid — resolved against subjectsList on submit
+    classNum: "", // class_uuid
+    section: "", // section_uuid
     description: "",
   };
   const [formM, setFormM] = useState(emptyM);
 
+  // Sections available for whichever class is currently picked in the
+  // "Share study material" form. Mirrors the assignment form's
+  // filteredSections, but kept independent so the two dialogs don't
+  // stomp on each other's selection.
+  const filteredSectionsM = useMemo(
+    () => sectionsList.filter((s) => s.class_uuid === formM.classNum),
+    [formM.classNum, sectionsList],
+  );
+
+  // Whenever the class changes in the material form, drop any
+  // section pick that no longer belongs to it.
+  useEffect(() => {
+    setFormM((prev) => {
+      if (!prev.section) return prev;
+      const stillValid = filteredSectionsM.some(
+        (s) => s.section_uuid === prev.section,
+      );
+      return stillValid ? prev : { ...prev, section: "" };
+    });
+  }, [filteredSectionsM]);
+
   const uploadMaterial = () => {
     if (!formM.title.trim()) return toast.error("Title required");
+    if (!formM.subject) return toast.error("Select a subject");
+    if (!formM.classNum) return toast.error("Select a class");
+    if (!formM.section) return toast.error("Select a section");
+
+    const subjectName =
+      subjectsList.find((s) => s.subject_uuid === formM.subject)?.subject_name ??
+      "";
+    const className =
+      classesList.find((c) => c.class_uuid === formM.classNum)?.class_name ?? "";
+    const sectionName =
+      filteredSectionsM.find((s) => s.section_uuid === formM.section)
+        ?.section_name ?? "";
+    const klass = sectionName ? `${className}-${sectionName}` : className;
+
     materialsApi.add({
       title: formM.title,
       type: formM.type,
       url:
         formM.url ||
         `/files/${formM.title.toLowerCase().replace(/\s+/g, "-")}.pdf`,
-      subject: formM.subject,
-      klasses: [formM.klass],
+      subject: subjectName,
+      klasses: [klass],
       teacher: teacherName,
       description: formM.description,
     });
@@ -425,9 +526,9 @@ export default function TeacherAssignmentsPage() {
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create assignment</DialogTitle>
-          <DialogDescription>
+          {/* <DialogDescription>
             Publishing attaches it to every student of the selected class.
-          </DialogDescription>
+          </DialogDescription> */}
         </DialogHeader>
 
         <div className="space-y-4">
@@ -817,7 +918,13 @@ export default function TeacherAssignmentsPage() {
   // Shared dialog for sharing study material — rendered inside the
   // Study Materials tab so the trigger button lives with that tab's content.
   const UploadMaterialDialog = (
-    <Dialog open={openM} onOpenChange={setOpenM}>
+    <Dialog
+      open={openM}
+      onOpenChange={(v) => {
+        setOpenM(v);
+        if (!v) setFormM(emptyM);
+      }}
+    >
       <DialogTrigger asChild>
         <Button size="sm" className="gradient-primary border-0">
           <FileBox className="h-4 w-4" />
@@ -827,9 +934,9 @@ export default function TeacherAssignmentsPage() {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Share study material</DialogTitle>
-          <DialogDescription>
+          {/* <DialogDescription>
             Visible and downloadable for students of the selected class.
-          </DialogDescription>
+          </DialogDescription> */}
         </DialogHeader>
         <div className="grid gap-3">
           <div className="space-y-1">
@@ -839,38 +946,64 @@ export default function TeacherAssignmentsPage() {
               onChange={(e) => setFormM({ ...formM, title: e.target.value })}
             />
           </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Subject</Label>
+            <Select
+              value={formM.subject}
+              onValueChange={(v) => setFormM({ ...formM, subject: v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Subject" />
+              </SelectTrigger>
+              <SelectContent>
+                {subjectsList.map((item) => (
+                  <SelectItem key={item.subject_uuid} value={item.subject_uuid}>
+                    {item.subject_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Class + Section — Section only fills in once a Class is chosen */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Subject</Label>
+              <Label className="text-xs">Class</Label>
               <Select
-                value={formM.subject}
-                onValueChange={(v) => setFormM({ ...formM, subject: v })}
+                value={formM.classNum}
+                onValueChange={(v) =>
+                  setFormM({ ...formM, classNum: v, section: "" })
+                }
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Class" />
                 </SelectTrigger>
                 <SelectContent>
-                  {subjects.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
+                  {classesList.map((item) => (
+                    <SelectItem key={item.class_uuid} value={item.class_uuid}>
+                      {item.class_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Class</Label>
+              <Label className="text-xs">Section</Label>
               <Select
-                value={formM.klass}
-                onValueChange={(v) => setFormM({ ...formM, klass: v })}
+                value={formM.section}
+                onValueChange={(v) => setFormM({ ...formM, section: v })}
+                disabled={!formM.classNum}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue
+                    placeholder={
+                      formM.classNum ? "Section" : "Select class first"
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {classes.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  {filteredSectionsM.map((item) => (
+                    <SelectItem key={item.section_uuid} value={item.section_uuid}>
+                      {item.section_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1416,10 +1549,6 @@ function LessonPlansTab({ teacherName, classes, subjects }) {
             <DialogContent className="max-w-xl">
               <DialogHeader>
                 <DialogTitle>Create lesson plan</DialogTitle>
-                <DialogDescription>
-                  Attach reference PDFs and URLs; the plan can be downloaded
-                  as a PDF.
-                </DialogDescription>
               </DialogHeader>
               <div className="grid gap-3 max-h-[65vh] overflow-y-auto pr-1">
                 <div className="space-y-1">

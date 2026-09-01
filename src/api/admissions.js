@@ -760,6 +760,41 @@ export const importAdmissions = (file) => {
 };
 
 // ============================================================
+// MPSAT Imports, Admission Creation and Reports
+// ============================================================
+
+const uploadMpsExcel = (url, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return api.post(url, formData, {
+    headers: {
+      ...getHeaders(),
+      "Content-Type": "multipart/form-data",
+    },
+  });
+};
+
+export const importMpsRegistrations = (file) =>
+  uploadMpsExcel("/registrations/import-excel", file);
+
+export const importMpsetResults = (file) =>
+  uploadMpsExcel("/mpset-results/import-excel", file);
+
+export const createQualifiedMpsAdmissions = () =>
+  api.post("/mpset-results/create-qualified-admissions", null, {
+    headers: getHeaders(),
+  });
+
+export const getMpsetReport = (reportType) =>
+  api.get(`/mpset-reports/${reportType}`, {
+    headers: getHeaders(),
+    params: {
+      session: getSessionYear(),
+    },
+  });
+
+// ============================================================
 // Default Export
 // ============================================================
 
@@ -792,4 +827,8 @@ export default {
   rejectAdmission,
   reinstateAdmission,
   importAdmissions,
+  importMpsRegistrations,
+  importMpsetResults,
+  createQualifiedMpsAdmissions,
+  getMpsetReport,
 };

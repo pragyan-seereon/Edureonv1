@@ -7647,12 +7647,24 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
                   <TableHead className="text-right">Late Fee</TableHead>
                   <TableHead className="text-right">Discount</TableHead>
                   <TableHead className="text-right">Transactions</TableHead>
-                  <TableHead className="w-24"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {grouped.slice(0, 400).map((g) => (
-                  <TableRow key={g.student_uuid} className="cursor-pointer hover:bg-muted/40" onClick={() => setOpenStudentId(g.student_uuid)}>
+                  <TableRow
+                    key={g.student_uuid}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${g.name} financial history`}
+                    className="cursor-pointer hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                    onClick={() => setOpenStudentId(g.student_uuid)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setOpenStudentId(g.student_uuid);
+                      }
+                    }}
+                  >
                     <TableCell className="text-sm font-medium">{g.name}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{g.class_name}{g.section ? "-" + g.section : ""}</TableCell>
                     <TableCell className="text-right text-success font-semibold">{inr(g.paid)}</TableCell>
@@ -7660,16 +7672,11 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
                     <TableCell className="text-right text-xs">{inr(g.late)}</TableCell>
                     <TableCell className="text-right text-xs">{inr(g.discount)}</TableCell>
                     <TableCell className="text-right text-xs">{g.entries.length}</TableCell>
-                    <TableCell>
-                      <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setOpenStudentId(g.student_uuid); }}>
-                        <Eye className="h-3.5 w-3.5" />View
-                      </Button>
-                    </TableCell>
                   </TableRow>
                 ))}
                 {grouped.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
+                    <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
                       No transactions found.
                     </TableCell>
                   </TableRow>
@@ -7796,6 +7803,7 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
 
 function StudentLedgerDrawer({ open, onOpenChange, studentUuid, students, structures, paidMonths, ledger }) {
   const [studentTransactions, setStudentTransactions] = useState([]);
+  const [studentDues, setStudentDues] = useState({ lines: [], totalDue: 0, totalLate: 0 });
   const [loading, setLoading] = useState(false);
   const [paymentSummary, setPaymentSummary] = useState(null);
 
@@ -7805,9 +7813,24 @@ function StudentLedgerDrawer({ open, onOpenChange, studentUuid, students, struct
   const fetchStudentPayments = async () => {
     if (!studentUuid) return;
     setLoading(true);
+    setStudentDues({ lines: [], totalDue: 0, totalLate: 0 });
     try {
-      const response = await getPayments({ student_uuid: studentUuid, limit: 100 });
+      const [paymentsResult, duesResult] = await Promise.allSettled([
+        getPayments({ student_uuid: studentUuid, limit: 100 }),
+        getStudentFeeDues(studentUuid),
+      ]);
+
+      if (paymentsResult.status === "rejected") throw paymentsResult.reason;
+
+      const response = paymentsResult.value;
       const data = response?.data?.data ?? response?.data ?? [];
+
+      if (duesResult.status === "fulfilled") {
+        setStudentDues(duesFromApi(duesResult.value));
+      } else {
+        console.error(duesResult.reason);
+        toast.error(getErrorMessage(duesResult.reason, "Failed to load outstanding dues"));
+      }
       
       // Transform API response to ledger format
       const transformed = data.map((txn) => ({
@@ -8007,16 +8030,9 @@ function StudentLedgerDrawer({ open, onOpenChange, studentUuid, students, struct
     });
   }, [allMonthsFromData, paidMonthsMap]);
 
-  // Calculate outstanding from actual data
-  const outstanding = useMemo(() => {
-    let total = 0;
-    monthWiseLedger.forEach(month => {
-      month.components.forEach(comp => {
-        total += comp.balance_amount || 0;
-      });
-    });
-    return total;
-  }, [monthWiseLedger]);
+  // Payment history contains completed transactions and therefore often has
+  // zero balances. Use the dues API for the student's current outstanding.
+  const outstanding = studentDues.totalDue;
 
   const getStatusColor = (status) => {
     if (status === "PAID") return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -8937,7 +8953,13 @@ const pendingLines = dues.lines.filter((l) => !l.paid && !l.advanceReceived);
   ];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    // Razorpay mounts its checkout next to this dialog under document.body.
+    // A modal Radix dialog disables pointer events outside its own portal,
+    // which makes Razorpay payment-method rows (notably Netbanking)
+    // visible but unclickable. The overlay still prevents interaction with
+    // the page, while non-modal mode lets the checkout receive pointer/focus
+    // events normally.
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       <DialogContent className="max-w-xl p-0 overflow-hidden">
         {/* Header */}
         <div className="flex items-start gap-3 px-6 pt-6 pb-4">

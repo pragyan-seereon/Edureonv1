@@ -40,8 +40,17 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useStudents } from "../../lib/store";
+import {
+  PaginationBar,
+  RowsPerPageSelect,
+} from "../../components/pagination-controls";
 
-const SECTIONS = ["X-B", "X-A", "IX-A", "VIII-B"];
+const CLASS_SECTIONS = {
+  "X": ["X-A", "X-B"],
+  "IX": ["IX-A"],
+  "VIII": ["VIII-B"],
+};
+const CLASSES = Object.keys(CLASS_SECTIONS);
 const HISTORY_DAYS = 14; // how many past days show up in the sidebar list
 
 const fmt = (d) =>
@@ -89,12 +98,17 @@ function saveRecord(section, d, marks) {
 
 export default function TeacherAttendance() {
   const all = useStudents();
-  const [section, setSection] = useState("X-B");
+  const [cls, setCls] = useState(CLASSES[0]);
+  const [section, setSection] = useState(CLASS_SECTIONS[CLASSES[0]][0]);
   const [date, setDate] = useState(new Date());
   const [marks, setMarks] = useState({});
   const [existingRecord, setExistingRecord] = useState(null);
   const [confirm, setConfirm] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0); // bumped after a save so history re-reads storage
+
+  // Roster pagination
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const roster = useMemo(() => all.slice(0, 24), [all]);
   const today = new Date();
@@ -103,6 +117,11 @@ export default function TeacherAttendance() {
   const isPast = dateKey(date) < dateKey(today);
   // Only today's attendance can be taken or updated; past dates are view-only.
   const readOnly = isPast || isFuture;
+
+  const handleClassChange = (newClass) => {
+    setCls(newClass);
+    setSection(CLASS_SECTIONS[newClass][0]);
+  };
 
   // Load whatever record exists for this section + date whenever either changes
   useEffect(() => {
@@ -115,6 +134,11 @@ export default function TeacherAttendance() {
       setExistingRecord(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section, dateKey(date)]);
+
+  // Reset to page 1 whenever the underlying roster changes (section/date switch)
+  useEffect(() => {
+    setPage(1);
   }, [section, dateKey(date)]);
 
   // Date-wise history for the right-hand panel: today + past N days for this section
@@ -132,6 +156,14 @@ export default function TeacherAttendance() {
   const present = roster.filter((s) => (marks[s.id] ?? "P") === "P").length;
   const absent = roster.filter((s) => marks[s.id] === "A").length;
   const leave = roster.filter((s) => marks[s.id] === "L").length;
+
+  const totalPages = Math.max(1, Math.ceil(roster.length / pageSize));
+  const pagedRoster = useMemo(
+    () => roster.slice((page - 1) * pageSize, page * pageSize),
+    [roster, page, pageSize],
+  );
+  const rangeStart = roster.length ? (page - 1) * pageSize + 1 : 0;
+  const rangeEnd = Math.min(page * pageSize, roster.length);
 
   const setMark = (id, m) => setMarks((p) => ({ ...p, [id]: m }));
   const bulk = (m) =>
@@ -170,12 +202,25 @@ export default function TeacherAttendance() {
         <div>
           <Card className="border-border/60 mb-5">
             <CardContent className="p-4 flex items-center gap-3 flex-wrap">
-              <Select value={section} onValueChange={setSection}>
-                <SelectTrigger className="h-10 w-40">
+              <Select value={cls} onValueChange={handleClassChange}>
+                <SelectTrigger className="h-10 w-28">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SECTIONS.map((s) => (
+                  {CLASSES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      Class {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={section} onValueChange={setSection}>
+                <SelectTrigger className="h-10 w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLASS_SECTIONS[cls].map((s) => (
                     <SelectItem key={s} value={s}>
                       Section {s}
                     </SelectItem>
@@ -291,15 +336,26 @@ export default function TeacherAttendance() {
           </div>
 
           <Card className="border-border/60">
-            <CardHeader className="pb-2">
-              <CardTitle className="font-display text-base">
-                Roster · Section {section}
-              </CardTitle>
-              <CardDescription>
-                {isPast && !existingRecord
-                  ? "No attendance was recorded for this date"
-                  : `${roster.length} students${isPast ? " · read only" : ""}`}
-              </CardDescription>
+            <CardHeader className="pb-2 flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle className="font-display text-base">
+                  Roster · Section {section}
+                </CardTitle>
+                <CardDescription>
+                  {isPast && !existingRecord
+                    ? "No attendance was recorded for this date"
+                    : `${roster.length} students${isPast ? " · read only" : ""}`}
+                </CardDescription>
+              </div>
+              {!(isPast && !existingRecord) && roster.length > 0 && (
+                <RowsPerPageSelect
+                  pageSize={pageSize}
+                  onPageSizeChange={(value) => {
+                    setPageSize(value);
+                    setPage(1);
+                  }}
+                />
+              )}
             </CardHeader>
             <CardContent className="space-y-2">
               {isPast && !existingRecord ? (
@@ -309,54 +365,67 @@ export default function TeacherAttendance() {
                   after the fact — only today's attendance can be taken.
                 </div>
               ) : (
-                roster.map((s) => {
-                  const m = marks[s.id] ?? "P";
-                  return (
-                    <div
-                      key={s.id}
-                      className="flex items-center gap-3 p-2.5 border rounded-md hover:bg-muted/30"
-                    >
-                      <Avatar className="h-9 w-9">
-                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                          {s.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">
-                          {s.name}
+                <>
+                  {pagedRoster.map((s) => {
+                    const m = marks[s.id] ?? "P";
+                    return (
+                      <div
+                        key={s.id}
+                        className="flex items-center gap-3 p-2.5 border rounded-md hover:bg-muted/30"
+                      >
+                        <Avatar className="h-9 w-9">
+                          <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                            {s.name
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">
+                            {s.name}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            Roll {s.rollNo} · {s.admissionNo}
+                          </div>
                         </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          Roll {s.rollNo} · {s.admissionNo}
+                        <div className="flex items-center gap-1">
+                          {["P", "A", "L"].map((opt) => (
+                            <button
+                              key={opt}
+                              disabled={readOnly}
+                              onClick={() => !readOnly && setMark(s.id, opt)}
+                              className={`h-11 w-11 rounded-md text-sm font-bold transition border-2 ${
+                                readOnly ? "cursor-not-allowed opacity-70" : ""
+                              } ${
+                                m === opt
+                                  ? opt === "P"
+                                    ? "bg-success text-success-foreground border-success"
+                                    : opt === "A"
+                                      ? "bg-destructive text-destructive-foreground border-destructive"
+                                      : "bg-warning text-warning-foreground border-warning"
+                                  : "border-border text-muted-foreground hover:bg-muted"
+                              }`}
+                            >
+                              {opt}
+                            </button>
+                          ))}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        {["P", "A", "L"].map((opt) => (
-                          <button
-                            key={opt}
-                            disabled={readOnly}
-                            onClick={() => !readOnly && setMark(s.id, opt)}
-                            className={`h-11 w-11 rounded-md text-sm font-bold transition border-2 ${
-                              readOnly ? "cursor-not-allowed opacity-70" : ""
-                            } ${
-                              m === opt
-                                ? opt === "P"
-                                  ? "bg-success text-success-foreground border-success"
-                                  : opt === "A"
-                                    ? "bg-destructive text-destructive-foreground border-destructive"
-                                    : "bg-warning text-warning-foreground border-warning"
-                                : "border-border text-muted-foreground hover:bg-muted"
-                            }`}
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })
+                    );
+                  })}
+
+                  <PaginationBar
+                    rangeStart={rangeStart}
+                    rangeEnd={rangeEnd}
+                    totalItems={roster.length}
+                    page={page}
+                    totalPages={totalPages}
+                    onPageChange={setPage}
+                    showPageSize={false}
+                    itemLabel="students"
+                  />
+                </>
               )}
             </CardContent>
           </Card>

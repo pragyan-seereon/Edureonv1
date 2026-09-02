@@ -1,7 +1,7 @@
 import { useNavigate, Link } from "react-router-dom";
 import { useState, useRef } from "react";
 import { login, verifyOtp as verifyOtpRequest } from "../../api/auth.js"; // adjust path to match your project structure
-import { portalHomeForRole } from "../../lib/portal-nav";
+import { portalHomeForRole, portalRoleForUser } from "../../lib/portal-nav";
 import { requiresInstituteSelection } from "../../lib/institute-selection";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -127,11 +127,12 @@ export default function Login() {
 
 // Do not request authorization context here. Institute-scoped users receive
 // it only after choosing an institute and receiving the scoped token.
-const primaryRole =
-  data.role_codes?.[0] ||
+const primaryRole = portalRoleForUser(
+  data.role_codes,
   data.user?.legacy_role?.role_code ||
   data.user?.role_code ||
-  "ADMIN";
+  "ADMIN",
+);
 
 // Save user
 const authUser = {

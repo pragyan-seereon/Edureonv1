@@ -15,13 +15,16 @@ import {
   useSidebar,
 } from "./ui/sidebar";
 import { initials } from "../lib/auth";
-import { navForUser, portalLabelForRole } from "../lib/portal-nav";
+import { navForUser, portalLabelForRole, portalRoleForUser } from "../lib/portal-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { getAuthorizationContext } from "../api/auth";
 import useInstituteStore from "../store/instituteStore";
 
 const getInstituteId = (institute) => institute?.institute_uuid ?? institute?.uuid ?? institute?.id;
 const getInstituteName = (institute) => institute?.institute_name ?? institute?.name ?? "Institute";
+const mergeRoleCodes = (...roleLists) => [
+  ...new Set(roleLists.flatMap((roles) => (Array.isArray(roles) ? roles : [])).filter(Boolean)),
+];
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -50,10 +53,11 @@ export function AppSidebar() {
         // Keep future renders and page reloads in sync with the backend's
         // effective permission calculation, including the SUPER_ADMIN '*'.
         const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+        const roleCodes = mergeRoleCodes(storedUser.role_codes, context.role_codes);
         localStorage.setItem("user", JSON.stringify({
           ...storedUser,
-          role_code: context.role_codes?.[0] || storedUser.role_code,
-          role_codes: context.role_codes || storedUser.role_codes,
+          role_code: portalRoleForUser(roleCodes, storedUser.role_code),
+          role_codes: roleCodes,
           permissions: context.permissions || [],
           role_permissions: context.role_permissions || [],
           temporary_permissions: context.temporary_permissions || [],
@@ -68,9 +72,11 @@ export function AppSidebar() {
     return () => { active = false; };
   }, [activeInstituteId]);
 
-const role = authorizationContext?.role_codes?.[0] || user?.role_code;
+const roleCodes = mergeRoleCodes(user?.role_codes, authorizationContext?.role_codes);
+const role = portalRoleForUser(roleCodes, user?.role_code);
 
 const groups = navForUser(role, {
+  roleCodes,
   permissions: authorizationContext?.permissions ?? user?.permissions,
   rolePermissions: authorizationContext?.role_permissions ?? user?.role_permissions,
   temporaryPermissions: authorizationContext?.temporary_permissions ?? user?.temporary_permissions,

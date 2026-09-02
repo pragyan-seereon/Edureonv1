@@ -13,6 +13,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { SidebarTrigger } from "./ui/sidebar";
+import { portalRoleForUser } from "../lib/portal-nav";
 
 const getInstituteId = (institute) => institute?.institute_uuid ?? institute?.uuid ?? institute?.id;
 const getInstituteName = (institute) => institute?.institute_name ?? institute?.name ?? "Institute";
@@ -103,12 +104,13 @@ export function Topbar() {
       try { context = await getAuthorizationContext(); } catch { /* selection response supports older APIs */ }
 
       const selectedId = result.institute_uuid || getInstituteId(institute);
-      const primaryRole = context.role_codes?.[0] || result.role_codes?.[0] || institute.roles?.[0]?.role_code || user.role_code || user.role;
+      const roleCodes = context.role_codes || result.role_codes || institute.roles?.map((role) => role.role_code) || user.role_codes;
+      const primaryRole = portalRoleForUser(roleCodes, user.role_code || user.role);
       const selectedUser = {
         ...user,
         role: primaryRole,
         role_code: primaryRole,
-        role_codes: context.role_codes || result.role_codes || user.role_codes,
+        role_codes: roleCodes || [primaryRole],
         permissions: context.permissions || result.permissions || [],
         role_permissions: context.role_permissions || [],
         temporary_permissions: context.temporary_permissions || [],

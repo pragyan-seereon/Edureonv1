@@ -1186,11 +1186,11 @@ const handleUpdate = async () => {
       </Card>
 
       <Tabs defaultValue="table">
-        <TabsList>
+        {/* <TabsList>
           <TabsTrigger value="table">All Assignments</TabsTrigger>
           <TabsTrigger value="cards">Card View</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
+        </TabsList> */}
 
         <TabsContent value="table" className="mt-4">
           <Card className="border-border/60">

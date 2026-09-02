@@ -42,7 +42,6 @@ export default function TeacherDocuments() {
   return (
     <PageContainer>
       <PageHeader eyebrow="Teacher Portal · Personal" title="My Documents"
-        description="Only your own joining and service documents are visible here. School-wide document management stays with the Admin."
         actions={
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button size="sm" className="gradient-primary border-0"><FileUp className="h-4 w-4" />Upload Document</Button></DialogTrigger>

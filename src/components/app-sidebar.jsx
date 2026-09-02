@@ -15,7 +15,7 @@ import {
   useSidebar,
 } from "./ui/sidebar";
 import { initials } from "../lib/auth";
-import { navForUser, portalLabelForRole } from "../lib/portal-nav";
+import { navForUser, portalLabelForRole, portalRoleForUser } from "../lib/portal-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { getAuthorizationContext } from "../api/auth";
 import useInstituteStore from "../store/instituteStore";
@@ -52,7 +52,7 @@ export function AppSidebar() {
         const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
         localStorage.setItem("user", JSON.stringify({
           ...storedUser,
-          role_code: context.role_codes?.[0] || storedUser.role_code,
+          role_code: portalRoleForUser(context.role_codes, storedUser.role_code),
           role_codes: context.role_codes || storedUser.role_codes,
           permissions: context.permissions || [],
           role_permissions: context.role_permissions || [],
@@ -68,9 +68,13 @@ export function AppSidebar() {
     return () => { active = false; };
   }, [activeInstituteId]);
 
-const role = authorizationContext?.role_codes?.[0] || user?.role_code;
+const role = portalRoleForUser(
+  authorizationContext?.role_codes ?? user?.role_codes,
+  user?.role_code,
+);
 
 const groups = navForUser(role, {
+  roleCodes: authorizationContext?.role_codes ?? user?.role_codes,
   permissions: authorizationContext?.permissions ?? user?.permissions,
   rolePermissions: authorizationContext?.role_permissions ?? user?.role_permissions,
   temporaryPermissions: authorizationContext?.temporary_permissions ?? user?.temporary_permissions,

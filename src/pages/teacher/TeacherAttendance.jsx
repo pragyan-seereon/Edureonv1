@@ -39,6 +39,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   getTeacherClasses,
@@ -98,12 +99,17 @@ function saveRecord(sectionUuid, d, marks) {
 // ------------------------------------------------------------------------
 
 export default function TeacherAttendance() {
+  const [searchParams] = useSearchParams();
   // Raw (class, section, subject) rows assigned to this teacher
   const [teacherClasses, setTeacherClasses] = useState([]);
   const [classesLoading, setClassesLoading] = useState(true);
 
-  const [selectedClassUuid, setSelectedClassUuid] = useState(null);
-  const [selectedSectionUuid, setSelectedSectionUuid] = useState(null);
+  const [selectedClassUuid, setSelectedClassUuid] = useState(
+    () => searchParams.get("classUuid"),
+  );
+  const [selectedSectionUuid, setSelectedSectionUuid] = useState(
+    () => searchParams.get("sectionUuid"),
+  );
 
   const [students, setStudents] = useState([]);
   const [studentsLoading, setStudentsLoading] = useState(false);

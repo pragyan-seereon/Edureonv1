@@ -124,7 +124,9 @@ export default function TeacherClasses() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <Button variant="outline" size="sm" asChild>
-                    <Link to="/teacher/attendance">
+                    <Link
+                      to={`/teacher/attendance?classUuid=${encodeURIComponent(c.class_uuid)}&sectionUuid=${encodeURIComponent(c.section_uuid)}`}
+                    >
                       <CalendarCheck className="h-4 w-4" />
                       Attendance
                     </Link>

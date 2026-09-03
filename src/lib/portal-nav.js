@@ -254,9 +254,9 @@ const studentGroups = [
         url: "/student/assignments",
         icon: ClipboardList,
       },
-      { title: "Results", url: "/student/results", icon: Trophy },
+      { title: "Exams & Results", url: "/student/results", icon: Trophy },
       { title: "Study Materials", url: "/student/materials", icon: FileBox },
-      { title: "Notices", url: "/student/notices", icon: Megaphone },
+      { title: "Notices & Calendar", url: "/student/notices", icon: Megaphone },
     ],
   },
   {

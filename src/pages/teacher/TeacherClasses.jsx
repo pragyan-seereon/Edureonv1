@@ -16,7 +16,7 @@ import {
   Crown,
   Loader2,
 } from "lucide-react";
-import { getTeacherClasses } from "../../api/teacherclass"; // adjust path to wherever getTeacherClasses is exported from
+import { getTeacherClasses } from "../../api/teacherclass"; 
 
 export default function TeacherClasses() {
   const [classes, setClasses] = useState([]);

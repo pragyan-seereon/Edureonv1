@@ -704,6 +704,37 @@ const studentModel = {
     });
     return response.data;
   },
+
+  getPortalContent: async () => {
+    const response = await api.get("/portal/content", {
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  getMyMaterials: async () => {
+    const response = await api.get("/materials", { headers: getHeaders() });
+    return response.data;
+  },
+
+  getMaterialDownloadUrl: async (materialUuid) => {
+    const response = await api.get(`/materials/${materialUuid}/download`, {
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  getMyLessonPlans: async () => {
+    const response = await api.get("/lesson-plans", { headers: getHeaders() });
+    return response.data;
+  },
+
+  getLessonPlanDownloadUrl: async (lessonPlanUuid) => {
+    const response = await api.get(`/lesson-plans/${lessonPlanUuid}/download`, {
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
 };
 
 export default studentModel;

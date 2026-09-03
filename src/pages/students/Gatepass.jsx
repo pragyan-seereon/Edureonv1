@@ -1,165 +1,63 @@
+import { useEffect, useState } from "react";
+import { DoorOpen, Loader2, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
+import studentModel from "../../api/studentModel";
 import { PageContainer, PageHeader } from "../../components/page-shell";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../../components/ui/table";
-import { DoorOpen, ShieldCheck } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 
-// --- Static demo data (swap for real campus/student-ctx data as needed) ---
-
-const student = {
-  id: "stu-101",
-  name: "Aarav Sharma",
-  class: "8",
-  section: "B",
+const formatDateTime = (value, options) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("en-IN", options).format(date);
 };
 
-const klass = `${student.class}-${student.section}`;
-
-const gatePasses = [
-  {
-    id: "GP-2041",
-    studentId: "stu-101",
-    name: "Aarav Sharma",
-    passType: "Student",
-    deptClass: ["8-B"],
-    date: "28 Jul 2026",
-    purpose: "Medical appointment",
-    outTime: "10:15 AM",
-    inTime: "12:30 PM",
-    authority: "Mrs. Kapoor (Class Teacher)",
-    status: "Returned",
-  },
-  {
-    id: "GP-2019",
-    studentId: "stu-101",
-    name: "Aarav Sharma",
-    passType: "Student",
-    deptClass: ["8-B"],
-    date: "12 Jul 2026",
-    purpose: "Family function — early pickup",
-    outTime: "1:00 PM",
-    inTime: "—",
-    authority: "Mr. Rao (Vice Principal)",
-    status: "Out",
-  },
-  {
-    id: "GP-1988",
-    studentId: "stu-101",
-    name: "Aarav Sharma",
-    passType: "Student",
-    deptClass: ["8-B"],
-    date: "02 Jul 2026",
-    purpose: "Sports meet — inter-school",
-    outTime: "8:30 AM",
-    inTime: "4:00 PM",
-    authority: "Mrs. Kapoor (Class Teacher)",
-    status: "Returned",
-  },
-];
+const errorMessage = (error) => error?.response?.data?.detail?.message || error?.response?.data?.detail || error?.response?.data?.message || error?.message || "Unable to load gate-pass history.";
 
 export default function StudentGatePass() {
-  const rows = gatePasses.filter(
-    (pass) =>
-      pass.passType === "Student" &&
-      (pass.studentId === student?.id ||
-        pass.name === student?.name ||
-        pass.deptClass.includes(klass))
-  );
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    studentModel.getMyGatePasses()
+      .then((response) => setData(response?.data || null))
+      .catch((error) => toast.error(errorMessage(error)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const rows = data?.gate_passes || [];
+  const summary = data?.summary || {};
+  const classSection = [data?.class_name || rows[0]?.class_name, data?.section_name || rows[0]?.section_name].filter(Boolean).join(" · ");
 
   return (
     <PageContainer>
-      <PageHeader
-        eyebrow="Student Portal"
-        title="Gate Pass History"
-        description="View-only register of gate passes issued by the admin office."
-      />
+      <PageHeader eyebrow="Student Portal" title="Gate Pass History" description="View-only register of gate passes issued by the admin office." />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        <Metric
-          label="Total Passes"
-          value={rows.length}
-          icon={<DoorOpen className="h-5 w-5" />}
-        />
-        <Metric
-          label="Returned"
-          value={rows.filter((row) => row.status === "Returned").length}
-          icon={<ShieldCheck className="h-5 w-5" />}
-        />
-        <Metric
-          label="Currently Out"
-          value={rows.filter((row) => row.status === "Out").length}
-          icon={<DoorOpen className="h-5 w-5" />}
-        />
+        <Metric label="Total Passes" value={summary.total_passes ?? rows.length} icon={<DoorOpen className="h-5 w-5" />} />
+        <Metric label="Returned" value={summary.returned ?? rows.filter((row) => row.status === "RETURNED").length} icon={<ShieldCheck className="h-5 w-5" />} />
+        <Metric label="Currently Out" value={summary.currently_out ?? rows.filter((row) => row.status === "OUT").length} icon={<DoorOpen className="h-5 w-5" />} />
       </div>
       <Card className="border-border/60">
         <CardHeader className="pb-2">
-          <CardTitle className="font-display text-base">
-            Issued Gate Passes
-          </CardTitle>
-          <CardDescription>
-            {student?.name ?? "Student"} · {klass}
-          </CardDescription>
+          <CardTitle className="font-display text-base">Issued Gate Passes</CardTitle>
+          <CardDescription>{data?.student_name || "Student"}{classSection && ` · ${classSection}`}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Pass No.</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Purpose</TableHead>
-                <TableHead>Out</TableHead>
-                <TableHead>In</TableHead>
-                <TableHead>Authority</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
+            <TableHeader><TableRow><TableHead>Pass No.</TableHead><TableHead>Date</TableHead><TableHead>Purpose</TableHead><TableHead>Out</TableHead><TableHead>In</TableHead><TableHead>Authority</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
             <TableBody>
-              {rows.map((pass) => (
-                <TableRow key={pass.id}>
-                  <TableCell className="font-mono text-xs">{pass.id}</TableCell>
-                  <TableCell className="text-xs">{pass.date ?? "—"}</TableCell>
-                  <TableCell className="text-sm">{pass.purpose}</TableCell>
-                  <TableCell className="text-xs">{pass.outTime}</TableCell>
-                  <TableCell className="text-xs">{pass.inTime}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {pass.authority}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        pass.status === "Returned"
-                          ? "bg-success/10 text-success border-success/20"
-                          : "bg-warning/15 text-warning border-warning/20"
-                      }
-                    >
-                      {pass.status}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {rows.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="text-center text-xs text-muted-foreground py-8"
-                  >
-                    No gate passes issued yet.
-                  </TableCell>
-                </TableRow>
-              )}
+              {loading && <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading gate passes…</TableCell></TableRow>}
+              {!loading && rows.map((pass) => <TableRow key={pass.gate_pass_uuid}>
+                <TableCell className="font-mono text-xs">{pass.gate_pass_number || "—"}</TableCell>
+                <TableCell className="text-xs">{formatDateTime(pass.out_time, { day: "2-digit", month: "short", year: "numeric" })}</TableCell>
+                <TableCell className="text-sm">{pass.purpose || "—"}</TableCell>
+                <TableCell className="text-xs">{formatDateTime(pass.out_time, { hour: "numeric", minute: "2-digit" })}</TableCell>
+                <TableCell className="text-xs">{formatDateTime(pass.in_time, { hour: "numeric", minute: "2-digit" })}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{pass.permission_authority || "—"}</TableCell>
+                <TableCell><Badge variant="outline" className={pass.status === "RETURNED" ? "bg-success/10 text-success border-success/20" : "bg-warning/15 text-warning border-warning/20"}>{pass.status === "RETURNED" ? "Returned" : pass.status === "OUT" ? "Out" : pass.status || "—"}</Badge></TableCell>
+              </TableRow>)}
+              {!loading && rows.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">No gate passes issued yet.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
@@ -169,17 +67,5 @@ export default function StudentGatePass() {
 }
 
 function Metric({ label, value, icon }) {
-  return (
-    <Card className="border-border/60">
-      <CardContent className="p-4 flex items-center gap-3">
-        <div className="h-10 w-10 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-          {icon}
-        </div>
-        <div>
-          <div className="text-xs text-muted-foreground">{label}</div>
-          <div className="font-display text-xl font-semibold">{value}</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return <Card className="border-border/60"><CardContent className="p-4 flex items-center gap-3"><div className="h-10 w-10 rounded-md bg-primary/10 text-primary flex items-center justify-center">{icon}</div><div><div className="text-xs text-muted-foreground">{label}</div><div className="font-display text-xl font-semibold">{value}</div></div></CardContent></Card>;
 }

@@ -697,6 +697,13 @@ const studentModel = {
     });
     return response.data;
   },
+
+  getMyGatePasses: async () => {
+    const response = await api.get("/student-portal/gate-passes", {
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
 };
 
 export default studentModel;

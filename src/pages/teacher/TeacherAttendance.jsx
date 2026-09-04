@@ -30,13 +30,13 @@ import {
   CalendarCheck,
   RefreshCcw,
   Save,
-  ChevronLeft,
-  ChevronRight,
   Check,
   History,
   CalendarClock,
   Lock,
   Loader2,
+  FileText,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -45,11 +45,19 @@ import {
   getTeacherClasses,
   getAttendanceStudents,
   submitAttendance,
+  getAttendanceReport,
 } from "../../api/teacherattendance";
 import {
   PaginationBar,
   RowsPerPageSelect,
 } from "../../components/pagination-controls";
+import { exportAttendancePDF, exportAttendanceExcel } from "../../lib/attendance-export";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu";
 
 const HISTORY_DAYS = 14; // how many past days show up in the sidebar list
 
@@ -120,6 +128,7 @@ export default function TeacherAttendance() {
   const [confirm, setConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0); 
+  const [exportingKey, setExportingKey] = useState(null); 
 
   // Roster pagination
   const [page, setPage] = useState(1);
@@ -234,7 +243,6 @@ export default function TeacherAttendance() {
 
   const roster = students;
   const today = new Date();
-  const isToday = dateKey(date) === dateKey(today);
   const isFuture = dateKey(date) > dateKey(today);
   const isPast = dateKey(date) < dateKey(today);
   // Only today's attendance can be taken or updated; past dates are view-only.
@@ -293,10 +301,28 @@ export default function TeacherAttendance() {
     if (dateKey(d) > dateKey(today)) return; // no future dates
     setDate(d);
   };
-  const shift = (dx) => {
-    const d = new Date(date);
-    d.setDate(d.getDate() + dx);
-    goTo(d);
+  const handleExport = async (type, d) => {
+    if (!selectedClassUuid || !selectedSectionUuid) return;
+    const key = `${dateKey(d)}:${type}`;
+    setExportingKey(key);
+    try {
+      const res = await getAttendanceReport(
+        selectedClassUuid,
+        selectedSectionUuid,
+        dateKey(d),
+      );
+      const report = res?.data;
+      if (!report) throw new Error("No data returned");
+
+      if (type === "pdf") exportAttendancePDF(report);
+      else exportAttendanceExcel(report);
+    } catch (err) {
+      toast.error(`Couldn't generate ${type === "pdf" ? "PDF" : "Excel"}`, {
+        description: err?.response?.data?.message ?? "Please try again.",
+      });
+    } finally {
+      setExportingKey(null);
+    }
   };
 
    const submit = async () => {
@@ -384,26 +410,9 @@ export default function TeacherAttendance() {
               </Select>
 
               <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10"
-                  onClick={() => shift(-1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
                 <div className="px-4 h-10 border rounded-md flex items-center font-medium text-sm min-w-[140px] justify-center">
                   {fmt(date)}
                 </div>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10"
-                  disabled={isToday}
-                  onClick={() => shift(1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
               </div>
 
               {isPast ? (
@@ -422,19 +431,40 @@ export default function TeacherAttendance() {
                 </Badge>
               )}
 
-              {!readOnly && (
-                <div className="ml-auto flex items-center gap-2">
+              <div className="ml-auto flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!selectedClassUuid || !selectedSectionUuid || exportingKey !== null}
+                    >
+                      {exportingKey ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileText className="h-4 w-4" />
+                      )}
+                      Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleExport("pdf", date)}>
+                      <FileText className="h-4 w-4" />
+                      Export as PDF
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleExport("excel", date)}>
+                      <FileSpreadsheet className="h-4 w-4" />
+                      Export as Excel
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {!readOnly && (
+                  <>
                   <Button variant="outline" size="sm" onClick={() => bulk("P")}>
                     Mark all Present
                   </Button>
                   <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setMarks({})}
-                  >
-                    Reset
-                  </Button>
-                                   <Button
                     className="gradient-primary border-0"
                     size="sm"
                     disabled={roster.length === 0 || submitting}
@@ -449,8 +479,9 @@ export default function TeacherAttendance() {
                     )}
                     {existingRecord ? "Update" : "Submit"}
                   </Button>
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </CardContent>
           </Card>
 
@@ -652,17 +683,19 @@ export default function TeacherAttendance() {
                   ? roster.filter((s) => record.marks[s.student_uuid] === "A")
                       .length
                   : null;
-                return (
-                  <button
+                                return (
+                  <div
                     key={dateKey(d)}
-                    onClick={() => goTo(d)}
-                    className={`w-full flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-left transition ${
+                    className={`w-full flex items-center justify-between gap-2 rounded-md border px-3 py-2 transition ${
                       selected
                         ? "border-primary bg-primary/5"
                         : "border-border hover:bg-muted/40"
                     }`}
                   >
-                    <div className="min-w-0">
+                    <button
+                      onClick={() => goTo(d)}
+                      className="flex-1 min-w-0 text-left"
+                    >
                       <div className="text-sm font-medium flex items-center gap-1.5">
                         {fmtShort(d)}
                         {today_ && (
@@ -674,7 +707,8 @@ export default function TeacherAttendance() {
                       <div className="text-[11px] text-muted-foreground">
                         {d.toLocaleDateString("en-IN", { weekday: "short" })}
                       </div>
-                    </div>
+                    </button>
+
                     {record ? (
                       <div className="flex items-center gap-1 text-[11px] shrink-0">
                         <span className="px-1.5 py-0.5 rounded bg-success/10 text-success font-semibold">
@@ -691,7 +725,8 @@ export default function TeacherAttendance() {
                         Not marked
                       </span>
                     )}
-                  </button>
+
+                  </div>
                 );
               })}
             </div>

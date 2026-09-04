@@ -45,3 +45,16 @@ export const submitAttendance = async (sectionUuid, classUuid, attendanceDate, s
 
   return data;
 };
+
+export const getAttendanceReport = async (classUuid, sectionUuid, attendanceDate) => {
+  const { data } = await api.get("/teacher-portal/attendance", {
+    headers: getHeaders(),
+    params: {
+      class_uuid: classUuid,
+      section_uuid: sectionUuid,
+      attendance_date: attendanceDate,
+    },
+  });
+
+  return data;
+};

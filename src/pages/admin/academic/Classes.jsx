@@ -1730,10 +1730,13 @@ function ClassesTab({
   const [edit, setEdit] = useState(null);
   const [form, setForm] = useState({
     name: "",
-    stream: "Science",
-    streamNotes: "",
-    status: "Active",
-    subjectsOffered: [],
+    class_uuid: "",
+    teacher: "",
+    otherTeachers: [],
+    room_uuid: "",
+    room: "",
+    present: 0,
+    total: 40,
   });
 
   const openNew = () => {
@@ -3696,8 +3699,6 @@ function DepartmentsTab() {
 }
 
 // ================= Section Dialog =================
-// ================= Section Dialog =================
-// ================= Section Dialog =================
 function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
   const [classOptions, setClassOptions] = useState([]);
   const [roomOptions, setRoomOptions] = useState([]);
@@ -3705,10 +3706,11 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({
+   const [form, setForm] = useState({
     name: "",
     class_uuid: "",
     teacher: "",
+    otherTeachers: [],
     room_uuid: "",
     room: "",
     present: 0,
@@ -3718,10 +3720,11 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
   useEffect(() => {
     if (!open) return;
 
-    setForm({
+       setForm({
       name: edit?.section_name ?? "",
       class_uuid: edit?.class_uuid ?? "",
       teacher: edit?.class_teacher_employee_uuid ?? "",
+      otherTeachers: edit?.other_teacher_employee_uuids ?? [],
       room_uuid: edit?.room_uuid ?? "",
       room: edit?.room ?? "",
       present: edit?.current_students ?? 0,
@@ -3767,8 +3770,8 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
   const clearError = (field) =>
     setErrors((p) => (p[field] ? { ...p, [field]: undefined } : p));
 
-  const handleClassChange = async (classUUID) => {
-    setForm((prev) => ({ ...prev, class_uuid: classUUID, teacher: "" }));
+   const handleClassChange = async (classUUID) => {
+    setForm((prev) => ({ ...prev, class_uuid: classUUID, teacher: "", otherTeachers: [] }));
     clearError("class_uuid");
     try {
       const res = await getClassFaculty(classUUID);
@@ -3778,6 +3781,13 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
       setTeacherOptions([]);
     }
   };
+
+    const classTeacherOptions = teacherOptions.filter(
+    (t) => !form.otherTeachers.includes(t.employee_uuid),
+  );
+  const otherTeacherOptions = teacherOptions.filter(
+    (t) => t.employee_uuid !== form.teacher,
+  );
 
   const submit = async () => {
     const clientErrors = validateSectionForm(
@@ -3798,12 +3808,12 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
   section_name: form.name.trim(),
   class_uuid: form.class_uuid,
   class_teacher_employee_uuid: form.teacher || null,
+  other_teacher_employee_uuids: form.otherTeachers,
   room_uuid: form.room_uuid,
   students: form.present,
   capacity: form.total,
   subjects: edit?.subjects ?? 8,
 };
-
     setSubmitting(true);
     try {
       await onSubmit(payload);
@@ -3889,10 +3899,14 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
             <Label className="text-xs">
               Class Teacher 
             </Label>
-            <Select
+                       <Select
               value={form.teacher}
               onValueChange={(value) => {
-                setForm((p) => ({ ...p, teacher: value }));
+                setForm((p) => ({
+                  ...p,
+                  teacher: value,
+                  otherTeachers: p.otherTeachers.filter((id) => id !== value),
+                }));
                 clearError("teacher");
               }}
             >
@@ -3906,7 +3920,7 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
                 <SelectValue placeholder="Pick teacher" />
               </SelectTrigger>
           <SelectContent>
-  {teacherOptions.map((teacher) => (
+  {classTeacherOptions.map((teacher) => (
     <SelectItem
       key={teacher.employee_uuid}
       value={teacher.employee_uuid}
@@ -3916,6 +3930,82 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
   ))}
 </SelectContent>
             </Select>
+            {errors.teacher && (
+              <p className="text-xs text-destructive flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                {errors.teacher}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Other Teachers</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start font-normal h-9 truncate"
+                >
+                  {form.otherTeachers.length > 0
+                    ? form.otherTeachers
+                        .map(
+                          (id) =>
+                            teacherOptions.find((t) => t.employee_uuid === id)
+                              ?.faculty_name,
+                        )
+                        .filter(Boolean)
+                        .join(", ")
+                    : "Select Teachers"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-2" align="start">
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                  {otherTeacherOptions.length === 0 && (
+                    <div className="text-xs text-muted-foreground py-2 text-center">
+                      No other teachers available.
+                    </div>
+                  )}
+                  {otherTeacherOptions.map((teacher) => (
+                    <label
+                      key={teacher.employee_uuid}
+                      className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1"
+                    >
+                      <Checkbox
+                        checked={form.otherTeachers.includes(
+                          teacher.employee_uuid,
+                        )}
+                        onCheckedChange={(checked) => {
+                          setForm((p) => ({
+                            ...p,
+                            otherTeachers: checked
+                              ? [...p.otherTeachers, teacher.employee_uuid]
+                              : p.otherTeachers.filter(
+                                  (id) => id !== teacher.employee_uuid,
+                                ),
+                          }));
+                        }}
+                      />
+                      <span>{teacher.faculty_name}</span>
+                    </label>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+            {form.otherTeachers.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-1">
+                {form.otherTeachers.map((id) => {
+                  const t = teacherOptions.find(
+                    (x) => x.employee_uuid === id,
+                  );
+                  return (
+                    <Badge key={id} variant="secondary" className="text-[10px]">
+                      {t ? t.faculty_name : id}
+                    </Badge>
+                  );
+                })}
+              </div>
+            )}
             {errors.teacher && (
               <p className="text-xs text-destructive flex items-center gap-1">
                 <AlertTriangle className="h-3 w-3" />

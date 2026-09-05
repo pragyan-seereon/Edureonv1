@@ -162,6 +162,11 @@ const mapAssignment = (a) => ({
   createdByRole: a.created_by_role,
 });
 
+const formatRole = (role) =>
+  role ? role.split("_").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ") : "—";
+
+const canModify = (a) => !a.createdByRole || a.createdByRole === "TEACHER";
+
 export default function TeacherAssignmentsPage() {
   const { teacherName, classes, subjects } = useTeacherCtx();
   const allMaterials = useMaterials();
@@ -581,7 +586,11 @@ export default function TeacherAssignmentsPage() {
   // Loads an existing assignment into the form and opens the dialog in
   // "edit" mode. Normalizes whatever shape the backend returns the
   // selected-students list in, since that varies by endpoint.
-  const handleEdit = async (a) => {
+   const handleEdit = async (a) => {
+    if (!canModify(a)) {
+      toast.error(`This assignment was created by ${formatRole(a.createdByRole)}. You can't edit it.`);
+      return;
+    }
     try {
       const detail = await getAssignmentDetail(a.id);
 
@@ -649,6 +658,10 @@ export default function TeacherAssignmentsPage() {
   };
 
   const handleDelete = async (a) => {
+    if (!canModify(a)) {
+      toast.error(`This assignment was created by ${formatRole(a.createdByRole)}. You can't delete it.`);
+      return;
+    }
     if (!window.confirm(`Delete assignment "${a.title}"? This cannot be undone.`)) return;
     setDeletingId(a.id);
     try {
@@ -1723,13 +1736,14 @@ export default function TeacherAssignmentsPage() {
               <Card className="border-border/60">
                 <CardContent className="p-0 overflow-x-auto">
                   <Table>
-                    <TableHeader>
+                                        <TableHeader>
                       <TableRow>
                         <TableHead>ID</TableHead>
                         <TableHead>Title</TableHead>
                         <TableHead>Subject</TableHead>
                         <TableHead>Class</TableHead>
                         <TableHead>Due</TableHead>
+                        <TableHead>Created By</TableHead>
                         <TableHead>Submissions</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="w-20">Actions</TableHead>
@@ -1762,8 +1776,17 @@ export default function TeacherAssignmentsPage() {
                               <Badge variant="secondary">{a.subject}</Badge>
                             </TableCell>
                             <TableCell>{a.klass}</TableCell>
-                            <TableCell className="text-xs">
+                                                        <TableCell className="text-xs">
                               {a.due || "—"}
+                            </TableCell>
+                            <TableCell>
+                              {canModify(a) ? (
+                                <span className="text-xs text-muted-foreground">You</span>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px]">
+                                  {formatRole(a.createdByRole)}
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2 w-40">
@@ -1791,7 +1814,7 @@ export default function TeacherAssignmentsPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-7 w-7"
+                                  className={`h-7 w-7 ${!canModify(a) ? "opacity-40" : ""}`}
                                   onClick={() => handleEdit(a)}
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
@@ -1799,7 +1822,7 @@ export default function TeacherAssignmentsPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-7 w-7 text-destructive hover:text-destructive"
+                                  className={`h-7 w-7 text-destructive hover:text-destructive ${!canModify(a) ? "opacity-40" : ""}`}
                                   onClick={() => handleDelete(a)}
                                   disabled={deletingId === a.id}
                                 >
@@ -1813,7 +1836,7 @@ export default function TeacherAssignmentsPage() {
                       {filtered.length === 0 && (
                         <TableRow>
                           <TableCell
-                            colSpan={8}
+                            colSpan={9}
                             className="text-center py-8 text-sm text-muted-foreground"
                           >
                             No assignments yet for your classes.
@@ -1849,8 +1872,11 @@ export default function TeacherAssignmentsPage() {
                           <CardTitle className="text-sm font-display">
                             {a.title}
                           </CardTitle>
-                          <CardDescription className="text-xs mt-0.5">
+                                                   <CardDescription className="text-xs mt-0.5">
                             {a.subject} · Class {a.klass} · Due {a.due || "—"}
+                            {!canModify(a) && (
+                              <> · <span className="text-muted-foreground">by {formatRole(a.createdByRole)}</span></>
+                            )}
                           </CardDescription>
                         </div>
                         <div className="flex items-start gap-1">
@@ -1870,10 +1896,10 @@ export default function TeacherAssignmentsPage() {
                             data-no-row
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <Button
+                                                       <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className={`h-7 w-7 ${!canModify(a) ? "opacity-40" : ""}`}
                               onClick={() => handleEdit(a)}
                             >
                               <Pencil className="h-3.5 w-3.5" />
@@ -1881,7 +1907,7 @@ export default function TeacherAssignmentsPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              className={`h-7 w-7 text-destructive hover:text-destructive ${!canModify(a) ? "opacity-40" : ""}`}
                               onClick={() => handleDelete(a)}
                               disabled={deletingId === a.id}
                             >

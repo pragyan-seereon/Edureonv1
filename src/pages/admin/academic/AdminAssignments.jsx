@@ -62,6 +62,7 @@ import {
   Archive,
   Pencil,
   Trash2,
+  ArrowLeft,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -69,7 +70,7 @@ import { assignmentsApi, useSubmissions } from "../../../lib/store";
 import {
   getSubjects,
   getSections,
-  getClasses, 
+  getClasses,
   getStudentsBySection,
   saveDraftAssignment,
   publishAssignment,
@@ -77,6 +78,10 @@ import {
   getAssignmentDetail,
   updateAssignment,
   deleteAssignment,
+  // ASSUMPTION: this endpoint returns the per-student submission list for
+  // an assignment (same shape used on the teacher side). Update the import
+  // path/name if the admin API module exposes it differently.
+  getAssignmentSubmissions,
 } from "../../../api/assignment";
 import useSessionStore from "../../../store/sessionStore";
 import {
@@ -125,7 +130,10 @@ const emptyForm = {
   existingAttachments: [],
 };
 
-// Maps a raw API assignment object to the shape this component's UI expects
+// Maps a raw API assignment object to the shape this component's UI expects.
+// submittedCount / reviewedCount are kept separate (instead of one combined
+// "submitted" number) so the submission rate can be computed the same way
+// the teacher page computes it: (submitted + reviewed) / total.
 const mapAssignment = (a) => ({
   id: a.assignment_no,
   uuid: a.assignment_uuid,
@@ -138,16 +146,42 @@ const mapAssignment = (a) => ({
   status: a.status
     ? a.status.charAt(0) + a.status.slice(1).toLowerCase()
     : "Draft",
-  submitted: a.submitted_count ?? 0,
+  submittedCount: a.submitted_count ?? 0,
+  reviewedCount: a.reviewed_count ?? 0,
   totalStudents: a.total_students || 1,
 });
+
+// Maps a raw submission row from GET /assignments/:uuid/submissions
+// (mirrors the teacher page's mapSubmission so Student ID + Marks show up
+// the same way here).
+const mapSubmission = (s) => ({
+  id: s.submission_uuid,
+  studentUuid: s.student_uuid,
+  studentName: s.student_name,
+  studentId: s.student_no,
+  status: s.status
+    ? s.status.charAt(0) + s.status.slice(1).toLowerCase()
+    : "Pending",
+  late: s.is_late,
+  submittedAt: s.submitted_at,
+  marks: s.obtained_marks,
+  feedback: s.feedback,
+  attachments: s.attachments ?? [],
+});
+
+// Submission-rate helper shared by the KPI card, table, card view and
+// analytics tab: counts both submitted and already-reviewed/graded work
+// as "done", same as the teacher page.
+const submissionPct = (a) => {
+  const done = (a.submittedCount ?? 0) + (a.reviewedCount ?? 0);
+  const tot = a.totalStudents || 1;
+  return Math.round((done / tot) * 100);
+};
 
 export default function AdminAssignments() {
   const allSubs = useSubmissions();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [statusF, setStatusF] = useState("All");
-  const [subjF, setSubjF] = useState("All");
   const [classF, setClassF] = useState("All");
   const [teacherF, setTeacherF] = useState("All");
   const [selected, setSelected] = useState(new Set());
@@ -177,21 +211,68 @@ export default function AdminAssignments() {
   // eslint-disable-next-line no-unused-vars
   const [total, setTotal] = useState(0);
 
+  // ---------------------------------------------------------------------
+  // Inline "Assigned students" detail view for one assignment. Opened by
+  // clicking a row/card. Shows Student ID + Marks (like the teacher page)
+  // but the row action is Download-only — admin does not grade here.
+  // ---------------------------------------------------------------------
+  const [activeUuid, setActiveUuid] = useState(null);
+  const [subRows, setSubRows] = useState([]);
+  const [subLoading, setSubLoading] = useState(false);
+  const [subPage, setSubPage] = useState(1);
+  const [subPageSize, setSubPageSize] = useState(20);
+  const [subTotal, setSubTotal] = useState(0);
+
+  const active = activeUuid ? items.find((a) => a.uuid === activeUuid) : undefined;
+
+  const loadSubmissions = async (assignmentUuid, pageArg = 1, pageSizeArg = subPageSize) => {
+    if (!assignmentUuid) return;
+    setSubLoading(true);
+    try {
+      const res = await getAssignmentSubmissions(assignmentUuid, pageArg, pageSizeArg);
+      setSubRows((res?.data ?? []).map(mapSubmission));
+      setSubTotal(res?.pagination?.total ?? 0);
+      setSubPage(res?.pagination?.page ?? pageArg);
+      setSubPageSize(res?.pagination?.page_size ?? pageSizeArg);
+    } catch (err) {
+      console.log(err);
+      toast.error("Failed to load submissions");
+      setSubRows([]);
+      setSubTotal(0);
+    } finally {
+      setSubLoading(false);
+    }
+  };
+
+  const openAssignmentDetail = (a) => {
+    setActiveUuid(a.uuid);
+    loadSubmissions(a.uuid, 1, subPageSize);
+  };
+
+  const downloadSubmissionFiles = (s) => {
+    if (!s.attachments || s.attachments.length === 0) {
+      toast.error("No files submitted");
+      return;
+    }
+    s.attachments.forEach((f) => {
+      window.open(f.file_url, "_blank", "noopener,noreferrer");
+    });
+  };
+
   // Derived lists from fetched data (replaces old hardcoded constants)
   const SUBJECTS = useMemo(
     () => subjects.map((s) => s.subject_name),
     [subjects],
   );
 
-  const TEACHERS = useMemo(() => {
-    const names = new Set();
-    subjects.forEach((s) => (s.faculty || []).forEach((f) => names.add(f.name)));
-    return [...names];
-  }, [subjects]);
+   const TEACHERS = useMemo(
+    () => [...new Set(items.map((a) => a.teacher).filter(Boolean))],
+    [items],
+  );
 
   const CLASSES = useMemo(
-    () => classes.map((c) => c.class_name),
-    [classes],
+    () => [...new Set(items.map((a) => a.klass).filter(Boolean))],
+    [items],
   );
     const existingPdf = useMemo(
     () => (form.existingAttachments || []).find((att) => att.attachment_type === "PDF"),
@@ -224,12 +305,10 @@ export default function AdminAssignments() {
     () =>
       items.filter(
         (a) =>
-          (statusF === "All" || a.status === statusF) &&
-          (subjF === "All" || a.subject === subjF) &&
           (classF === "All" || a.klass === classF) &&
           (teacherF === "All" || a.teacher === teacherF),
       ),
-    [items, statusF, subjF, classF, teacherF],
+    [items, classF, teacherF],
   );
 
   useEffect(() => {
@@ -451,52 +530,51 @@ export default function AdminAssignments() {
   };
 
   // Load an existing assignment into the form and open the dialog in "edit" mode
-// Load an existing assignment into the form and open the dialog in "edit" mode
-const handleEdit = async (a) => {
-  try {
-    const detail = await getAssignmentDetail(a.uuid);
+  const handleEdit = async (a) => {
+    try {
+      const detail = await getAssignmentDetail(a.uuid);
 
-    // Backend may return the selected students under different keys/shapes.
-    // Normalize whatever we get into a flat array of student_uuid strings.
-    const rawSelected =
-      detail.selected_student_uuids ??
-      detail.selected_students ??
-      detail.assigned_student_uuids ??
-      detail.student_uuids ??
-      [];
+      // Backend may return the selected students under different keys/shapes.
+      // Normalize whatever we get into a flat array of student_uuid strings.
+      const rawSelected =
+        detail.selected_student_uuids ??
+        detail.selected_students ??
+        detail.assigned_student_uuids ??
+        detail.student_uuids ??
+        [];
 
-    const normalizedSelectedIds = rawSelected.map((s) =>
-      typeof s === "string" ? s : s.student_uuid ?? s.id ?? s.uuid
-    );
+      const normalizedSelectedIds = rawSelected.map((s) =>
+        typeof s === "string" ? s : s.student_uuid ?? s.id ?? s.uuid
+      );
 
-    setForm({
-      title: detail.title || "",
-      subject: detail.subject_uuid || "",
-      classNum: detail.class_uuid || "",
-      section: detail.section_uuid || "",
-      teacher: detail.teacher_user_id ? String(detail.teacher_user_id) : "",
-      type: TYPE_REVERSE_MAP[detail.assignment_type] || "Homework",
-      assignTo: ASSIGN_TO_REVERSE_MAP[detail.assign_to] || "Entire Class",
-      groupName: detail.group_name || "",
-      studentIds: new Set(normalizedSelectedIds),
-      instructions: detail.instructions || "",
-      due: detail.assignment_date || "",
-      endDate: detail.due_date || "",
-      duration: detail.duration_minutes ? String(detail.duration_minutes) : "",
-      maxMarks: detail.max_marks ?? 20,
-      pdfFile: null,
-      videoFile: null,
-      resourceLink: detail.resource_url || "",
-      draftUuid: null,
-      existingAttachments: detail.attachments || [],
-    });
-    setEditingUuid(detail.assignment_uuid);
-    setOpen(true);
-  } catch (err) {
-    console.log(err);
-    toast.error("Failed to load assignment for editing");
-  }
-};
+      setForm({
+        title: detail.title || "",
+        subject: detail.subject_uuid || "",
+        classNum: detail.class_uuid || "",
+        section: detail.section_uuid || "",
+        teacher: detail.teacher_user_id ? String(detail.teacher_user_id) : "",
+        type: TYPE_REVERSE_MAP[detail.assignment_type] || "Homework",
+        assignTo: ASSIGN_TO_REVERSE_MAP[detail.assign_to] || "Entire Class",
+        groupName: detail.group_name || "",
+        studentIds: new Set(normalizedSelectedIds),
+        instructions: detail.instructions || "",
+        due: detail.assignment_date || "",
+        endDate: detail.due_date || "",
+        duration: detail.duration_minutes ? String(detail.duration_minutes) : "",
+        maxMarks: detail.max_marks ?? 20,
+        pdfFile: null,
+        videoFile: null,
+        resourceLink: detail.resource_url || "",
+        draftUuid: null,
+        existingAttachments: detail.attachments || [],
+      });
+      setEditingUuid(detail.assignment_uuid);
+      setOpen(true);
+    } catch (err) {
+      console.log(err);
+      toast.error("Failed to load assignment for editing");
+    }
+  };
 
  const buildUpdatePayload = () => ({
   title: form.title,
@@ -596,12 +674,147 @@ const handleUpdate = async () => {
   ).length;
   const avgSubRate = items.length
     ? Math.round(
-        items.reduce(
-          (a, x) => a + (x.submitted / x.totalStudents) * 100,
-          0,
-        ) / items.length,
+        items.reduce((acc, x) => acc + submissionPct(x), 0) / items.length,
       )
     : 0;
+
+  // -----------------------------------------------------------------------
+  // Detail view: assigned students for one assignment (Student ID + Marks,
+  // download-only action — no grading here).
+  // -----------------------------------------------------------------------
+  if (active) {
+    return (
+      <PageContainer>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mb-3"
+          onClick={() => setActiveUuid(null)}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to assignments
+        </Button>
+        <PageHeader
+          eyebrow={`${active.subject} · Class ${active.klass}`}
+          title={active.title}
+          description={`Due ${active.due || "—"} · Max ${active.maxMarks} marks · ${subTotal || active.totalStudents} student(s) assigned`}
+        />
+        <Card className="border-border/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="font-display text-base">
+              Assigned students
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="flex justify-end border-b px-4 py-3">
+              <RowsPerPageSelect
+                pageSize={subPageSize}
+                onPageSizeChange={(value) => {
+                  loadSubmissions(active.uuid, 1, value);
+                }}
+              />
+            </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Student</TableHead>
+                    <TableHead>Student ID</TableHead>
+                    <TableHead>Submitted</TableHead>
+                    <TableHead>Files</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Marks</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {subLoading && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7}
+                        className="text-center py-8 text-sm text-muted-foreground"
+                      >
+                        Loading submissions...
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!subLoading &&
+                    subRows.map((s) => (
+                      <TableRow key={s.id}>
+                        <TableCell className="font-medium">
+                          {s.studentName}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {s.studentId}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {s.submittedAt
+                            ? new Date(s.submittedAt).toLocaleDateString()
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {s.attachments?.length
+                            ? s.attachments.map((f) => f.file_name).join(", ")
+                            : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              s.status === "Graded"
+                                ? "default"
+                                : s.status === "Pending"
+                                  ? "outline"
+                                  : "secondary"
+                            }
+                          >
+                            {s.status}
+                            {s.late ? " · Late" : ""}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs tabular-nums">
+                          {s.marks != null ? `${s.marks}/${active.maxMarks}` : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!s.attachments?.length}
+                            onClick={() => downloadSubmissionFiles(s)}
+                          >
+                            <Download className="h-4 w-4" />
+                            Download
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  {!subLoading && subRows.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7}
+                        className="text-center py-8 text-sm text-muted-foreground"
+                      >
+                        No students attached yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <PaginationBar
+              rangeStart={subRows.length ? (subPage - 1) * subPageSize + 1 : 0}
+              rangeEnd={(subPage - 1) * subPageSize + subRows.length}
+              totalItems={subTotal}
+              page={subPage}
+              totalPages={Math.max(1, Math.ceil(subTotal / subPageSize))}
+              onPageChange={(p) => loadSubmissions(active.uuid, p, subPageSize)}
+              showPageSize={false}
+              itemLabel="students"
+            />
+          </CardContent>
+        </Card>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>
@@ -1097,30 +1310,7 @@ const handleUpdate = async () => {
 
       <Card className="border-border/60 mb-4">
         <CardContent className="p-3 flex flex-wrap gap-2 items-center">
-          <Select value={statusF} onValueChange={setStatusF}>
-            <SelectTrigger className="h-8 w-32">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              {["All", "Draft", "Published", "Closed", "Archived"].map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={subjF} onValueChange={setSubjF}>
-            <SelectTrigger className="h-8 w-32">
-              <SelectValue placeholder="Subject" />
-            </SelectTrigger>
-            <SelectContent>
-              {["All", ...SUBJECTS].map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+         
           <Select value={classF} onValueChange={setClassF}>
             <SelectTrigger className="h-8 w-28">
               <SelectValue placeholder="Class" />
@@ -1186,12 +1376,7 @@ const handleUpdate = async () => {
       </Card>
 
       <Tabs defaultValue="table">
-        <TabsList>
-          <TabsTrigger value="table">All Assignments</TabsTrigger>
-          <TabsTrigger value="cards">Card View</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
-
+       
         <TabsContent value="table" className="mt-4">
           <Card className="border-border/60">
             <CardContent className="p-0">
@@ -1240,17 +1425,16 @@ const handleUpdate = async () => {
                   )}
                   {!itemsLoading &&
                     filtered.map((a) => {
-                      const subs = a.submitted,
-                        tot = a.totalStudents,
-                        // eslint-disable-next-line no-unused-vars
-                        pct = Math.round((subs / tot) * 100);
+                      const done = (a.submittedCount ?? 0) + (a.reviewedCount ?? 0);
+                      const tot = a.totalStudents;
+                      const pct = submissionPct(a);
                       return (
                         <TableRow
                           key={a.id}
                           className="cursor-pointer hover:bg-muted/40"
                           onClick={(e) => {
                             if (e.target.closest("[data-no-row]")) return;
-                            navigate(`/assignments/${a.uuid}`);
+                            openAssignmentDetail(a);
                           }}
                         >
                           <TableCell data-no-row>
@@ -1273,7 +1457,7 @@ const handleUpdate = async () => {
                             <div className="flex items-center gap-2 w-40">
                               <Progress value={pct} className="h-1.5" />
                               <span className="text-xs tabular-nums">
-                                {subs}/{tot}
+                                {done}/{tot}
                               </span>
                             </div>
                           </TableCell>
@@ -1342,14 +1526,14 @@ const handleUpdate = async () => {
 
         <TabsContent value="cards" className="mt-4 grid md:grid-cols-2 gap-4">
           {filtered.map((a) => {
-            const subs = a.submitted,
-              tot = a.totalStudents,
-              pct = Math.round((subs / tot) * 100);
+            const done = (a.submittedCount ?? 0) + (a.reviewedCount ?? 0);
+            const tot = a.totalStudents;
+            const pct = submissionPct(a);
             return (
               <Card
                 key={a.id}
                 className="border-border/60 hover:border-primary/40 transition-colors cursor-pointer"
-                onClick={() => navigate(`/assignments/${a.uuid}`)}
+                onClick={() => openAssignmentDetail(a)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">
@@ -1407,7 +1591,7 @@ const handleUpdate = async () => {
                     <div className="flex justify-between text-xs">
                       <span className="text-muted-foreground">Submissions</span>
                       <span className="font-semibold">
-                        {subs}/{tot}
+                        {done}/{tot}
                       </span>
                     </div>
                     <Progress value={pct} className="h-1.5" />
@@ -1426,10 +1610,8 @@ const handleUpdate = async () => {
             const subjItems = items.filter((a) => a.subject === sub);
             const rate = subjItems.length
               ? Math.round(
-                  subjItems.reduce(
-                    (acc, x) => acc + (x.submitted / x.totalStudents) * 100,
-                    0,
-                  ) / subjItems.length,
+                  subjItems.reduce((acc, x) => acc + submissionPct(x), 0) /
+                    subjItems.length,
                 )
               : 0;
             return (

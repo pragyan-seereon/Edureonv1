@@ -54,3 +54,28 @@ export const gradeSubmission = async (
 
   return data;
 };
+
+// Get all inquiries (questions) students raised on an assignment
+export const getAssignmentInquiries = async (assignment_uuid) => {
+  const { data } = await api.get(
+    `/assignments/${assignment_uuid}/inquiries`,
+    { headers: getHeaders() },
+  );
+
+  return data;
+};
+
+// Reply to a single student inquiry
+export const replyAssignmentInquiry = async (
+  assignment_uuid,
+  inquiry_uuid,
+  reply,
+) => {
+  const { data } = await api.patch(
+    `/assignments/${assignment_uuid}/inquiries/${inquiry_uuid}/reply`,
+    { reply },
+    { headers: getHeaders() },
+  );
+
+  return data;
+};

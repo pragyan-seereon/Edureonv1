@@ -73,7 +73,13 @@ import {
   updateAssignment,
   deleteAssignment,
 } from "../../api/assignment";
-import {getAssignmentStudents,getAssignmentSubmissions,gradeSubmission} from "../../api/teacherassignment";
+import {
+  getAssignmentStudents,
+  getAssignmentSubmissions,
+  gradeSubmission,
+  getAssignmentInquiries,
+  replyAssignmentInquiry,
+} from "../../api/teacherassignment";
 import { getTeacherClasses } from "../../api/teacherclass";
 import {PaginationBar, RowsPerPageSelect,} from "../../components/pagination-controls";
 
@@ -97,6 +103,18 @@ const mapSubmission = (s) => ({
   gradingIsDraft: s.grading_is_draft,
   resubmissionCount: s.resubmission_count,
   attachments: s.attachments ?? [],
+});
+
+// Maps a raw inquiry row from GET /assignments/:uuid/inquiries
+const mapInquiry = (i) => ({
+  id: i.inquiry_uuid,
+  assignmentUuid: i.assignment_uuid,
+  studentUuid: i.student_uuid,
+  question: i.question,
+  reply: i.reply,
+  status: i.status, // "OPEN" | "REPLIED"
+  createdAt: i.created_at,
+  repliedAt: i.replied_at,
 });
 
 const ASSIGNMENT_TYPES = ["Homework", "Project", "Group Assignment", "Classwork"];
@@ -140,6 +158,8 @@ const mapAssignment = (a) => ({
   submittedCount: a.submitted_count ?? 0,
   reviewedCount: a.reviewed_count ?? 0,
   publishedAt: a.published_at,
+  createdBy: a.created_by,
+  createdByRole: a.created_by_role,
 });
 
 export default function TeacherAssignmentsPage() {
@@ -154,6 +174,13 @@ export default function TeacherAssignmentsPage() {
   const [subPageSize, setSubPageSize] = useState(20);
   const [subTotal, setSubTotal] = useState(0);
   const [grading, setGrading] = useState(false);
+
+  // Student inquiries for whichever assignment is open in the detail view
+  // (populated from GET /assignments/:uuid/inquiries).
+  const [inquiries, setInquiries] = useState([]);
+  const [inquiriesLoading, setInquiriesLoading] = useState(false);
+  const [replyDrafts, setReplyDrafts] = useState({}); // { [inquiry_uuid]: string }
+  const [replyingId, setReplyingId] = useState(null);
 
   const loadSubmissions = async (assignmentUuid, page = 1, pageSize = subPageSize) => {
     if (!assignmentUuid) return;
@@ -171,6 +198,45 @@ export default function TeacherAssignmentsPage() {
       setSubTotal(0);
     } finally {
       setSubLoading(false);
+    }
+  };
+
+  const loadInquiries = async (assignmentUuid) => {
+    if (!assignmentUuid) return;
+    setInquiriesLoading(true);
+    try {
+      const res = await getAssignmentInquiries(assignmentUuid);
+      setInquiries((res?.data ?? []).map(mapInquiry));
+    } catch (err) {
+      console.log(err);
+      toast.error("Failed to load inquiries");
+      setInquiries([]);
+    } finally {
+      setInquiriesLoading(false);
+    }
+  };
+
+  const handleReplyInquiry = async (inquiryId) => {
+    const reply = (replyDrafts[inquiryId] || "").trim();
+    if (!reply) return toast.error("Write a reply first");
+    if (!activeId) return;
+    setReplyingId(inquiryId);
+    try {
+      const res = await replyAssignmentInquiry(activeId, inquiryId, reply);
+      if (res?.success) {
+        toast.success("Reply sent");
+        setInquiries((rows) =>
+          rows.map((r) => (r.id === inquiryId ? mapInquiry(res.data) : r)),
+        );
+        setReplyDrafts((d) => ({ ...d, [inquiryId]: "" }));
+      } else {
+        toast.error(res?.message || "Failed to send reply");
+      }
+    } catch (err) {
+      console.log(err);
+      toast.error(err?.response?.data?.message || "Failed to send reply");
+    } finally {
+      setReplyingId(null);
     }
   };
 
@@ -231,9 +297,11 @@ export default function TeacherAssignmentsPage() {
       setSubRows([]);
       setSubTotal(0);
       setSubPage(1);
+      setInquiries([]);
       return;
     }
     loadSubmissions(activeId, 1, subPageSize);
+    loadInquiries(activeId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
@@ -703,6 +771,14 @@ export default function TeacherAssignmentsPage() {
     () => (formA.existingAttachments || []).find((att) => att.attachment_type === "VIDEO"),
     [formA.existingAttachments],
   );
+
+  // Resolves an inquiry's student_uuid to a display name using whatever
+  // submission rows we already have loaded for the active assignment.
+  const studentNameByUuid = useMemo(() => {
+    const map = new Map();
+    subRows.forEach((s) => map.set(s.studentUuid, s.studentName));
+    return map;
+  }, [subRows]);
 
   // Shared dialog for creating a new assignment — rendered inside the
   // Assignments tab so the trigger button lives with that tab's content.
@@ -1394,6 +1470,81 @@ export default function TeacherAssignmentsPage() {
               showPageSize={false}
               itemLabel="students"
             />
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60 mt-4">
+          <CardHeader className="pb-2">
+            <CardTitle className="font-display text-base">
+              Student Inquiries
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Questions students asked about this assignment
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {inquiriesLoading && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Loading inquiries...
+              </p>
+            )}
+            {!inquiriesLoading && inquiries.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No inquiries yet.
+              </p>
+            )}
+            {!inquiriesLoading &&
+              inquiries.map((i) => (
+                <div
+                  key={i.id}
+                  className="rounded-md border border-border/60 p-3 space-y-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium">
+                        {studentNameByUuid.get(i.studentUuid) || "Student"}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {i.createdAt ? new Date(i.createdAt).toLocaleString() : ""}
+                      </div>
+                    </div>
+                    <Badge variant={i.status === "REPLIED" ? "default" : "outline"}>
+                      {i.status === "REPLIED" ? "Replied" : "Open"}
+                    </Badge>
+                  </div>
+
+                  <div className="text-sm">{i.question}</div>
+
+                  {i.status === "REPLIED" ? (
+                    <div className="rounded-md bg-muted/50 px-3 py-2 text-xs">
+                      <span className="font-medium">Your reply: </span>
+                      {i.reply}
+                      {i.repliedAt && (
+                        <div className="text-[10px] text-muted-foreground mt-1">
+                          {new Date(i.repliedAt).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder="Write a reply..."
+                        value={replyDrafts[i.id] || ""}
+                        onChange={(e) =>
+                          setReplyDrafts((d) => ({ ...d, [i.id]: e.target.value }))
+                        }
+                      />
+                      <Button
+                        size="sm"
+                        disabled={replyingId === i.id}
+                        onClick={() => handleReplyInquiry(i.id)}
+                      >
+                        {replyingId === i.id ? "Sending..." : "Reply"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
           </CardContent>
         </Card>
 

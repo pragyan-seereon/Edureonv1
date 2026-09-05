@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 /* eslint-disable no-undef */
 import { useNavigate } from "react-router-dom";
 import { PageContainer, PageHeader } from "../../../components/page-shell";
@@ -44,6 +45,7 @@ import {
   Trophy,
   AlertTriangle,
   FileText,
+  // eslint-disable-next-line no-unused-vars
   Brain,
   MoreHorizontal,
   Eye,
@@ -51,6 +53,7 @@ import {
   Trash2,
   Upload,
   FileCheck2,
+  Send,
   X,
 } from "lucide-react";
 import { examPerformance } from "../../../lib/mock";
@@ -93,9 +96,16 @@ import {
   useStudents,
   examsApi,
   questionsApi,
-  // useStoredResults,
-  // storedResultsApi,
+  useStoredResults,
+  storedResultsApi,
 } from "../../../lib/store";
+// Same pagination primitives used by the Timetable Engine page, so every
+// data table in the app paginates and displays "Rows per page" the same way.
+import {
+  PaginationBar,
+  RowsPerPageSelect,
+} from "../../../components/pagination-controls";
+import { usePagination } from "../../../lib/use-pagination";
 
 const marks = Array.from({ length: 14 }).map((_, i) => ({
   roll: i + 1,
@@ -204,6 +214,20 @@ function openQuestionPdf(q) {
   else toast.info("Legacy seed question — edit and save it once to generate its PDF.");
 }
 
+// ---- Question Bank import template download (blank .xlsx headers) ----
+async function downloadQuestionTemplate() {
+  try {
+    const XLSX = await import("xlsx");
+    const headers = ["subject", "chapter", "question", "answer", "diff", "marks"];
+    const ws = XLSX.utils.aoa_to_sheet([headers]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Questions");
+    XLSX.writeFile(wb, "questions-template.xlsx");
+  } catch (err) {
+    toast.error("Could not generate template file");
+  }
+}
+
 const DASH_SUBJECTS = ["Mathematics", "Science", "English", "Social Science", "Hindi"];
 
 function buildDashRows(students) {
@@ -249,6 +273,16 @@ export default function Exams() {
   const [qfSubject, setQfSubject] = useState("all");
   const [qfExam, setQfExam] = useState("all");
 
+  // ---- Marks Entry filters (Class / Section / Year / Exam) ----
+  // NOTE: the table below still renders the local mock `marks` array,
+  // but these drive which real student record + portal an entry is
+  // shared to when "Share to Student" is clicked.
+  const [meClass, setMeClass] = useState("X");
+  const [meSection, setMeSection] = useState("B");
+  const [meYear, setMeYear] = useState("2025-26");
+  const [meExam, setMeExam] = useState("Term 2");
+  const [sharedRolls, setSharedRolls] = useState({}); // { [roll]: true } — tracks which rows were shared
+
   // ---- Dashboard filters + nested detail ----
   const [dashClass, setDashClass] = useState("X");
   const [dashSection, setDashSection] = useState("A");
@@ -263,6 +297,7 @@ export default function Exams() {
     { id: "c4", name: "Pre-Board", description: "Mock board examination", weight: 100 },
   ]);
   const [catOpen, setCatOpen] = useState(false);
+  const [catEdit, setCatEdit] = useState(null);
 
   // ---- Subjects, Papers and Schedule ----
   const [papers, setPapers] = useState([
@@ -271,7 +306,6 @@ export default function Exams() {
     { id: "p3", category: "Term 1", className: "X", subject: "English", paper: "Paper 1", date: "2025-09-16", time: "09:30", duration: 180, maxMarks: 80, room: "Hall B" },
   ]);
   const [paperOpen, setPaperOpen] = useState(false);
-  // eslint-disable-next-line no-unused-vars
   const [paperEdit, setPaperEdit] = useState(null);
   const [multiPaperOpen, setMultiPaperOpen] = useState(false);
 
@@ -286,6 +320,18 @@ export default function Exams() {
   const [resSection, setResSection] = useState("A");
   const [resCategory, setResCategory] = useState("Term 1");
   const [resultRows, setResultRows] = useState({});
+
+  // ---- Question Bank import (class + file chosen together, then submit) ----
+  const [importClassOpen, setImportClassOpen] = useState(false);
+  const [importClass, setImportClass] = useState("");
+  const [importStagedRows, setImportStagedRows] = useState(null);
+  const [importFileLabel, setImportFileLabel] = useState("");
+
+  const resetImportDialog = () => {
+    setImportClass("");
+    setImportStagedRows(null);
+    setImportFileLabel("");
+  };
 
   const resSubjects = useMemo(
     () =>
@@ -314,7 +360,7 @@ export default function Exams() {
       from: String(d.from),
       to: String(d.to),
       subjects: Number(d.subjects) || 1,
-      status: d.status || "Draft",
+      status: d.status || "Scheduled",
     };
     if (examEdit) examsApi.update(examEdit.id, payload);
     else examsApi.add(payload);
@@ -388,6 +434,67 @@ export default function Exams() {
     toast.success(`Paper generated: ${picked.length} questions · ${total} marks`);
   };
 
+  // ---- Marks Entry -> Share single student's report to their portal ----
+  const shareReportToStudent = (m) => {
+    // The Marks Entry grid above is seeded from the local `marks` mock
+    // array (keyed by roll number), so resolve it to the real student
+    // record for the class/section currently selected in the filters.
+    const stu = students.find(
+      (s) => s.rollNo === m.roll && s.class === meClass && s.section === meSection,
+    );
+    if (!stu) {
+      toast.error(
+        `No matching student record found for Roll ${m.roll} (Class ${meClass}-${meSection}). Check Students module.`,
+      );
+      return;
+    }
+
+    const entry = {
+      studentId: stu.id,
+      studentName: stu.name,
+      admissionNo: stu.admissionNo,
+      marks: {
+        Mathematics: m.math,
+        Science: m.sci,
+        English: m.eng,
+        "Social Science": m.soc,
+        Hindi: m.hin,
+      },
+    };
+
+    // Save just this student's entry into the batch, then publish so it
+    // becomes visible on the student/parent portal.
+    storedResultsApi.saveBatch(meClass, meSection, meExam, [entry]);
+    storedResultsApi.publish(meClass, meSection, meExam);
+
+    setSharedRolls((p) => ({ ...p, [m.roll]: true }));
+    toast.success(`Report shared to ${stu.name}'s student portal`);
+  };
+
+  // ---- Marks Entry -> Export the current class/section/exam marks as CSV ----
+  const exportMarksCsv = () => {
+    if (!marks.length) {
+      toast.error("No marks to export");
+      return;
+    }
+    const rows = [
+      ["Roll", "Name", "Math", "Science", "English", "Social Science", "Hindi", "Total", "%", "Grade"],
+    ];
+    marks.forEach((m) => {
+      const total = m.math + m.sci + m.eng + m.soc + m.hin;
+      const pct = Math.round(total / 5);
+      rows.push([m.roll, m.name, m.math, m.sci, m.eng, m.soc, m.hin, total, pct, grade(pct).g]);
+    });
+    const blob = new Blob([rows.map((r) => r.join(",")).join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `marks-${meClass}-${meSection}-${meExam}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Marks exported");
+  };
+
   const classOptions = ["VI", "VII", "VIII", "IX", "X", "XI", "XII"];
   const subjectOptions = ["Math", "Science", "English", "Social", "Hindi", "CS", "Biology", "Economics"];
   const examTypeOptions = Array.from(
@@ -401,6 +508,14 @@ export default function Exams() {
     if (qfExam !== "all" && q.examType !== qfExam) return false;
     return true;
   });
+
+  // ---- Pagination — same usePagination + PaginationBar/RowsPerPageSelect
+  // pattern as the Timetable Engine page, applied to every data table here.
+  const categoriesPage = usePagination(categories, 10);
+  const examsPage = usePagination(exams, 10);
+  const papersPage = usePagination(papers, 10);
+  const questionsPage = usePagination(filteredQ, 10);
+  const marksPage = usePagination(marks, 10);
 
   const dashStudents = useMemo(
     () => students.filter((s) => s.class === dashClass && s.section === dashSection),
@@ -418,10 +533,6 @@ export default function Exams() {
         title="Examination Engine"
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => toast.success("Marks CSV exported")}>
-              <Download className="h-4 w-4" />
-              Export Marks
-            </Button>
             {/* <Button
               size="sm"
               className="gradient-primary border-0"
@@ -477,7 +588,7 @@ export default function Exams() {
           {/* <TabsTrigger value="templates">Templates</TabsTrigger> */}
           {/* <TabsTrigger value="solutions">Solutions</TabsTrigger> */}
           <TabsTrigger value="marks">Marks Entry</TabsTrigger>
-          <TabsTrigger value="results">Results</TabsTrigger>
+          <TabsTrigger value="results">Top Performers</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dash" className="mt-4 space-y-4">
@@ -624,9 +735,19 @@ export default function Exams() {
               <div>
                 <CardTitle className="text-base">Exam Categories</CardTitle>
               </div>
-              <Button size="sm" className="gradient-primary border-0" onClick={() => setCatOpen(true)}>
-                <Plus className="h-4 w-4" /> New Category
-              </Button>
+              <div className="flex items-center gap-3">
+                <RowsPerPageSelect {...categoriesPage} />
+                <Button
+                  size="sm"
+                  className="gradient-primary border-0"
+                  onClick={() => {
+                    setCatEdit(null);
+                    setCatOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" /> New Category
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -638,28 +759,58 @@ export default function Exams() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {categories.map((c) => (
+                  {categoriesPage.pageItems.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell className="text-muted-foreground">{c.description}</TableCell>
                       {/* <TableCell>{c.weight}%</TableCell> */}
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => {
-                            setCategories((p) => p.filter((x) => x.id !== c.id));
-                            toast.success("Category removed");
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => toast.info(`${c.name} · ${c.description}`)}>
+                              <Eye className="h-4 w-4" />
+                              View
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setCatEdit(c);
+                                setCatOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => {
+                                setCategories((p) => p.filter((x) => x.id !== c.id));
+                                toast.success("Category removed");
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))}
+                  {!categoriesPage.pageItems.length && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-8">
+                        No categories yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+              <PaginationBar {...categoriesPage} itemLabel="categories" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -670,16 +821,19 @@ export default function Exams() {
               <div>
                 <CardTitle className="text-base">Exam Schedule</CardTitle>
               </div>
-              <Button
-                size="sm"
-                className="gradient-primary border-0"
-                onClick={() => {
-                  setExamEdit(null);
-                  setExamOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4" /> New Exam
-              </Button>
+              <div className="flex items-center gap-3">
+                <RowsPerPageSelect {...examsPage} />
+                <Button
+                  size="sm"
+                  className="gradient-primary border-0"
+                  onClick={() => {
+                    setExamEdit(null);
+                    setExamOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" /> New Exam
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -695,7 +849,7 @@ export default function Exams() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {exams.map((u) => (
+                  {examsPage.pageItems.map((u) => (
                     <TableRow
                       key={u.id}
                       className="cursor-pointer hover:bg-muted/40"
@@ -766,8 +920,16 @@ export default function Exams() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {!examsPage.pageItems.length && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
+                        No exams scheduled yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+              <PaginationBar {...examsPage} itemLabel="exams" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -778,7 +940,8 @@ export default function Exams() {
               <div>
                 <CardTitle className="text-base">Subjects & Papers</CardTitle>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
+                <RowsPerPageSelect {...papersPage} />
                 <ExcelUpload
                   label="Import Papers"
                   templateHeaders={["category", "className", "subject", "paper", "date", "time", "duration", "maxMarks", "room"]}
@@ -802,7 +965,10 @@ export default function Exams() {
                 <Button
                   size="sm"
                   className="gradient-primary border-0"
-                  onClick={() => setMultiPaperOpen(true)}
+                  onClick={() => {
+                    setPaperEdit(null);
+                    setMultiPaperOpen(true);
+                  }}
                 >
                   <Plus className="h-4 w-4" /> Add Subject / Paper
                 </Button>
@@ -825,7 +991,7 @@ export default function Exams() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {papers.map((p) => (
+                  {papersPage.pageItems.map((p) => (
                     <TableRow key={p.id}>
                       <TableCell><Badge variant="secondary">{p.category}</Badge></TableCell>
                       <TableCell>{p.className}</TableCell>
@@ -837,14 +1003,40 @@ export default function Exams() {
                       <TableCell>{p.maxMarks}</TableCell>
                       <TableCell>{p.room}</TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => setPapers((x) => x.filter((y) => y.id !== p.id))}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() =>
+                                toast.info(`${p.subject} · ${p.paper} · ${p.date} ${p.time} · ${p.room}`)
+                              }
+                            >
+                              <Eye className="h-4 w-4" />
+                              View
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setPaperEdit(p);
+                                setPaperOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setPapers((x) => x.filter((y) => y.id !== p.id))}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -857,6 +1049,7 @@ export default function Exams() {
                   )}
                 </TableBody>
               </Table>
+              <PaginationBar {...papersPage} itemLabel="papers" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -868,7 +1061,7 @@ export default function Exams() {
                 <CardTitle className="text-base">Question Bank</CardTitle>
                 {/* <CardDescription>{questions.length} questions · Bloom's tagged</CardDescription> */}
               </div>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2 flex-wrap items-center">
                 <Input
                   placeholder="Search…"
                   className="h-8 w-48"
@@ -912,40 +1105,25 @@ export default function Exams() {
                     toast.info("Open the form — sample extracted values shown below");
                   }}
                 /> */}
-                <ExcelUpload
-                  label="Import Questions"
-                  templateHeaders={["subject", "chapter", "question", "answer", "diff", "marks"]}
-                  templateName="questions-template.xlsx"
-                  onRows={(rows) => {
-                    let n = 0;
-                    rows.forEach((r) => {
-                      if (!r.question) return;
-                      const pdf = createQuestionPdf({
-                        subject: r.subject || "Math",
-                        chapter: r.chapter || "",
-                        question: r.question,
-                        answer: r.answer || "",
-                        marks: Number(r.marks) || 1,
-                      });
-                      questionsApi.add({
-                        subject: r.subject || "Math",
-                        chapter: r.chapter || "",
-                        question: r.question,
-                        answer: r.answer || "",
-                        diff: r.diff || "Medium",
-                        marks: Number(r.marks) || 1,
-                        pdfName: pdf.name,
-                        pdfUrl: pdf.url,
-                      });
-                      n++;
-                    });
-                    if (n) toast.success(`${n} questions added to bank`);
+                <Button size="sm" variant="outline" onClick={downloadQuestionTemplate}>
+                  <Download className="h-4 w-4" />
+                  Template
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    resetImportDialog();
+                    setImportClassOpen(true);
                   }}
-                />
-                <Button size="sm" variant="outline" onClick={() => setGenOpen(true)}>
+                >
+                  <Upload className="h-4 w-4" />
+                  Import Questions
+                </Button>
+                {/* <Button size="sm" variant="outline" onClick={() => setGenOpen(true)}>
                   <Brain className="h-4 w-4" />
                   Generate Paper
-                </Button>
+                </Button> */}
                 <Button
                   size="sm"
                   className="gradient-primary border-0"
@@ -956,6 +1134,7 @@ export default function Exams() {
                   <Plus className="h-4 w-4" />
                   Add Question
                 </Button>
+                <RowsPerPageSelect {...questionsPage} />
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -975,7 +1154,7 @@ export default function Exams() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredQ.map((q) => (
+                  {questionsPage.pageItems.map((q) => (
                     <TableRow key={q.id}>
                       <TableCell className="font-mono text-xs">{q.id}</TableCell>
                       <TableCell className="max-w-sm">
@@ -1046,8 +1225,16 @@ export default function Exams() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {!questionsPage.pageItems.length && (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
+                        No questions match the current filters.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+              <PaginationBar {...questionsPage} itemLabel="questions" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -1174,19 +1361,19 @@ export default function Exams() {
           <Card className="border-border/60">
             <CardContent className="p-3 flex flex-wrap gap-2 items-center">
               <span className="text-[10px] uppercase text-muted-foreground mr-1">Filters</span>
-              <Select defaultValue="X">
+              <Select value={meClass} onValueChange={setMeClass}>
                 <SelectTrigger className="h-8 w-28"><SelectValue placeholder="Class" /></SelectTrigger>
                 <SelectContent>{["VI", "VII", "VIII", "IX", "X", "XI", "XII"].map((c) => <SelectItem key={c} value={c}>Class {c}</SelectItem>)}</SelectContent>
               </Select>
-              <Select defaultValue="B">
+              <Select value={meSection} onValueChange={setMeSection}>
                 <SelectTrigger className="h-8 w-28"><SelectValue placeholder="Section" /></SelectTrigger>
                 <SelectContent>{["A", "B", "C", "D"].map((s) => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}</SelectContent>
               </Select>
-              <Select defaultValue="2025-26">
+              {/* <Select value={meYear} onValueChange={setMeYear}>
                 <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Academic Year" /></SelectTrigger>
                 <SelectContent>{["2024-25", "2025-26", "2026-27"].map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent>
-              </Select>
-              <Select defaultValue="Term 2">
+              </Select> */}
+              <Select value={meExam} onValueChange={setMeExam}>
                 <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Exam" /></SelectTrigger>
                 <SelectContent>{["Term 1", "Term 2", "Final"].map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
               </Select>
@@ -1196,18 +1383,27 @@ export default function Exams() {
           <Card className="border-border/60">
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
-                <CardTitle className="text-base">Marks Entry · Class X-B · Term 2 · AY 2025-26</CardTitle>
+                <CardTitle className="text-base">
+                  Marks Entry · Class {meClass}-{meSection} · {meExam} · AY {meYear}
+                </CardTitle>
               </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setReportOpen(true)}>Preview Report Card</Button>
+              <div className="flex gap-2 items-center">
+                <RowsPerPageSelect {...marksPage} />
+                <Button size="sm" variant="outline" onClick={exportMarksCsv}>
+                  <Download className="h-4 w-4" />
+                  Export Marks
+                </Button>
+                {/* <Button size="sm" variant="outline" onClick={() => setReportOpen(true)}>Preview Report Card</Button> */}
                 <Button
                   size="sm"
                   onClick={() => {
-                    toast.success("Marks locked & class report generated for admin");
+                    marks.forEach((m) => shareReportToStudent(m));
+                    toast.success("Marks locked & reports published to all students in this class");
                     setReportOpen(true);
                   }}
                 >
-                  Lock & Publish
+                  <Send className="h-4 w-4" />
+                  Lock & Publish All
                 </Button>
               </div>
             </CardHeader>
@@ -1225,14 +1421,16 @@ export default function Exams() {
                     <TableHead>Total</TableHead>
                     <TableHead>%</TableHead>
                     <TableHead>Grade</TableHead>
-                    <TableHead className="w-10"></TableHead>
+                    <TableHead className="w-16"></TableHead>
+                    <TableHead className="w-36">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {marks.map((m) => {
+                  {marksPage.pageItems.map((m) => {
                     const total = m.math + m.sci + m.eng + m.soc + m.hin;
                     const pct = Math.round(total / 5);
                     const g = grade(pct);
+                    const isShared = !!sharedRolls[m.roll];
                     return (
                       <TableRow key={m.roll}>
                         <TableCell>{m.roll}</TableCell>
@@ -1260,17 +1458,38 @@ export default function Exams() {
                             Report
                           </Button>
                         </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant={isShared ? "outline" : "default"}
+                            className={`h-7 text-xs ${isShared ? "" : "gradient-primary border-0"}`}
+                            onClick={() => shareReportToStudent(m)}
+                          >
+                            {isShared ? (
+                              <>
+                                <FileCheck2 className="h-3.5 w-3.5" />
+                                Shared
+                              </>
+                            ) : (
+                              <>
+                                <Send className="h-3.5 w-3.5" />
+                                Share to Student
+                              </>
+                            )}
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
+              <PaginationBar {...marksPage} itemLabel="students" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="results" className="mt-4 space-y-4">
-          <Card className="border-border/60">
+          {/* <Card className="border-border/60">
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
                 <CardTitle className="text-base">Class-wise Result Mapping</CardTitle>
@@ -1436,7 +1655,7 @@ export default function Exams() {
                 </Table>
               </div>
             </CardContent>
-          </Card>
+          </Card> */}
 
           <div className="grid md:grid-cols-2 gap-4">
             <Card className="border-border/60">
@@ -1485,11 +1704,11 @@ export default function Exams() {
         </TabsContent>
       </Tabs>
 
+      {/* ================= Create/Edit Exam Dialog ================= */}
       <CrudDialog
         open={examOpen}
         onOpenChange={setExamOpen}
         title={examEdit ? "Edit Exam" : "Create New Exam"}
-        description="Schedule a new examination cycle."
         initial={
           examEdit
             ? {
@@ -1510,14 +1729,19 @@ export default function Exams() {
             type: "select",
             options: ["VI", "VII", "VIII", "IX", "X", "XI", "XII"],
           },
-          { name: "from", label: "From Date" },
-          { name: "to", label: "To Date" },
+          // Calendar date pickers (native date input renders a calendar UI)
+          { name: "from", label: "From Date", type: "date" },
+          { name: "to", label: "To Date", type: "date" },
           { name: "subjects", label: "No. of Subjects", type: "number" },
           {
             name: "status",
             label: "Status",
             type: "select",
-            options: ["Draft", "Scheduled", "In Progress", "Completed"],
+            // On creation, only allow "Scheduled". Editing an existing exam
+            // still allows moving through the full lifecycle.
+            options: examEdit
+              ? [ "Scheduled", "In Progress", "Completed"]
+              : ["Scheduled"],
           },
         ]}
         submitLabel={examEdit ? "Save Exam" : "Create Exam"}
@@ -1576,6 +1800,143 @@ export default function Exams() {
         onSubmit={submitMultiQ}
       />
 
+      {/* ================= Import Questions Dialog (Class + File chosen together) ================= */}
+      <Dialog
+        open={importClassOpen}
+        onOpenChange={(v) => {
+          setImportClassOpen(v);
+          if (!v) resetImportDialog();
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Import Questions</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Class</Label>
+            <Select value={importClass} onValueChange={setImportClass}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select class" />
+              </SelectTrigger>
+              <SelectContent>
+                {classOptions.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    Class {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+<div className="space-y-2 pt-2">
+  <Label className="text-xs">File</Label>
+  <div className="flex items-center gap-3">
+    <label className="inline-flex items-center px-3 py-1.5 rounded-md border border-input bg-muted/50 text-sm font-medium cursor-pointer hover:bg-muted transition-colors">
+      Choose Files
+      <input
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        hidden
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          try {
+            const XLSX = await import("xlsx");
+            const buf = await file.arrayBuffer();
+            const wb = XLSX.read(buf, { type: "array" });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rawRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+            // Normalize keys: lowercase + trim, so "Question", " question ", etc. all match
+            const normalized = rawRows.map((row) => {
+              const out = {};
+              Object.keys(row).forEach((k) => {
+                out[k.trim().toLowerCase()] = row[k];
+              });
+              return out;
+            });
+
+            const valid = normalized.filter(
+              (r) => String(r.question || "").trim().length > 0
+            );
+
+            console.log("Parsed rows:", normalized.length, "Valid:", valid.length, normalized);
+
+            setImportStagedRows(valid);
+            setImportFileLabel(file.name);
+
+            if (valid.length === 0) {
+              toast.error(
+                `No valid rows found. Make sure the sheet has a "question" column (found columns: ${
+                  normalized[0] ? Object.keys(normalized[0]).join(", ") : "none"
+                }).`
+              );
+            } else {
+              toast.success(`${valid.length} question${valid.length === 1 ? "" : "s"} ready`);
+            }
+          } catch (err) {
+            console.error("File parse error:", err);
+            toast.error("Could not read file");
+          } finally {
+            e.target.value = "";
+          }
+        }}
+      />
+    </label>
+    <span className="text-sm text-muted-foreground truncate">
+      {importFileLabel || "No file chosen"}
+    </span>
+  </div>
+  {importStagedRows && importStagedRows.length > 0 && (
+    <div className="text-xs text-muted-foreground pt-1">
+      {importStagedRows.length} question{importStagedRows.length === 1 ? "" : "s"} parsed from file.
+    </div>
+  )}
+</div>
+
+          <DialogFooter className="pt-2">
+            <Button variant="outline" size="sm" onClick={() => setImportClassOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="gradient-primary border-0"
+              disabled={!importClass || !importStagedRows || importStagedRows.length === 0}
+              onClick={() => {
+                let n = 0;
+                importStagedRows.forEach((r) => {
+                  const pdf = createQuestionPdf({
+                    subject: r.subject || "Math",
+                    chapter: r.chapter || "",
+                    question: r.question,
+                    answer: r.answer || "",
+                    marks: Number(r.marks) || 1,
+                  });
+                  questionsApi.add({
+                    subject: r.subject || "Math",
+                    chapter: r.chapter || "",
+                    question: r.question,
+                    answer: r.answer || "",
+                    diff: r.diff || "Medium",
+                    marks: Number(r.marks) || 1,
+                    className: importClass,
+                    pdfName: pdf.name,
+                    pdfUrl: pdf.url,
+                  });
+                  n++;
+                });
+                if (n) toast.success(`${n} questions added to Class ${importClass}`);
+                setImportClassOpen(false);
+                resetImportDialog();
+              }}
+            >
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <CrudDialog
         open={genOpen}
         onOpenChange={setGenOpen}
@@ -1603,25 +1964,43 @@ export default function Exams() {
 
       <CrudDialog
         open={catOpen}
-        onOpenChange={setCatOpen}
-        title="New Exam Category"
+        onOpenChange={(v) => {
+          setCatOpen(v);
+          if (!v) setCatEdit(null);
+        }}
+        title={catEdit ? "Edit Exam Category" : "New Exam Category"}
+        initial={catEdit ? { name: catEdit.name, description: catEdit.description } : undefined}
         fields={[
           { name: "name", label: "Category Name" },
           { name: "description", label: "Description", type: "textarea" },
         ]}
-        submitLabel="Create Category"
+        submitLabel={catEdit ? "Save Category" : "Create Category"}
         onSubmit={(d) => {
-          setCategories((p) => [
-            ...p,
-            { id: `c-${Date.now()}`, name: String(d.name), description: String(d.description || ""), weight: Number(d.weight) || 100 },
-          ]);
-          toast.success("Category added");
+          if (catEdit) {
+            setCategories((p) =>
+              p.map((x) =>
+                x.id === catEdit.id
+                  ? { ...x, name: String(d.name), description: String(d.description || "") }
+                  : x,
+              ),
+            );
+            toast.success("Category updated");
+          } else {
+            setCategories((p) => [
+              ...p,
+              { id: `c-${Date.now()}`, name: String(d.name), description: String(d.description || ""), weight: Number(d.weight) || 100 },
+            ]);
+            toast.success("Category added");
+          }
         }}
       />
 
       <CrudDialog
         open={paperOpen}
-        onOpenChange={setPaperOpen}
+        onOpenChange={(v) => {
+          setPaperOpen(v);
+          if (!v) setPaperEdit(null);
+        }}
         title={paperEdit ? "Edit Paper" : "Add Subject / Paper"}
         description="Schedule a subject paper with date, time, room and max marks."
         initial={paperEdit ? { ...paperEdit } : undefined}

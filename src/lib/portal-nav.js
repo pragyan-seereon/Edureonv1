@@ -36,7 +36,12 @@ import {
   // eslint-disable-next-line no-unused-vars
   Wallet,
   IdCard,
-  ShieldCheck
+  ShieldCheck,
+
+  // Student Campus icons
+  DoorOpen,
+  Route,
+  Images,
 } from "lucide-react";
 const adminGroups = [
   {
@@ -238,12 +243,51 @@ const teacherGroups = [
     ],
   },
 ];
+// const studentGroups = [
+//   {
+//     label: "Learning",
+//     items: [
+//       { title: "Dashboard", url: "/student/dashboard", icon: LayoutDashboard },
+//       { title: "My Timetable", url: "/student/timetable", icon: CalendarDays },
+//       {
+//         title: "My Attendance",
+//         url: "/student/attendance",
+//         icon: CalendarCheck,
+//       },
+//       {
+//         title: "Assignments",
+//         url: "/student/assignments",
+//         icon: ClipboardList,
+//       },
+//       { title: "Exams & Results", url: "/student/results", icon: Trophy },
+//       { title: "Study Materials", url: "/student/materials", icon: FileBox },
+//       { title: "Notices & Calendar", url: "/student/notices", icon: Megaphone },
+//     ],
+//   },
+//   {
+//     label: "Campus",
+//     items: [
+//       { title: "Fees", url: "/student/fees", icon: IndianRupee },
+//       { title: "Library", url: "/student/library", icon: Library },
+//       { title: "Notifications", url: "/notifications", icon: Bell },
+//       { title: "My Profile", url: "/profile", icon: UserIcon },
+//     ],
+//   },
+// ];
 const studentGroups = [
   {
     label: "Learning",
     items: [
-      { title: "Dashboard", url: "/student/dashboard", icon: LayoutDashboard },
-      { title: "My Timetable", url: "/student/timetable", icon: CalendarDays },
+      {
+        title: "Dashboard",
+        url: "/student/dashboard",
+        icon: LayoutDashboard,
+      },
+      {
+        title: "My Timetable",
+        url: "/student/timetable",
+        icon: CalendarDays,
+      },
       {
         title: "My Attendance",
         url: "/student/attendance",
@@ -254,21 +298,71 @@ const studentGroups = [
         url: "/student/assignments",
         icon: ClipboardList,
       },
-      { title: "Exams & Results", url: "/student/results", icon: Trophy },
-      { title: "Study Materials", url: "/student/materials", icon: FileBox },
-      { title: "Notices & Calendar", url: "/student/notices", icon: Megaphone },
+      {
+        title: "Exams & Results",
+        url: "/student/results",
+        icon: Trophy,
+      },
+      {
+        title: "Study Materials",
+        url: "/student/materials",
+        icon: FileBox,
+      },
+      {
+        title: "Notices & Calendar",
+        url: "/student/notices",
+        icon: Megaphone,
+      },
     ],
   },
+
   {
     label: "Campus",
     items: [
-      { title: "Fees", url: "/student/fees", icon: IndianRupee },
-      { title: "Library", url: "/student/library", icon: Library },
-      { title: "Notifications", url: "/notifications", icon: Bell },
-      { title: "My Profile", url: "/profile", icon: UserIcon },
+      {
+        title: "Fees",
+        url: "/student/fees",
+        icon: IndianRupee,
+      },
+      {
+        title: "Library",
+        url: "/student/library",
+        icon: Library,
+      },
+      {
+        title: "Gate Pass",
+        url: "/student/gate-pass",
+        icon: DoorOpen,
+      },
+      {
+        title: "Bus Routes",
+        url: "/student/bus-routes",
+        icon: Route,
+      },
+      {
+        title: "Gallery",
+        url: "/student/gallery",
+        icon: Images,
+      },
+      {
+        title: "Communication",
+        url: "/student/communication",
+        icon: MessageSquare,
+      },
+      {
+        title: "Notifications",
+        url: "/notifications",
+        icon: Bell,
+      },
+      {
+        title: "My Profile",
+        url: "/profile",
+        icon: UserIcon,
+      },
     ],
   },
 ];
+
 const parentGroups = [
   {
     label: "Family",

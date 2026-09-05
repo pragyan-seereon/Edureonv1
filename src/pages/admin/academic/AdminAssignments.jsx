@@ -182,8 +182,6 @@ export default function AdminAssignments() {
   const allSubs = useSubmissions();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [statusF, setStatusF] = useState("All");
-  const [subjF, setSubjF] = useState("All");
   const [classF, setClassF] = useState("All");
   const [teacherF, setTeacherF] = useState("All");
   const [selected, setSelected] = useState(new Set());
@@ -267,15 +265,14 @@ export default function AdminAssignments() {
     [subjects],
   );
 
-  const TEACHERS = useMemo(() => {
-    const names = new Set();
-    subjects.forEach((s) => (s.faculty || []).forEach((f) => names.add(f.name)));
-    return [...names];
-  }, [subjects]);
+   const TEACHERS = useMemo(
+    () => [...new Set(items.map((a) => a.teacher).filter(Boolean))],
+    [items],
+  );
 
   const CLASSES = useMemo(
-    () => classes.map((c) => c.class_name),
-    [classes],
+    () => [...new Set(items.map((a) => a.klass).filter(Boolean))],
+    [items],
   );
     const existingPdf = useMemo(
     () => (form.existingAttachments || []).find((att) => att.attachment_type === "PDF"),
@@ -308,12 +305,10 @@ export default function AdminAssignments() {
     () =>
       items.filter(
         (a) =>
-          (statusF === "All" || a.status === statusF) &&
-          (subjF === "All" || a.subject === subjF) &&
           (classF === "All" || a.klass === classF) &&
           (teacherF === "All" || a.teacher === teacherF),
       ),
-    [items, statusF, subjF, classF, teacherF],
+    [items, classF, teacherF],
   );
 
   useEffect(() => {
@@ -1315,30 +1310,7 @@ const handleUpdate = async () => {
 
       <Card className="border-border/60 mb-4">
         <CardContent className="p-3 flex flex-wrap gap-2 items-center">
-          <Select value={statusF} onValueChange={setStatusF}>
-            <SelectTrigger className="h-8 w-32">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              {["All", "Draft", "Published", "Closed", "Archived"].map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={subjF} onValueChange={setSubjF}>
-            <SelectTrigger className="h-8 w-32">
-              <SelectValue placeholder="Subject" />
-            </SelectTrigger>
-            <SelectContent>
-              {["All", ...SUBJECTS].map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+         
           <Select value={classF} onValueChange={setClassF}>
             <SelectTrigger className="h-8 w-28">
               <SelectValue placeholder="Class" />

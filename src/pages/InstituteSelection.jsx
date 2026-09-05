@@ -2,7 +2,7 @@ import { Building2, ChevronRight, MapPin } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
-import { portalHomeForRole } from "../lib/portal-nav";
+import { portalHomeForRole, portalRoleForUser } from "../lib/portal-nav";
 import { getAuthorizationContext, selectInstitute } from "../api/auth";
 import useAuthStore from "../store/authStore";
 import useInstituteStore from "../store/instituteStore";
@@ -36,12 +36,13 @@ export default function InstituteSelection() {
         // The selection response is a safe fallback for older API versions.
       }
 
-      const primaryRole = authorizationContext.role_codes?.[0] || result.role_codes?.[0] || institute.roles?.[0]?.role_code || user.role_code || user.role;
+      const roleCodes = authorizationContext.role_codes || result.role_codes || institute.roles?.map((role) => role.role_code) || user.role_codes;
+      const primaryRole = portalRoleForUser(roleCodes, user.role_code || user.role);
       const selectedUser = {
         ...user,
         role: primaryRole,
         role_code: primaryRole,
-        role_codes: authorizationContext.role_codes || result.role_codes || institute.roles?.map((role) => role.role_code) || user.role_codes || [primaryRole],
+        role_codes: roleCodes || [primaryRole],
         permissions: authorizationContext.permissions || result.permissions || [],
         role_permissions: authorizationContext.role_permissions || [],
         temporary_permissions: authorizationContext.temporary_permissions || [],

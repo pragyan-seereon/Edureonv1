@@ -636,6 +636,105 @@ const studentModel = {
 
     return response;
   },
+
+  getMyAssignments: async () => {
+    const response = await api.get("/assignments", {
+      params: { page: 1, page_size: 100 },
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  getMyAssignmentDetail: async (assignmentUuid) => {
+    const response = await api.get(`/assignments/${assignmentUuid}/detail`, {
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  submitAssignment: async (assignmentUuid, { file, comment = "" }) => {
+    const formData = new FormData();
+    formData.append("submission_file_1", file);
+    if (comment.trim()) formData.append("comment", comment.trim());
+
+    const response = await api.post(
+      `/assignments/${assignmentUuid}/submit`,
+      formData,
+      {
+        headers: {
+          ...getHeaders(),
+          "Content-Type": undefined,
+        },
+      }
+    );
+    return response.data;
+  },
+
+  getAssignmentInquiries: async (assignmentUuid) => {
+    const response = await api.get(`/assignments/${assignmentUuid}/inquiries`, {
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  createAssignmentInquiry: async (assignmentUuid, question) => {
+    const response = await api.post(
+      `/assignments/${assignmentUuid}/inquiries`,
+      { question: question.trim() },
+      { headers: getHeaders() }
+    );
+    return response.data;
+  },
+
+  getMyAttendance: async ({ dateFrom = null, dateTo = null } = {}) => {
+    const params = {};
+    if (dateFrom) params.date_from = dateFrom;
+    if (dateTo) params.date_to = dateTo;
+
+    const response = await api.get("/student-portal/attendance", {
+      params,
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  getMyGatePasses: async () => {
+    const response = await api.get("/student-portal/gate-passes", {
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  getPortalContent: async () => {
+    const response = await api.get("/portal/content", {
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  getMyMaterials: async () => {
+    const response = await api.get("/materials", { headers: getHeaders() });
+    return response.data;
+  },
+
+  getMaterialDownloadUrl: async (materialUuid) => {
+    const response = await api.get(`/materials/${materialUuid}/download`, {
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  getMyLessonPlans: async () => {
+    const response = await api.get("/lesson-plans", { headers: getHeaders() });
+    return response.data;
+  },
+
+  getLessonPlanDownloadUrl: async (lessonPlanUuid) => {
+    const response = await api.get(`/lesson-plans/${lessonPlanUuid}/download`, {
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
 };
 
 export default studentModel;

@@ -26,7 +26,8 @@ import {
   FolderArchive,
   KanbanSquare,
   Network,
-  // NotebookPen,
+  // eslint-disable-next-line no-unused-vars
+  NotebookPen,
   Plane,
   CalendarCheck,
   Trophy,
@@ -35,8 +36,7 @@ import {
   // eslint-disable-next-line no-unused-vars
   Wallet,
   IdCard,
-  ShieldCheck,
-  
+  ShieldCheck
 } from "lucide-react";
 const adminGroups = [
   {
@@ -242,7 +242,7 @@ const studentGroups = [
   {
     label: "Learning",
     items: [
-      { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+      { title: "Dashboard", url: "/student/dashboard", icon: LayoutDashboard },
       { title: "My Timetable", url: "/student/timetable", icon: CalendarDays },
       {
         title: "My Attendance",
@@ -254,9 +254,9 @@ const studentGroups = [
         url: "/student/assignments",
         icon: ClipboardList,
       },
-      { title: "Results", url: "/student/results", icon: Trophy },
+      { title: "Exams & Results", url: "/student/results", icon: Trophy },
       { title: "Study Materials", url: "/student/materials", icon: FileBox },
-      { title: "Notices", url: "/student/notices", icon: Megaphone },
+      { title: "Notices & Calendar", url: "/student/notices", icon: Megaphone },
     ],
   },
   {
@@ -287,6 +287,17 @@ const parentGroups = [
     ],
   },
 ];
+
+// Teachers use the teacher portal as their primary workspace, even if an
+// additional institute role appears first in the API's role_codes array.
+export function portalRoleForUser(roleCodes, fallbackRole) {
+  const codes = (Array.isArray(roleCodes) ? roleCodes : [])
+    .map((role) => String(role || "").toUpperCase())
+    .filter(Boolean);
+
+  return codes.includes("TEACHER") ? "TEACHER" : codes[0] || fallbackRole || "ADMIN";
+}
+
 export function navForRole(role) {
   switch (role?.toUpperCase()) {
     case "SUPER_ADMIN":
@@ -370,124 +381,63 @@ const flattenPermissions = (raw = []) =>
  * (as is the case for institute administrators in the current API response).
  */
 export function navForUser(role, source = {}) {
-  const normalizedRole = String(role || "").toUpperCase();
+  const roleCode = String(role || "").toUpperCase();
+  // Professors may be assigned institute modules beyond the teacher portal
+  // (for example Admissions and Students), so filter the complete institute
+  // navigation for them rather than starting with the narrow teacher menu.
+  const groups = roleCode === "PROFESSOR" ? adminGroups : navForRole(role);
 
-  const permissions = Array.isArray(source)
-    ? source
-    : source.permissions || [];
+  const permissions = Array.isArray(source) ? source : source.permissions || [];
+  const rolePermissions = Array.isArray(source) ? [] : source.rolePermissions || [];
+  const temporaryPermissions = Array.isArray(source) ? [] : source.temporaryPermissions || [];
+  const allowed = new Set(flattenPermissions([...permissions, ...rolePermissions, ...temporaryPermissions]));
+  const denied = new Set(flattenPermissions(Array.isArray(source) ? [] : source.overrideDeniedPermissions || []));
+  flattenPermissions(Array.isArray(source) ? [] : source.overrideAllowedPermissions || []).forEach((code) => allowed.add(code));
 
-  const rolePermissions = Array.isArray(source)
-    ? []
-    : source.rolePermissions || [];
+  const filterAdminGroups = (
+    navigation,
+    isUnrestrictedAdmin = false,
+    includeDefaultItems = true,
+  ) => {
+    if (allowed.has("*") || (allowed.size === 0 && isUnrestrictedAdmin)) return navigation;
 
-  const temporaryPermissions = Array.isArray(source)
-    ? []
-    : source.temporaryPermissions || [];
-
-  const allowed = new Set(
-    flattenPermissions([
-      ...permissions,
-      ...rolePermissions,
-      ...temporaryPermissions,
-    ])
-  );
-
-  const denied = new Set(
-    flattenPermissions(
-      Array.isArray(source)
-        ? []
-        : source.overrideDeniedPermissions || []
-    )
-  );
-
-  flattenPermissions(
-    Array.isArray(source)
-      ? []
-      : source.overrideAllowedPermissions || []
-  ).forEach((code) => allowed.add(code));
-
-    // =====================================================
-  // TEACHER / PROFESSOR
-  // =====================================================
-  if (["TEACHER", "PROFESSOR"].includes(normalizedRole)) {
-    // Always show the normal teacher sidebar
-    const teacherMenu = teacherGroups.map((group) => ({
-      ...group,
-      items: [...group.items],
-    }));
-
-    // Add extra sidebar items based on permissions
-    const additionalGroups = adminGroups
+    return navigation
       .map((group) => ({
         ...group,
         items: group.items.filter((item) => {
-          // Don't duplicate teacher menu items
-          const alreadyExists = teacherGroups.some((teacherGroup) =>
-            teacherGroup.items.some(
-              (teacherItem) =>
-                teacherItem.title === item.title ||
-                teacherItem.url === item.url
-            )
-          );
-
-          if (alreadyExists) return false;
-
+          if (includeDefaultItems && ["Dashboard", "My Profile", "Settings"].includes(item.title)) return true;
           const moduleCodes = NAV_MODULE_CODES[item.title] || [];
-
           return moduleCodes.some((code) => {
-            const normalizedCode = normalisePermissionValue(code);
-
-            return (
-              allowed.has(normalizedCode) &&
-              !denied.has(normalizedCode)
-            );
+            const normalisedCode = normalisePermissionValue(code);
+            return allowed.has(normalisedCode) && !denied.has(normalisedCode);
           });
         }),
       }))
       .filter((group) => group.items.length > 0);
+  };
 
-    return [...teacherMenu, ...additionalGroups];
+  if (roleCode === "TEACHER") {
+    const extraRoles = (Array.isArray(source) ? [] : source.roleCodes || source.role_codes || [])
+      .map((code) => String(code || "").toUpperCase())
+      .filter((code) => code && !["TEACHER", "PROFESSOR"].includes(code));
+
+    if (extraRoles.length === 0) return groups;
+
+    const extraGroups = filterAdminGroups(
+      adminGroups,
+      extraRoles.some((code) => ["ADMIN", "SUPER_ADMIN"].includes(code)),
+      false,
+    );
+    return [...groups, ...extraGroups];
   }
 
-  // =====================================================
-  // OTHER ROLES
-  // =====================================================
-  const groups = navForRole(normalizedRole);
+  // Student, parent, and super-admin portals are fixed. Admin-type roles
+  // continue through the module-permission filter below.
+  if (groups !== adminGroups) return groups;
 
-  if (allowed.has("*")) {
-    return groups;
-  }
-
-  if (
-    allowed.size === 0 &&
-    ["ADMIN", "SUPER_ADMIN"].includes(normalizedRole)
-  ) {
-    return groups;
-  }
-
-  return groups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter((item) => {
-        if (
-          ["Dashboard", "My Profile", "Settings"].includes(item.title)
-        ) {
-          return true;
-        }
-
-        const moduleCodes = NAV_MODULE_CODES[item.title] || [];
-
-        return moduleCodes.some((code) => {
-          const normalisedCode = normalisePermissionValue(code);
-
-          return (
-            allowed.has(normalisedCode) &&
-            !denied.has(normalisedCode)
-          );
-        });
-      }),
-    }))
-    .filter((group) => group.items.length > 0);
+  // System admins have unrestricted navigation when the backend correctly
+  // represents full access as an empty permission list.
+  return filterAdminGroups(groups, ["ADMIN", "SUPER_ADMIN"].includes(roleCode));
 }
 export function portalHomeForRole(role) {
   switch (role?.toUpperCase()) {

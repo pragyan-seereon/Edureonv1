@@ -64,16 +64,15 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { lessonPlansApi, useLessonPlans } from "../../lib/store";
+import { getLessonPlans, createLessonPlan, downloadLessonPlan } from "../../api/lessonplan";
 import {getStudyMaterials,createStudyMaterial,downloadStudyMaterial,} from "../../api/studymaterial";
-import {getAssignments,saveDraftAssignment,publishAssignment,getAssignmentDetail,updateAssignment,deleteAssignment,} from "../../api/assignment";
+import {getAssignments,publishAssignment,getAssignmentDetail,updateAssignment,deleteAssignment,} from "../../api/assignment";
 import {getAssignmentStudents,getAssignmentSubmissions,gradeSubmission,getAssignmentInquiries,replyAssignmentInquiry,} from "../../api/teacherassignment";
 import { getTeacherClasses } from "../../api/teacherclass";
 import {PaginationBar, RowsPerPageSelect,} from "../../components/pagination-controls";
 
 import useSessionStore from "../../store/sessionStore";
 import { useTeacherCtx } from "../../lib/teacher-ctx";
-import { openPrintable, esc } from "../../lib/print";
 
 // Maps a raw submission row from GET /assignments/:uuid/submissions
 const mapSubmission = (s) => ({
@@ -171,8 +170,29 @@ const mapMaterial = (m) => ({
   downloads: m.downloads ?? 0,
   createdAt: m.created_at,
 });
+
+const mapLessonPlan = (p) => ({
+  id: p.lesson_plan_uuid,
+  title: p.title,
+  subjectUuid: p.subject_uuid,
+  subject: p.subject_name,
+  classUuid: p.class_uuid,
+  sectionUuid: p.section_uuid,
+  klass: p.section_name ? `${p.class_name}-${p.section_name}` : p.class_name,
+  chapter: p.chapter,
+  topic: p.topic,
+  weekOf: p.week_of,
+  periods: p.periods,
+  objectives: p.learning_objectives,
+  method: p.teaching_method,
+  pdfFileName: p.pdf_file_name,
+  pdfUrl: p.pdf_url,
+  referenceUrl: p.reference_url,
+  createdAt: p.created_at,
+});
+
 export default function TeacherAssignmentsPage() {
-   const { teacherName, classes, subjects } = useTeacherCtx();
+   const { teacherName } = useTeacherCtx();
 
   const [materials, setMaterials] = useState([]);
   const [materialsLoading, setMaterialsLoading] = useState(false);
@@ -292,7 +312,7 @@ export default function TeacherAssignmentsPage() {
   const [activeId, setActiveId] = useState(null);
   const [activeSub, setActiveSub] = useState(null);
   const [classF, setClassF] = useState("All");
-
+ const [mainTab, setMainTab] = useState("assignments");
    const mine = allAssignments;
 
  
@@ -305,6 +325,21 @@ export default function TeacherAssignmentsPage() {
     () => mine.filter((a) => classF === "All" || a.klass === classF),
     [mine, classF],
   );
+
+  const [assignPage, setAssignPage] = useState(1);
+const [assignPageSize, setAssignPageSize] = useState(10);
+
+useEffect(() => {
+  setAssignPage(1);
+}, [classF, mine.length]);
+
+const assignTotalPages = Math.max(1, Math.ceil(filtered.length / assignPageSize));
+const pagedAssignments = useMemo(
+  () => filtered.slice((assignPage - 1) * assignPageSize, assignPage * assignPageSize),
+  [filtered, assignPage, assignPageSize],
+);
+const assignRangeStart = filtered.length ? (assignPage - 1) * assignPageSize + 1 : 0;
+const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
 
   const active = activeId ? mine.find((a) => a.id === activeId) : undefined;
 
@@ -355,7 +390,7 @@ export default function TeacherAssignmentsPage() {
   const [filteredSections, setFilteredSections] = useState([]);
   const [students, setStudents] = useState([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
-  const [savingDraft, setSavingDraft] = useState(false);
+  const [savingDraft] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
   // Edit / delete state
@@ -544,29 +579,6 @@ export default function TeacherAssignmentsPage() {
   });
 
   // eslint-disable-next-line no-unused-vars
-  const handleSaveDraft = async () => {
-    if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
-
-    const fd = buildFormData();
-    fd.append("status", "DRAFT");
-    if (formA.draftUuid) fd.append("draft_uuid", formA.draftUuid);
-
-    setSavingDraft(true);
-    try {
-      const res = await saveDraftAssignment(fd);
-      if (res?.success) {
-        toast.success(res.message || "Draft saved");
-        setFormA((f) => ({ ...f, draftUuid: res.data?.draft_uuid || f.draftUuid }));
-      } else {
-        toast.error(res?.message || "Failed to save draft");
-      }
-    } catch (err) {
-      console.log(err);
-      toast.error(err?.response?.data?.message || "Failed to save draft");
-    } finally {
-      setSavingDraft(false);
-    }
-  };
 
   const handlePublish = async () => {
     if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
@@ -789,22 +801,23 @@ export default function TeacherAssignmentsPage() {
   };
 
   // eslint-disable-next-line no-unused-vars
-  const printSubmission = (s, a) =>
-    openPrintable(
-      `${s.studentName} — Submission`,
-      `
-      <h1>${esc(a?.title ?? "Assignment")}</h1>
-      <div class="muted">${esc(a?.subject)} · Class ${esc(a?.klass)} · Max ${esc(a?.maxMarks)} marks</div>
-      <h2>Student</h2>
-      <div class="box">${esc(s.studentName)} (${esc(s.studentId)}) · Status: ${esc(s.status)}${s.late ? " · LATE" : ""}<br/>
-      Submitted: ${esc(s.submittedAt ? new Date(s.submittedAt).toLocaleString() : "—")}${
-        s.marks != null ? `<br/>Marks: ${esc(s.marks)} / ${esc(a?.maxMarks)}` : ""
-      }${s.feedback ? `<br/>Feedback: ${esc(s.feedback)}` : ""}</div>
-      <h2>Files</h2><ul>${(s.attachments ?? []).map((f) => `<li>${esc(f.file_name)}</li>`).join("") || "<li>No files</li>"}</ul>`,
-    );
 
   const pending = mine.reduce((sum, a) => sum + (a.pendingCount ?? 0), 0);
   const graded = mine.reduce((sum, a) => sum + (a.reviewedCount ?? 0), 0);
+  const [matPage, setMatPage] = useState(1);
+  const [matPageSize, setMatPageSize] = useState(10);
+
+  useEffect(() => {
+    setMatPage(1);
+  }, [materials.length]);
+
+  const matTotalPages = Math.max(1, Math.ceil(materials.length / matPageSize));
+  const pagedMaterials = useMemo(
+    () => materials.slice((matPage - 1) * matPageSize, matPage * matPageSize),
+    [materials, matPage, matPageSize],
+  );
+  const matRangeStart = materials.length ? (matPage - 1) * matPageSize + 1 : 0;
+  const matRangeEnd = Math.min(matPage * matPageSize, materials.length);
 
   const existingPdf = useMemo(
     () => (formA.existingAttachments || []).find((att) => att.attachment_type === "PDF"),
@@ -1440,7 +1453,7 @@ export default function TeacherAssignmentsPage() {
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={uploadMaterial} disabled={sharingMaterial}>
+          <Button type="button" onClick={uploadMaterial} disabled={sharingMaterial}>
             {sharingMaterial ? "Sharing..." : "share"}
           </Button>
         </DialogFooter>
@@ -1800,13 +1813,12 @@ export default function TeacherAssignmentsPage() {
           tone="info"
         />
       </div>
-
-      <Tabs defaultValue="assignments">
-        <TabsList>
-          <TabsTrigger value="assignments">Assignments</TabsTrigger>
-          <TabsTrigger value="materials">Study Materials</TabsTrigger>
-          <TabsTrigger value="plans">Lesson Plans</TabsTrigger>
-        </TabsList>
+<Tabs value={mainTab} onValueChange={setMainTab}>
+  <TabsList>
+    <TabsTrigger value="assignments">Assignments</TabsTrigger>
+    <TabsTrigger value="materials">Study Materials</TabsTrigger>
+    <TabsTrigger value="plans">Lesson Plans</TabsTrigger>
+  </TabsList>
 
                 <TabsContent value="assignments" className="mt-4 space-y-4">
           <Card className="border-border/60">
@@ -1838,9 +1850,20 @@ export default function TeacherAssignmentsPage() {
 
             <TabsContent value="table" className="mt-4">
               <Card className="border-border/60">
-                <CardContent className="p-0 overflow-x-auto">
+                <CardContent className="p-0">
+                  <div className="flex justify-end border-b px-4 py-3">
+                    <RowsPerPageSelect
+                      pageSize={assignPageSize}
+                      onPageSizeChange={(value) => {
+                        setAssignPageSize(value);
+                        setAssignPage(1);
+                      }}
+                    />
+                  </div>
+                  <div className="overflow-x-auto">
                   <Table>
-                                        <TableHeader>
+                                        
+                      <TableHeader>
                       <TableRow>
                         <TableHead>ID</TableHead>
                         <TableHead>Title</TableHead>
@@ -1853,8 +1876,8 @@ export default function TeacherAssignmentsPage() {
                         <TableHead className="w-20">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
-                      {filtered.map((a) => {
+                      <TableBody>
+                      {pagedAssignments.map((a) => {
                         const total = a.totalStudents ?? 0;
                         const done =
                           (a.submittedCount ?? 0) + (a.reviewedCount ?? 0);
@@ -1949,6 +1972,17 @@ export default function TeacherAssignmentsPage() {
                       )}
                     </TableBody>
                   </Table>
+                  </div>
+                  <PaginationBar
+                    rangeStart={assignRangeStart}
+                    rangeEnd={assignRangeEnd}
+                    totalItems={filtered.length}
+                    page={assignPage}
+                    totalPages={assignTotalPages}
+                    onPageChange={setAssignPage}
+                    showPageSize={false}
+                    itemLabel="assignments"
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -2058,7 +2092,17 @@ export default function TeacherAssignmentsPage() {
             </CardContent>
           </Card>
           <Card className="border-border/60">
-            <CardContent className="p-0 overflow-x-auto">
+            <CardContent className="p-0">
+              <div className="flex justify-end border-b px-4 py-3">
+                <RowsPerPageSelect
+                  pageSize={matPageSize}
+                  onPageSizeChange={(value) => {
+                    setMatPageSize(value);
+                    setMatPage(1);
+                  }}
+                />
+              </div>
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -2070,8 +2114,8 @@ export default function TeacherAssignmentsPage() {
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
-                                <TableBody>
-                  {materials.map((m) => (
+                  <TableBody>
+                  {pagedMaterials.map((m) => (
                     <TableRow key={m.id}>
                       <TableCell className="font-medium">
                         {m.title}
@@ -2120,17 +2164,24 @@ export default function TeacherAssignmentsPage() {
                     </TableRow>
                   )}
                 </TableBody>
-              </Table>
+                            </Table>
+              </div>
+              <PaginationBar
+                rangeStart={matRangeStart}
+                rangeEnd={matRangeEnd}
+                totalItems={materials.length}
+                page={matPage}
+                totalPages={matTotalPages}
+                onPageChange={setMatPage}
+                showPageSize={false}
+                itemLabel="materials"
+              />
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="plans" className="mt-4">
-          <LessonPlansTab
-            teacherName={teacherName}
-            classes={classes}
-            subjects={subjects}
-          />
+            <TabsContent value="plans" className="mt-4">
+          <LessonPlansTab teacherName={teacherName} />
         </TabsContent>
       </Tabs>
     </PageContainer>
@@ -2138,84 +2189,209 @@ export default function TeacherAssignmentsPage() {
 }
 
 /** Lesson planning lives inside the assignments workspace for teachers. */
-function LessonPlansTab({ teacherName, classes, subjects }) {
-  const plans = useLessonPlans();
+// eslint-disable-next-line no-unused-vars
+function LessonPlansTab({ teacherName }) {
+  const [plans, setPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(false);
   const [open, setOpen] = useState(false);
+
+  const loadPlans = async () => {
+    setPlansLoading(true);
+    try {
+      const res = await getLessonPlans();
+      setPlans((res?.data ?? []).map(mapLessonPlan));
+    } catch (err) {
+      console.log(err);
+      toast.error("Failed to load lesson plans");
+      setPlans([]);
+    } finally {
+      setPlansLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPlans();
+  }, []);
+
+  // classes/subjects/sections pickers, uuid-based (mirrors the assignment form)
+  const [classesList, setClassesList] = useState([]);
+  const [sectionsList, setSectionsList] = useState([]);
+  const [subjectsList, setSubjectsList] = useState([]);
+  const [filteredSections, setFilteredSections] = useState([]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (classesList.length || sectionsList.length || subjectsList.length) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getTeacherClasses();
+        const rows = res?.data ?? [];
+        if (cancelled) return;
+
+        const classesMap = new Map();
+        const sectionsMap = new Map();
+        const subjectsMap = new Map();
+        rows.forEach((row) => {
+          if (row.class_uuid && !classesMap.has(row.class_uuid))
+            classesMap.set(row.class_uuid, { class_uuid: row.class_uuid, class_name: row.class_name });
+          if (row.section_uuid && !sectionsMap.has(row.section_uuid))
+            sectionsMap.set(row.section_uuid, { section_uuid: row.section_uuid, section_name: row.section_name, class_uuid: row.class_uuid });
+          if (row.subject_uuid && !subjectsMap.has(row.subject_uuid))
+            subjectsMap.set(row.subject_uuid, { subject_uuid: row.subject_uuid, subject_name: row.subject_name });
+        });
+
+        setClassesList([...classesMap.values()]);
+        setSectionsList([...sectionsMap.values()]);
+        setSubjectsList([...subjectsMap.values()]);
+      } catch (err) {
+        console.log(err);
+        toast.error("Failed to load classes");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, classesList.length, sectionsList.length, subjectsList.length]);
+
   const empty = {
     title: "",
-    subject: subjects[0] ?? "Math",
-    klass: classes[0] ?? "X-B",
+    subject: "",   // subject_uuid
+    classNum: "",  // class_uuid
+    section: "",   // section_uuid
     chapter: "",
     topic: "",
     method: "Discussion + worked examples",
     weekOf: "",
-    periods: 3,
+    periods: 1,
     objectives: "",
-    pdf: "",
-    link: "",
+    referenceLink: "",
+    pdfFile: null,
   };
   const [form, setForm] = useState(empty);
+  const [errors, setErrors] = useState({});
 
-  const mine = plans.filter(
-    (p) =>
-      !p.archived &&
-      (p.teacher === teacherName || classes.includes(p.klass)),
+  // Filter sections whenever the chosen class changes; auto-pick the
+  // first matching section, and clear it if it no longer belongs.
+  useEffect(() => {
+    const sec = sectionsList.filter((s) => s.class_uuid === form.classNum);
+    setFilteredSections(sec);
+    setForm((prev) => ({
+      ...prev,
+      section: sec.some((s) => s.section_uuid === prev.section)
+        ? prev.section
+        : (sec.length ? sec[0].section_uuid : ""),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.classNum, sectionsList]);
+
+    const mine = plans;
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setPage(1);
+  }, [mine.length]);
+
+  const totalPages = Math.max(1, Math.ceil(mine.length / pageSize));
+  const pagedPlans = useMemo(
+    () => mine.slice((page - 1) * pageSize, page * pageSize),
+    [mine, page, pageSize],
   );
+  const rangeStart = mine.length ? (page - 1) * pageSize + 1 : 0;
+  const rangeEnd = Math.min(page * pageSize, mine.length);
 
-  const save = (status) => {
-    if (!form.title.trim()) return toast.error("Title required");
-    const resources = [];
-    if (form.pdf.trim()) resources.push({ kind: "pdf", label: form.pdf.trim() });
-    if (form.link.trim())
-      resources.push({ kind: "link", label: form.link.trim(), url: form.link.trim() });
-    lessonPlansApi.add({
-      title: form.title,
-      subject: form.subject,
-      klass: form.klass,
-      teacher: teacherName,
-      chapter: form.chapter,
-      topic: form.topic,
-      method: form.method,
-      weekOf: form.weekOf || new Date().toISOString().slice(0, 10),
-      periods: form.periods,
-      materials: [],
-      resources,
-      objectives: form.objectives,
-      status,
-      completion: "Not Started",
-    });
-    setOpen(false);
-    setForm(empty);
-    toast.success(
-      status === "Submitted"
-        ? "Lesson plan submitted to HOD"
-        : "Lesson plan saved",
-    );
+  const [saving, setSaving] = useState(false);
+
+  const validateForm = () => {
+    const errs = {};
+    if (!form.title.trim()) errs.title = "Title is required.";
+    if (!form.subject) errs.subject = "Select a subject.";
+    if (!form.classNum) errs.classNum = "Select a class.";
+    if (!form.section) errs.section = "Select a section.";
+    if (!form.weekOf) errs.weekOf = "Select week of.";
+    if (!form.periods || form.periods < 1) errs.periods = "Periods must be at least 1.";
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
-  const downloadPlan = (p) =>
-    openPrintable(
-      `${p.title} — Lesson Plan`,
-      `
-      <h1>${esc(p.title)}</h1>
-      <div class="muted">${esc(p.subject)} · Class ${esc(p.klass)} · Week of ${esc(p.weekOf)} · ${esc(p.periods)} period(s)</div>
-      <h2>Chapter & topic</h2><div class="box">${esc(p.chapter)}<br/>${esc(p.topic)}</div>
-      <h2>Learning objectives</h2><div class="box">${esc(p.objectives || "—")}</div>
-      <h2>Teaching method</h2><div class="box">${esc(p.method)}</div>
-      <h2>Resources</h2><ul>${(p.resources ?? []).map((r) => `<li>${esc(r.kind.toUpperCase())}: ${esc(r.label)}</li>`).join("") || "<li>None attached</li>"}</ul>
-      <h2>Progress log</h2><ul>${p.completionLogs.map((l) => `<li>${esc(l.date)} — ${esc(l.note)}</li>`).join("") || "<li>No entries</li>"}</ul>
-      <div class="muted" style="margin-top:24px">Prepared by ${esc(p.teacher)} · Edureon ERP</div>`,
-    );
+  const save = async () => {
+    if (!validateForm()) return toast.error("Complete the required fields.");
+
+    const fd = new FormData();
+    fd.append("title", form.title);
+    fd.append("subject_uuid", form.subject);
+    fd.append("class_uuid", form.classNum);
+    fd.append("section_uuid", form.section);
+    fd.append("week_of", form.weekOf);
+    fd.append("periods", form.periods);
+    if (form.chapter) fd.append("chapter", form.chapter);
+    if (form.topic) fd.append("topic", form.topic);
+    if (form.objectives) fd.append("learning_objectives", form.objectives);
+    if (form.method) fd.append("teaching_method", form.method);
+    if (form.referenceLink) fd.append("reference_url", form.referenceLink);
+    if (form.pdfFile) fd.append("pdf", form.pdfFile);
+
+    setSaving(true);
+    try {
+      const res = await createLessonPlan(fd);
+      if (res?.success) {
+        toast.success(res.message || "Lesson plan created");
+        setPlans((rows) => [mapLessonPlan(res.data), ...rows]);
+        setOpen(false);
+        setForm(empty);
+        setErrors({});
+      } else {
+        toast.error(res?.message || "Failed to create lesson plan");
+      }
+    } catch (err) {
+      console.log(err);
+      toast.error(err?.response?.data?.message || "Failed to create lesson plan");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const downloadPlan = async (p) => {
+    try {
+      const res = await downloadLessonPlan(p.id);
+      const url = res?.data?.url || res?.url || p.pdfUrl;
+      if (!url) return toast.error("Download link unavailable");
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.log(err);
+      toast.error("Failed to download lesson plan");
+    }
+  };
 
   return (
     <div className="space-y-4">
       <Card className="border-border/60">
         <CardContent className="p-3 flex items-center justify-between gap-2">
-          <div className="text-xs text-muted-foreground flex items-center gap-2">
+                  <div className="text-xs text-muted-foreground flex items-center gap-2">
             <NotebookPen className="h-3.5 w-3.5" />
             {mine.length} lesson plan(s)
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <div className="flex items-center gap-2">
+            {mine.length > 0 && (
+              <RowsPerPageSelect
+                pageSize={pageSize}
+                onPageSizeChange={(value) => {
+                  setPageSize(value);
+                  setPage(1);
+                }}
+              />
+            )}
+          <Dialog
+            open={open}
+            onOpenChange={(v) => {
+              setOpen(v);
+              if (!v) {
+                setForm(empty);
+                setErrors({});
+              }
+            }}
+          >
             <DialogTrigger asChild>
               <Button size="sm" className="gradient-primary border-0">
                 <Plus className="h-4 w-4" />
@@ -2228,88 +2404,160 @@ function LessonPlansTab({ teacherName, classes, subjects }) {
               </DialogHeader>
               <div className="grid gap-3 max-h-[65vh] overflow-y-auto pr-1">
                 <div className="space-y-1">
-                  <Label className="text-xs">Title</Label>
+                  <Label className="text-xs">
+                    Title <span className="text-destructive">*</span>
+                  </Label>
                   <Input
                     value={form.title}
-                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    aria-invalid={Boolean(errors.title)}
+                    onChange={(e) => {
+                      setForm({ ...form, title: e.target.value });
+                      setErrors((er) => ({ ...er, title: "" }));
+                    }}
                   />
+                  {errors.title && (
+                    <p className="text-xs text-destructive">{errors.title}</p>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+
+                <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs">Subject</Label>
+                    <Label className="text-xs">
+                      Subject <span className="text-destructive">*</span>
+                    </Label>
                     <Select
                       value={form.subject}
-                      onValueChange={(v) => setForm({ ...form, subject: v })}
+                      onValueChange={(v) => {
+                        setForm({ ...form, subject: v });
+                        setErrors((er) => ({ ...er, subject: "" }));
+                      }}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
+                      <SelectTrigger aria-invalid={Boolean(errors.subject)}>
+                        <SelectValue placeholder="Subject" />
                       </SelectTrigger>
                       <SelectContent>
-                        {subjects.map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {s}
+                        {subjectsList.map((s) => (
+                          <SelectItem key={s.subject_uuid} value={s.subject_uuid}>
+                            {s.subject_name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {errors.subject && (
+                      <p className="text-xs text-destructive">{errors.subject}</p>
+                    )}
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Class</Label>
+                    <Label className="text-xs">
+                      Class <span className="text-destructive">*</span>
+                    </Label>
                     <Select
-                      value={form.klass}
-                      onValueChange={(v) => setForm({ ...form, klass: v })}
+                      value={form.classNum}
+                      onValueChange={(v) => {
+                        setForm({ ...form, classNum: v });
+                        setErrors((er) => ({ ...er, classNum: "", section: "" }));
+                      }}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
+                      <SelectTrigger aria-invalid={Boolean(errors.classNum)}>
+                        <SelectValue placeholder="Class" />
                       </SelectTrigger>
                       <SelectContent>
-                        {classes.map((c) => (
-                          <SelectItem key={c} value={c}>
-                            {c}
+                        {classesList.map((c) => (
+                          <SelectItem key={c.class_uuid} value={c.class_uuid}>
+                            {c.class_name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {errors.classNum && (
+                      <p className="text-xs text-destructive">{errors.classNum}</p>
+                    )}
                   </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">
+                      Section <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={form.section}
+                      onValueChange={(v) => {
+                        setForm({ ...form, section: v });
+                        setErrors((er) => ({ ...er, section: "" }));
+                      }}
+                    >
+                      <SelectTrigger aria-invalid={Boolean(errors.section)}>
+                        <SelectValue placeholder="Section" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filteredSections.map((s) => (
+                          <SelectItem key={s.section_uuid} value={s.section_uuid}>
+                            {s.section_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.section && (
+                      <p className="text-xs text-destructive">{errors.section}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Chapter + Topic */}
+                <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Chapter</Label>
                     <Input
                       value={form.chapter}
-                      onChange={(e) =>
-                        setForm({ ...form, chapter: e.target.value })
-                      }
+                      onChange={(e) => setForm({ ...form, chapter: e.target.value })}
                     />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Topic</Label>
                     <Input
                       value={form.topic}
-                      onChange={(e) =>
-                        setForm({ ...form, topic: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Week of</Label>
-                    <Input
-                      type="date"
-                      value={form.weekOf}
-                      onChange={(e) =>
-                        setForm({ ...form, weekOf: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Periods</Label>
-                    <Input
-                      type="number"
-                      value={form.periods}
-                      onChange={(e) =>
-                        setForm({ ...form, periods: Number(e.target.value) })
-                      }
+                      onChange={(e) => setForm({ ...form, topic: e.target.value })}
                     />
                   </div>
                 </div>
+
+                {/* Week Of + Periods */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">
+                      Week Of <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      type="date"
+                      value={form.weekOf}
+                      aria-invalid={Boolean(errors.weekOf)}
+                      onChange={(e) => {
+                        setForm({ ...form, weekOf: e.target.value });
+                        setErrors((er) => ({ ...er, weekOf: "" }));
+                      }}
+                    />
+                    {errors.weekOf && (
+                      <p className="text-xs text-destructive">{errors.weekOf}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">
+                      Periods <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={form.periods}
+                      aria-invalid={Boolean(errors.periods)}
+                      onChange={(e) => {
+                        setForm({ ...form, periods: Number(e.target.value) });
+                        setErrors((er) => ({ ...er, periods: "" }));
+                      }}
+                    />
+                    {errors.periods && (
+                      <p className="text-xs text-destructive">{errors.periods}</p>
+                    )}
+                  </div>
+                </div>
+
                 <div className="space-y-1">
                   <Label className="text-xs">Learning objectives</Label>
                   <Textarea
@@ -2320,6 +2568,7 @@ function LessonPlansTab({ teacherName, classes, subjects }) {
                     }
                   />
                 </div>
+
                 <div className="space-y-1">
                   <Label className="text-xs">Teaching method</Label>
                   <Input
@@ -2329,107 +2578,97 @@ function LessonPlansTab({ teacherName, classes, subjects }) {
                     }
                   />
                 </div>
-                <div className="space-y-2 rounded-md border border-border/60 p-3">
-                  <div className="text-[10px] uppercase text-muted-foreground">
-                    Resources
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
-                    <Input
-                      type="file"
-                      className="text-xs"
-                      onChange={(e) =>
-                        setForm((f) => ({
-                          ...f,
-                          pdf: e.target.files?.[0]?.name ?? f.pdf,
-                        }))
-                      }
-                    />
-                  </div>
-                  <Input
-                    placeholder="Attached PDF name"
-                    value={form.pdf}
-                    onChange={(e) => setForm({ ...form, pdf: e.target.value })}
-                  />
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Reference URL</Label>
                   <div className="flex items-center gap-2">
                     <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
                     <Input
-                      placeholder="Reference URL (https://…)"
-                      value={form.link}
+                      placeholder="https://…"
+                      value={form.referenceLink}
+                      onChange={(e) => setForm({ ...form, referenceLink: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Attach PDF</Label>
+                  <div className="relative">
+                    <Paperclip className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <label
+                      htmlFor="lesson-plan-pdf-upload"
+                      className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
+                    >
+                      <span className={form.pdfFile ? "truncate" : "text-muted-foreground"}>
+                        {form.pdfFile ? form.pdfFile.name : "Attach PDF (optional)"}
+                      </span>
+                    </label>
+                    <input
+                      id="lesson-plan-pdf-upload"
+                      type="file"
+                      accept="application/pdf"
+                      className="hidden"
                       onChange={(e) =>
-                        setForm({ ...form, link: e.target.value })
+                        setForm({ ...form, pdfFile: e.target.files?.[0] ?? null })
                       }
                     />
                   </div>
                 </div>
               </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => save("Draft")}>
-                  Save draft
-                </Button>
-                <Button onClick={() => save("Submitted")}>
-                  Submit to HOD
+               <DialogFooter>
+                <Button type="button" onClick={save} disabled={saving}>
+                  {saving ? "Saving..." : "Create lesson plan"}
                 </Button>
               </DialogFooter>
-            </DialogContent>
+                       </DialogContent>
           </Dialog>
+          </div>
         </CardContent>
       </Card>
 
       <div className="grid md:grid-cols-2 gap-4">
-        {mine.map((p) => (
+        {pagedPlans.map((p) => (
           <Card key={p.id} className="border-border/60">
             <CardHeader className="pb-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-[10px] font-mono text-muted-foreground">
-                    {p.id}
-                  </div>
-                  <CardTitle className="text-sm font-display">
-                    {p.title}
-                  </CardTitle>
-                  <CardDescription className="text-xs mt-0.5">
-                    {p.subject} · Class {p.klass} · Week of {p.weekOf} ·{" "}
-                    {p.periods} period(s)
-                  </CardDescription>
-                </div>
-                <Badge variant={p.status === "Approved" ? "default" : "outline"}>
-                  {p.status}
-                </Badge>
+              <div className="min-w-0">
+                {/* <div className="text-[10px] font-mono text-muted-foreground">
+                  {p.id}
+                </div> */}
+                <CardTitle className="text-sm font-display">
+                  {p.title}
+                </CardTitle>
+                <CardDescription className="text-xs mt-0.5">
+                  {p.subject} · Class {p.klass} · Week of {p.weekOf} ·{" "}
+                  {p.periods} period(s)
+                </CardDescription>
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="text-xs text-muted-foreground">
                 {p.chapter} — {p.topic}
               </div>
-              <div className="flex flex-wrap gap-1">
-                {(p.resources ?? []).map((r, i) => (
-                  <Badge key={i} variant="secondary" className="text-[10px]">
-                    {r.kind.toUpperCase()} · {r.label}
-                  </Badge>
-                ))}
-              </div>
+              {p.referenceUrl && (
+                <Badge variant="secondary" className="text-[10px]">
+                  LINK · {p.referenceUrl}
+                </Badge>
+              )}
               <div className="flex gap-2 pt-1">
                 <Button size="sm" variant="outline" onClick={() => downloadPlan(p)}>
                   <Download className="h-4 w-4" />
                   Download PDF
                 </Button>
-                {p.status === "Draft" && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      lessonPlansApi.submit(p.id);
-                      toast.success("Submitted to HOD");
-                    }}
-                  >
-                    Submit
-                  </Button>
-                )}
               </div>
             </CardContent>
           </Card>
         ))}
-        {mine.length === 0 && (
+        {plansLoading && (
+          <Card className="border-border/60 md:col-span-2">
+            <CardContent className="p-8 text-center text-sm text-muted-foreground">
+              Loading lesson plans...
+            </CardContent>
+          </Card>
+        )}
+        {!plansLoading && mine.length === 0 && (
           <Card className="border-border/60 md:col-span-2">
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
               No lesson plans yet.
@@ -2437,6 +2676,19 @@ function LessonPlansTab({ teacherName, classes, subjects }) {
           </Card>
         )}
       </div>
+
+      {!plansLoading && mine.length > 0 && (
+        <PaginationBar
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          totalItems={mine.length}
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          showPageSize={false}
+          itemLabel="lesson plans"
+        />
+      )}
     </div>
   );
 }

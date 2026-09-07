@@ -145,7 +145,7 @@ const superGroups = [
       { title: "Classes & Sections", url: "/classes", icon: School },
       // { title: "Attendance", url: "/attendance", icon: CalendarCheck },
       { title: "Assignments", url: "assignments", icon: ClipboardList },
-      // { title: "Examinations", url: "/exams", icon: BookOpen },
+      { title: "Examinations", url: "/exams", icon: BookOpen },
       { title: "Timetable", url: "/timetable", icon: CalendarDays },
       
     ],

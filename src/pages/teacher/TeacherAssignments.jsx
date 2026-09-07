@@ -64,22 +64,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import {materialsApi,lessonPlansApi,useMaterials,useLessonPlans,} from "../../lib/store";
-import {
-  getAssignments,
-  saveDraftAssignment,
-  publishAssignment,
-  getAssignmentDetail,
-  updateAssignment,
-  deleteAssignment,
-} from "../../api/assignment";
-import {
-  getAssignmentStudents,
-  getAssignmentSubmissions,
-  gradeSubmission,
-  getAssignmentInquiries,
-  replyAssignmentInquiry,
-} from "../../api/teacherassignment";
+import { lessonPlansApi, useLessonPlans } from "../../lib/store";
+import {getStudyMaterials,createStudyMaterial,downloadStudyMaterial,} from "../../api/studymaterial";
+import {getAssignments,saveDraftAssignment,publishAssignment,getAssignmentDetail,updateAssignment,deleteAssignment,} from "../../api/assignment";
+import {getAssignmentStudents,getAssignmentSubmissions,gradeSubmission,getAssignmentInquiries,replyAssignmentInquiry,} from "../../api/teacherassignment";
 import { getTeacherClasses } from "../../api/teacherclass";
 import {PaginationBar, RowsPerPageSelect,} from "../../components/pagination-controls";
 
@@ -167,9 +155,41 @@ const formatRole = (role) =>
 
 const canModify = (a) => !a.createdByRole || a.createdByRole === "TEACHER";
 
+
+const mapMaterial = (m) => ({
+  id: m.material_uuid,
+  title: m.title,
+  description: m.description,
+  type: m.type,
+  subjectUuid: m.subject_uuid,
+  subject: m.subject_name,
+  classUuid: m.class_uuid,
+  sectionUuid: m.section_uuid,
+  klass: m.section_name ? `${m.class_name}-${m.section_name}` : m.class_name,
+  fileName: m.file_name,
+  url: m.url,
+  downloads: m.downloads ?? 0,
+  createdAt: m.created_at,
+});
 export default function TeacherAssignmentsPage() {
-  const { teacherName, classes, subjects } = useTeacherCtx();
-  const allMaterials = useMaterials();
+   const { teacherName, classes, subjects } = useTeacherCtx();
+
+  const [materials, setMaterials] = useState([]);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+
+  const loadMaterials = async () => {
+    setMaterialsLoading(true);
+    try {
+      const res = await getStudyMaterials();
+      setMaterials((res?.data ?? []).map(mapMaterial));
+    } catch (err) {
+      console.log(err);
+      toast.error("Failed to load study materials");
+      setMaterials([]);
+    } finally {
+      setMaterialsLoading(false);
+    }
+  };
 
   // Real submissions for whichever assignment is open in the detail view
   // (populated from GET /assignments/:uuid/submissions).
@@ -264,6 +284,7 @@ export default function TeacherAssignmentsPage() {
 
   useEffect(() => {
     loadAssignments();
+    loadMaterials();
   }, []);
 
   const [openA, setOpenA] = useState(false);
@@ -283,16 +304,6 @@ export default function TeacherAssignmentsPage() {
   const filtered = useMemo(
     () => mine.filter((a) => classF === "All" || a.klass === classF),
     [mine, classF],
-  );
-  const myMaterials = useMemo(
-    () =>
-      allMaterials.filter(
-        (m) =>
-          !m.archived &&
-          (m.teacher === teacherName ||
-            m.klasses.some((k) => classes.includes(k))),
-      ),
-    [allMaterials, teacherName, classes],
   );
 
   const active = activeId ? mine.find((a) => a.id === activeId) : undefined;
@@ -685,14 +696,16 @@ export default function TeacherAssignmentsPage() {
   // ---------------------------------------------------------------------
   const emptyM = {
     title: "",
-    type: "PDF",
-    url: "",
-    subject: "", // subject_uuid — resolved against subjectsList on submit
-    classNum: "", // class_uuid
-    section: "", // section_uuid
+    pdfFile: null,
+    externalUrl: "",
+    subject: "",
+    classNum: "",
+    section: "",
     description: "",
   };
   const [formM, setFormM] = useState(emptyM);
+  const [formErrorsM, setFormErrorsM] = useState({});
+  const [sharingMaterial, setSharingMaterial] = useState(false);
 
   // Sections available for whichever class is currently picked in the
   // "Share study material" form. Mirrors the assignment form's
@@ -715,47 +728,64 @@ export default function TeacherAssignmentsPage() {
     });
   }, [filteredSectionsM]);
 
-  const uploadMaterial = () => {
-    if (!formM.title.trim()) return toast.error("Title required");
-    if (!formM.subject) return toast.error("Select a subject");
-    if (!formM.classNum) return toast.error("Select a class");
-    if (!formM.section) return toast.error("Select a section");
-
-    const subjectName =
-      subjectsList.find((s) => s.subject_uuid === formM.subject)?.subject_name ??
-      "";
-    const className =
-      classesList.find((c) => c.class_uuid === formM.classNum)?.class_name ?? "";
-    const sectionName =
-      filteredSectionsM.find((s) => s.section_uuid === formM.section)
-        ?.section_name ?? "";
-    const klass = sectionName ? `${className}-${sectionName}` : className;
-
-    materialsApi.add({
-      title: formM.title,
-      type: formM.type,
-      url:
-        formM.url ||
-        `/files/${formM.title.toLowerCase().replace(/\s+/g, "-")}.pdf`,
-      subject: subjectName,
-      klasses: [klass],
-      teacher: teacherName,
-      description: formM.description,
-    });
-    setOpenM(false);
-    setFormM(emptyM);
-    toast.success("Study material shared with students");
+       const validateMaterialForm = () => {
+    const errors = {};
+    if (!formM.title.trim()) errors.title = "Title is required.";
+    if (!formM.subject) errors.subject = "Select a subject.";
+    if (!formM.classNum) errors.classNum = "Select a class.";
+    if (!formM.section) errors.section = "Select a section.";
+    if (!formM.pdfFile && !formM.externalUrl.trim()) {
+      errors.attachment = "Attach a PDF or enter a resource URL.";
+    }
+    setFormErrorsM(errors);
+    return Object.keys(errors).length === 0;
   };
 
-  const downloadFile = (name, body) => {
-    const blob = new Blob([body], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(`Downloading ${name}`);
+     const uploadMaterial = async () => {
+    if (!validateMaterialForm()) return toast.error("Complete the required fields.");
+
+    const fd = new FormData();
+
+    fd.append("title", formM.title);
+    fd.append("subject_uuid", formM.subject);
+    fd.append("class_uuid", formM.classNum);
+    fd.append("section_uuid", formM.section);
+    if (formM.description.trim()) fd.append("description", formM.description);
+    if (formM.externalUrl.trim()) fd.append("external_url", formM.externalUrl);
+    if (formM.pdfFile) fd.append("pdf", formM.pdfFile);
+
+    setSharingMaterial(true);
+    try {
+      const res = await createStudyMaterial(fd);
+      if (res?.success) {
+        toast.success(res.message || "Study material shared with students");
+        setMaterials((rows) => [mapMaterial(res.data), ...rows]);
+        setOpenM(false);
+        setFormM(emptyM);
+      } else {
+        toast.error(res?.message || "Failed to share material");
+      }
+    } catch (err) {
+      console.log(err);
+      toast.error(err?.response?.data?.message || "Failed to share material");
+    } finally {
+      setSharingMaterial(false);
+    }
+  };
+
+   const handleDownloadMaterial = async (m) => {
+    try {
+      const res = await downloadStudyMaterial(m.id);
+      const url = res?.data?.url || res?.url || m.url;
+      if (!url) return toast.error("Download link unavailable");
+      window.open(url, "_blank", "noopener,noreferrer");
+      setMaterials((rows) =>
+        rows.map((r) => (r.id === m.id ? { ...r, downloads: r.downloads + 1 } : r)),
+      );
+    } catch (err) {
+      console.log(err);
+      toast.error("Failed to download material");
+    }
   };
 
   // eslint-disable-next-line no-unused-vars
@@ -1226,11 +1256,14 @@ export default function TeacherAssignmentsPage() {
   // Shared dialog for sharing study material — rendered inside the
   // Study Materials tab so the trigger button lives with that tab's content.
   const UploadMaterialDialog = (
-    <Dialog
+        <Dialog
       open={openM}
       onOpenChange={(v) => {
         setOpenM(v);
-        if (!v) setFormM(emptyM);
+        if (!v) {
+          setFormM(emptyM);
+          setFormErrorsM({});
+        }
       }}
     >
       <DialogTrigger asChild>
@@ -1239,7 +1272,7 @@ export default function TeacherAssignmentsPage() {
           Upload Material
         </Button>
       </DialogTrigger>
-      <DialogContent>
+           <DialogContent>
         <DialogHeader>
           <DialogTitle>Share study material</DialogTitle>
           {/* <DialogDescription>
@@ -1247,20 +1280,34 @@ export default function TeacherAssignmentsPage() {
           </DialogDescription> */}
         </DialogHeader>
         <div className="grid gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs">Title</Label>
+                    <div className="space-y-1">
+            <Label className="text-xs">
+              Title <span className="text-destructive">*</span>
+            </Label>
             <Input
               value={formM.title}
-              onChange={(e) => setFormM({ ...formM, title: e.target.value })}
+              aria-invalid={Boolean(formErrorsM.title)}
+              onChange={(e) => {
+                setFormM({ ...formM, title: e.target.value });
+                setFormErrorsM((errors) => ({ ...errors, title: "" }));
+              }}
             />
+            {formErrorsM.title && (
+              <p className="text-xs text-destructive">{formErrorsM.title}</p>
+            )}
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Subject</Label>
+            <Label className="text-xs">
+              Subject <span className="text-destructive">*</span>
+            </Label>
             <Select
               value={formM.subject}
-              onValueChange={(v) => setFormM({ ...formM, subject: v })}
+              onValueChange={(v) => {
+                setFormM({ ...formM, subject: v });
+                setFormErrorsM((errors) => ({ ...errors, subject: "" }));
+              }}
             >
-              <SelectTrigger>
+              <SelectTrigger aria-invalid={Boolean(formErrorsM.subject)}>
                 <SelectValue placeholder="Select Subject" />
               </SelectTrigger>
               <SelectContent>
@@ -1271,18 +1318,24 @@ export default function TeacherAssignmentsPage() {
                 ))}
               </SelectContent>
             </Select>
+            {formErrorsM.subject && (
+              <p className="text-xs text-destructive">{formErrorsM.subject}</p>
+            )}
           </div>
           {/* Class + Section — Section only fills in once a Class is chosen */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Class</Label>
+              <Label className="text-xs">
+                Class <span className="text-destructive">*</span>
+              </Label>
               <Select
                 value={formM.classNum}
-                onValueChange={(v) =>
-                  setFormM({ ...formM, classNum: v, section: "" })
-                }
+                onValueChange={(v) => {
+                  setFormM({ ...formM, classNum: v, section: "" });
+                  setFormErrorsM((errors) => ({ ...errors, classNum: "", section: "" }));
+                }}
               >
-                <SelectTrigger>
+                <SelectTrigger aria-invalid={Boolean(formErrorsM.classNum)}>
                   <SelectValue placeholder="Class" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1293,15 +1346,23 @@ export default function TeacherAssignmentsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {formErrorsM.classNum && (
+                <p className="text-xs text-destructive">{formErrorsM.classNum}</p>
+              )}
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Section</Label>
+              <Label className="text-xs">
+                Section <span className="text-destructive">*</span>
+              </Label>
               <Select
                 value={formM.section}
-                onValueChange={(v) => setFormM({ ...formM, section: v })}
+                onValueChange={(v) => {
+                  setFormM({ ...formM, section: v });
+                  setFormErrorsM((errors) => ({ ...errors, section: "" }));
+                }}
                 disabled={!formM.classNum}
               >
-                <SelectTrigger>
+                <SelectTrigger aria-invalid={Boolean(formErrorsM.section)}>
                   <SelectValue
                     placeholder={
                       formM.classNum ? "Section" : "Select class first"
@@ -1316,15 +1377,56 @@ export default function TeacherAssignmentsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {formErrorsM.section && (
+                <p className="text-xs text-destructive">{formErrorsM.section}</p>
+              )}
             </div>
           </div>
+
           <div className="space-y-1">
-            <Label className="text-xs">File name / URL</Label>
-            <Input
-              placeholder="chapter-5-notes.pdf"
-              value={formM.url}
-              onChange={(e) => setFormM({ ...formM, url: e.target.value })}
-            />
+            <Label className="text-xs">
+              PDF File <span className="text-destructive">*</span>
+            </Label>
+            <div className="relative">
+              <Paperclip className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <label
+                htmlFor="material-upload"
+                className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
+              >
+                <span className={formM.pdfFile ? "truncate" : "text-muted-foreground"}>
+                  {formM.pdfFile ? formM.pdfFile.name : "Attach PDF"}
+                </span>
+              </label>
+              <input
+                id="material-upload"
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  setFormM({ ...formM, pdfFile: e.target.files?.[0] ?? null });
+                  setFormErrorsM((errors) => ({ ...errors, attachment: "" }));
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Resource URL (optional if PDF attached)</Label>
+            <div className="relative">
+              <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                className="pl-8"
+                placeholder="https://..."
+                value={formM.externalUrl}
+                onChange={(e) => {
+                  setFormM({ ...formM, externalUrl: e.target.value });
+                  setFormErrorsM((errors) => ({ ...errors, attachment: "" }));
+                }}
+              />
+            </div>
+            {formErrorsM.attachment && (
+              <p className="text-xs text-destructive">{formErrorsM.attachment}</p>
+            )}
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Description</Label>
@@ -1338,7 +1440,9 @@ export default function TeacherAssignmentsPage() {
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={uploadMaterial}>Share</Button>
+          <Button onClick={uploadMaterial} disabled={sharingMaterial}>
+            {sharingMaterial ? "Sharing..." : "share"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1691,7 +1795,7 @@ export default function TeacherAssignmentsPage() {
         />
         <KpiCard
           label="Materials Shared"
-          value={String(myMaterials.length)}
+          value={String(materials.length)}
           icon={<FileBox className="h-5 w-5" />}
           tone="info"
         />
@@ -1948,7 +2052,7 @@ export default function TeacherAssignmentsPage() {
             <CardContent className="p-3 flex items-center justify-between gap-2">
               <div className="text-xs text-muted-foreground flex items-center gap-2">
                 <FileBox className="h-3.5 w-3.5" />
-                {myMaterials.length} material(s) shared
+                {materials.length} material(s) shared
               </div>
               {UploadMaterialDialog}
             </CardContent>
@@ -1966,8 +2070,8 @@ export default function TeacherAssignmentsPage() {
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {myMaterials.map((m) => (
+                                <TableBody>
+                  {materials.map((m) => (
                     <TableRow key={m.id}>
                       <TableCell className="font-medium">
                         {m.title}
@@ -1979,9 +2083,7 @@ export default function TeacherAssignmentsPage() {
                         <Badge variant="secondary">{m.type}</Badge>
                       </TableCell>
                       <TableCell className="text-xs">{m.subject}</TableCell>
-                      <TableCell className="text-xs">
-                        {m.klasses.join(", ")}
-                      </TableCell>
+                      <TableCell className="text-xs">{m.klass}</TableCell>
                       <TableCell className="text-xs tabular-nums">
                         {m.downloads}
                       </TableCell>
@@ -1989,13 +2091,7 @@ export default function TeacherAssignmentsPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            materialsApi.download(m.id);
-                            downloadFile(
-                              m.title.replace(/\s+/g, "-") + ".txt",
-                              `${m.title}\n${m.description ?? ""}\nSource: ${m.url}`,
-                            );
-                          }}
+                          onClick={() => handleDownloadMaterial(m)}
                         >
                           <Download className="h-4 w-4" />
                           Download
@@ -2003,7 +2099,17 @@ export default function TeacherAssignmentsPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {myMaterials.length === 0 && (
+                  {materialsLoading && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="text-center py-8 text-sm text-muted-foreground"
+                      >
+                        Loading materials...
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!materialsLoading && materials.length === 0 && (
                     <TableRow>
                       <TableCell
                         colSpan={6}

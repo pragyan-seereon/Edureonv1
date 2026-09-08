@@ -106,7 +106,7 @@ export default function InstituteSelection() {
                     <Building2 className="h-8 w-8" />
                   </div>
                   <div className="space-y-1.5">
-                    <div className="truncate text-lg font-semibold">{institute.institute_name || "Institute"}</div>
+                    <div className="truncate text-xs font-semibold">{institute.institute_name || "Institute"}</div>
                     {institute.city && (
                       <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
                         <MapPin className="h-3.5 w-3.5 shrink-0" />

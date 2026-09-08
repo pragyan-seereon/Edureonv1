@@ -774,6 +774,7 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
         setMaterials((rows) => [mapMaterial(res.data), ...rows]);
         setOpenM(false);
         setFormM(emptyM);
+        setMainTab("materials");
       } else {
         toast.error(res?.message || "Failed to share material");
       }
@@ -2180,9 +2181,9 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
           </Card>
         </TabsContent>
 
-            <TabsContent value="plans" className="mt-4">
-          <LessonPlansTab teacherName={teacherName} />
-        </TabsContent>
+        <TabsContent value="plans" className="mt-4">
+  <LessonPlansTab teacherName={teacherName} setMainTab={setMainTab} />
+</TabsContent>
       </Tabs>
     </PageContainer>
   );
@@ -2190,7 +2191,7 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
 
 /** Lesson planning lives inside the assignments workspace for teachers. */
 // eslint-disable-next-line no-unused-vars
-function LessonPlansTab({ teacherName }) {
+function LessonPlansTab({ teacherName, setMainTab }) {
   const [plans, setPlans] = useState([]);
   const [plansLoading, setPlansLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -2341,6 +2342,7 @@ function LessonPlansTab({ teacherName }) {
         setOpen(false);
         setForm(empty);
         setErrors({});
+        setMainTab("plans");
       } else {
         toast.error(res?.message || "Failed to create lesson plan");
       }

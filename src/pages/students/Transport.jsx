@@ -1,217 +1,3 @@
-// import { PageContainer, PageHeader } from "../../components/page-shell";
-// import {
-//   Card,
-//   CardContent,
-//   CardHeader,
-//   CardTitle,
-//   CardDescription,
-// } from "../../components/ui/card";
-// import { Badge } from "../../components/ui/badge";
-// import {
-//   Table,
-//   TableBody,
-//   TableCell,
-//   TableHead,
-//   TableHeader,
-//   TableRow,
-// } from "../../components/ui/table";
-// import { Bus, MapPin, Phone, Route as RouteIcon } from "lucide-react";
-
-// // --- Static demo data (swap for real campus/student-ctx data as needed) ---
-
-// const student = {
-//   id: "stu-101",
-//   name: "Aarav Sharma",
-// };
-
-// const routes = [
-//   {
-//     id: "RT-01",
-//     name: "Route 1 — Sector 12 to School",
-//     bus: "OD-05-AB-1234",
-//     driver: "Ramesh Yadav",
-//     conductor: "Suresh Nayak",
-//     status: "Running",
-//     stops: 8,
-//     eta: "35 min",
-//     contact: "+91 98100 11221",
-//     stopList: [
-//       { name: "Sector 12 Market", time: "6:45 AM" },
-//       { name: "Green Park Colony", time: "6:55 AM" },
-//       { name: "Civil Lines Crossing", time: "7:05 AM" },
-//       { name: "Old Bus Stand", time: "7:15 AM" },
-//       { name: "Edureon School Gate", time: "7:35 AM" },
-//     ],
-//   },
-//   {
-//     id: "RT-02",
-//     name: "Route 2 — Riverside to School",
-//     bus: "OD-05-AB-5678",
-//     driver: "Manoj Behera",
-//     conductor: "—",
-//     status: "Delayed",
-//     stops: 6,
-//     eta: "40 min",
-//     contact: "+91 98100 33445",
-//     stopList: [
-//       { name: "Riverside Colony", time: "6:50 AM" },
-//       { name: "Temple Square", time: "7:00 AM" },
-//       { name: "New Market Chowk", time: "7:15 AM" },
-//       { name: "Edureon School Gate", time: "7:40 AM" },
-//     ],
-//   },
-//   {
-//     id: "RT-03",
-//     name: "Route 3 — Industrial Area to School",
-//     bus: "OD-05-AB-9012",
-//     driver: "Bikram Sahoo",
-//     conductor: "Ashok Mallik",
-//     status: "Running",
-//     stops: 5,
-//     eta: "25 min",
-//     contact: "+91 98100 55667",
-//     stopList: [
-//       { name: "Industrial Estate Gate 2", time: "7:00 AM" },
-//       { name: "Workers Colony", time: "7:08 AM" },
-//       { name: "Edureon School Gate", time: "7:25 AM" },
-//     ],
-//   },
-// ];
-
-// const transportRoster = {
-//   "RT-01": { students: ["stu-101", "stu-102"] },
-//   "RT-02": { students: ["stu-103"] },
-//   "RT-03": { students: ["stu-104"] },
-// };
-
-// export default function StudentTransport() {
-//   const routeId = Object.keys(transportRoster).find(
-//     (id) => student?.id && transportRoster[id].students.includes(student.id)
-//   );
-//   const assigned = routes.find((route) => route.id === routeId) ?? routes[0];
-
-//   return (
-//     <PageContainer>
-//       <PageHeader
-//         eyebrow="Student Portal"
-//         title="Bus Routes"
-//         description="Your assigned route, stop timings and full campus route directory."
-//       />
-//       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-//         <Card className="lg:col-span-2 border-border/60">
-//           <CardHeader className="pb-2">
-//             <CardTitle className="font-display text-base flex items-center gap-2">
-//               <Bus className="h-4 w-4" />
-//               Assigned Route
-//             </CardTitle>
-//             <CardDescription>{assigned.name}</CardDescription>
-//           </CardHeader>
-//           <CardContent className="space-y-4">
-//             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-//               <Mini label="Bus" value={assigned.bus} />
-//               <Mini label="Driver" value={assigned.driver} />
-//               <Mini label="Conductor" value={assigned.conductor ?? "—"} />
-//               <Mini label="Status" value={assigned.status} />
-//             </div>
-//             <div className="space-y-2">
-//               {(assigned.stopList ?? []).map((stop, index) => (
-//                 <div
-//                   key={`${stop.name}-${index}`}
-//                   className="flex items-center gap-3 rounded-md border p-3"
-//                 >
-//                   <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold">
-//                     {index + 1}
-//                   </div>
-//                   <div className="flex-1">
-//                     <div className="text-sm font-medium">{stop.name}</div>
-//                     <div className="text-[11px] text-muted-foreground">
-//                       Scheduled pickup · {stop.time}
-//                     </div>
-//                   </div>
-//                   <MapPin className="h-4 w-4 text-muted-foreground" />
-//                 </div>
-//               ))}
-//             </div>
-//           </CardContent>
-//         </Card>
-//         <Card className="border-border/60">
-//           <CardHeader className="pb-2">
-//             <CardTitle className="font-display text-base">Route Contact</CardTitle>
-//           </CardHeader>
-//           <CardContent className="space-y-3 text-sm">
-//             <div className="flex items-center gap-2">
-//               <Phone className="h-4 w-4 text-primary" />
-//               {assigned.contact ?? "+91 98100 11221"}
-//             </div>
-//             <div className="flex items-center gap-2">
-//               <RouteIcon className="h-4 w-4 text-primary" />
-//               {assigned.stops} stops · {assigned.eta}
-//             </div>
-//             <Badge
-//               variant={
-//                 assigned.status === "Running"
-//                   ? "default"
-//                   : assigned.status === "Delayed"
-//                   ? "destructive"
-//                   : "secondary"
-//               }
-//             >
-//               {assigned.status}
-//             </Badge>
-//           </CardContent>
-//         </Card>
-//       </div>
-//       <Card className="border-border/60">
-//         <CardHeader className="pb-2">
-//           <CardTitle className="font-display text-base">All Bus Routes</CardTitle>
-//           <CardDescription>View-only campus route directory</CardDescription>
-//         </CardHeader>
-//         <CardContent className="p-0">
-//           <Table>
-//             <TableHeader>
-//               <TableRow>
-//                 <TableHead>Route</TableHead>
-//                 <TableHead>Bus</TableHead>
-//                 <TableHead>Driver</TableHead>
-//                 <TableHead>Stops</TableHead>
-//                 <TableHead>Status</TableHead>
-//               </TableRow>
-//             </TableHeader>
-//             <TableBody>
-//               {routes.map((route) => (
-//                 <TableRow key={route.id}>
-//                   <TableCell className="font-medium">
-//                     <div>{route.name}</div>
-//                     <div className="text-[10px] text-muted-foreground font-mono">
-//                       {route.id}
-//                     </div>
-//                   </TableCell>
-//                   <TableCell className="text-xs font-mono">{route.bus}</TableCell>
-//                   <TableCell className="text-sm">{route.driver}</TableCell>
-//                   <TableCell>{route.stops}</TableCell>
-//                   <TableCell>
-//                     <Badge variant="outline">{route.status}</Badge>
-//                   </TableCell>
-//                 </TableRow>
-//               ))}
-//             </TableBody>
-//           </Table>
-//         </CardContent>
-//       </Card>
-//     </PageContainer>
-//   );
-// }
-
-// function Mini({ label, value }) {
-//   return (
-//     <div className="rounded-md border p-3">
-//       <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
-//       <div className="text-sm font-semibold truncate">{value}</div>
-//     </div>
-//   );
-// }
-
-
 import { PageContainer, PageHeader } from "../../components/page-shell";
 import {
   Card,
@@ -230,8 +16,17 @@ import {
   TableRow,
 } from "../../components/ui/table";
 import { Button } from "../../components/ui/button";
-import { MapPin, RefreshCw, Fuel, Gauge } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  MapPin,
+  RefreshCw,
+  Fuel,
+  Gauge,
+  Bus,
+  Navigation,
+  ParkingCircle,
+  Route as RouteIcon,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { getVecvVehicles, syncVecvLiveData } from "../../api/transport";
 
@@ -257,18 +52,16 @@ export default function StudentTransport() {
     return () => window.clearInterval(timer);
   }, [retryAfterSeconds]);
 
-  // --- Load saved vehicle GPS data (real API: GET /vecv/vehicles) ---
+  // --- Load saved vehicle GPS data ---
   const loadSavedVehicles = useCallback(async () => {
     setLoadingVehicles(true);
     try {
       const response = await getVecvVehicles();
       const payload = response?.data?.data ?? response?.data ?? {};
       const list = Array.isArray(payload) ? payload : payload.vehicleData ?? payload.vehicles ?? [];
-      // Drop placeholder rows the VECV API pads its arrays with (vehicleNo: null)
       setVehicles(list.filter((v) => v && v.vehicleNo));
       setLastSyncedAt(payload.lastSyncedAt ?? payload.last_synced_at ?? null);
     } catch (error) {
-      // An empty cache is normal before the first successful VECV sync.
       if (error?.response?.status !== 404) {
         toast.error(error?.response?.data?.message ?? "Unable to load saved vehicle locations");
       }
@@ -337,7 +130,6 @@ export default function StudentTransport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vehicles]);
 
-  // --- Trigger a fresh sync (real API: POST /vecv/live-data) ---
   const syncLiveGps = async () => {
     if (retryAfterSeconds > 0) return;
 
@@ -365,6 +157,20 @@ export default function StudentTransport() {
     }
   };
 
+  // --- Derived summary stats from real vehicle data (no hardcoding) ---
+  const stats = useMemo(() => {
+    const total = vehicles.length;
+    const moving = vehicles.filter((v) => v.deviceStatus === "MOVING").length;
+    const stopped = vehicles.filter((v) => v.deviceStatus === "STOPPED").length;
+    const fuelValues = vehicles
+      .map((v) => v.fuelLevelInPer)
+      .filter((val) => val !== null && val !== undefined);
+    const avgFuel = fuelValues.length
+      ? Math.round(fuelValues.reduce((a, b) => a + b, 0) / fuelValues.length)
+      : null;
+    return { total, moving, stopped, avgFuel };
+  }, [vehicles]);
+
   return (
     <PageContainer>
       <PageHeader
@@ -373,15 +179,56 @@ export default function StudentTransport() {
         description="Live and last-known GPS positions for campus buses."
       />
 
-      <Card className="border-border/60">
-        <CardHeader className="pb-2 flex-row items-center justify-between space-y-0 gap-3">
+      {/* Summary stat strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard
+          icon={<Bus className="h-4 w-4" />}
+          label="Total Buses"
+          value={loadingVehicles ? "—" : stats.total}
+          accent="bg-primary/10 text-primary"
+        />
+        <StatCard
+          icon={<Navigation className="h-4 w-4" />}
+          label="Moving"
+          value={loadingVehicles ? "—" : stats.moving}
+          accent="bg-emerald-500/10 text-emerald-600"
+        />
+        <StatCard
+          icon={<ParkingCircle className="h-4 w-4" />}
+          label="Stopped"
+          value={loadingVehicles ? "—" : stats.stopped}
+          accent="bg-slate-500/10 text-slate-600"
+        />
+        <StatCard
+          icon={<Fuel className="h-4 w-4" />}
+          label="Avg. Fuel"
+          value={loadingVehicles || stats.avgFuel === null ? "—" : `${stats.avgFuel}%`}
+          accent="bg-amber-500/10 text-amber-600"
+        />
+      </div>
+
+      <Card className="border-border/60 shadow-sm overflow-hidden">
+        <CardHeader className="pb-4 flex-row items-center justify-between space-y-0 gap-3 bg-gradient-to-r from-muted/40 to-transparent">
           <div>
-            <CardTitle className="font-display text-base">Live Bus Locations</CardTitle>
-            <CardDescription>
-              {lastSyncedAt ? `Last synced ${formatDateTime(lastSyncedAt)}` : "Saved positions from VECV"}
+            <CardTitle className="font-display text-lg tracking-tight">Live Bus Locations</CardTitle>
+            <CardDescription className="mt-1">
+              {lastSyncedAt ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  Last synced {formatDateTime(lastSyncedAt)}
+                </span>
+              ) : (
+                "Saved positions from VECV"
+              )}
             </CardDescription>
           </div>
-          <Button size="sm" variant="outline" onClick={syncLiveGps} disabled={syncing || retryAfterSeconds > 0}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={syncLiveGps}
+            disabled={syncing || retryAfterSeconds > 0}
+            className="shadow-sm"
+          >
             <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "Syncing" : retryAfterSeconds > 0 ? `Try again in ${retryAfterSeconds}s` : "Sync live GPS"}
           </Button>
@@ -389,65 +236,105 @@ export default function StudentTransport() {
         <CardContent className="p-0">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Vehicle</TableHead>
-                <TableHead>Chassis No.</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Speed</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Fuel</TableHead>
-                <TableHead>Odometer</TableHead>
+              <TableRow className="hover:bg-transparent border-border/60">
+                <TableHead className="text-[11px] uppercase tracking-wide text-muted-foreground">Route</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wide text-muted-foreground">Vehicle</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wide text-muted-foreground">Model</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wide text-muted-foreground">Engine No.</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wide text-muted-foreground">Chassis No.</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wide text-muted-foreground">Status</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wide text-muted-foreground">Speed</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wide text-muted-foreground">Location</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wide text-muted-foreground">Fuel</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wide text-muted-foreground">Odometer</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {!loadingVehicles && vehicles.map((vehicle) => (
-                <TableRow key={vehicle.deviceId ?? vehicle.vehicleNo}>
-                  <TableCell className="font-mono text-xs">{vehicle.vehicleNo ?? "—"}</TableCell>
-                  <TableCell className="font-mono text-[11px] text-muted-foreground">
-                    {vehicle.chassisNo ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        vehicle.deviceStatus === "MOVING"
-                          ? "default"
-                          : vehicle.deviceStatus === "STOPPED"
-                          ? "secondary"
-                          : "outline"
-                      }
-                    >
-                      {vehicle.deviceStatus ?? "Unknown"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className="flex items-center gap-1">
-                      <Gauge className="h-3 w-3 text-muted-foreground" />
-                      {vehicle.vehicleSpeed ?? 0} km/h
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
-                      {resolveLocationLabel(vehicle, placeNames, resolvingKeys)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    <span className="flex items-center gap-1">
-                      <Fuel className="h-3 w-3 text-muted-foreground" />
-                      {vehicle.fuelLevelInPer !== undefined && vehicle.fuelLevelInPer !== null
-                        ? `${vehicle.fuelLevelInPer}%`
+              {!loadingVehicles && vehicles.map((vehicle) => {
+                const isMoving = vehicle.deviceStatus === "MOVING";
+                return (
+                  <TableRow
+                    key={vehicle.deviceId ?? vehicle.vehicleNo}
+                    className="border-border/60 transition-colors hover:bg-muted/40"
+                  >
+                    <TableCell className="text-xs font-medium">
+                      {vehicle.route ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <RouteIcon className="h-3 w-3 text-primary" />
+                          {vehicle.route}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                          <Bus className="h-3.5 w-3.5" />
+                        </div>
+                        <span className="font-mono text-xs font-medium">{vehicle.vehicleNo ?? "—"}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs">{vehicle.model ?? "—"}</TableCell>
+                    <TableCell className="font-mono text-[11px] text-muted-foreground">
+                      {vehicle.engineNo ?? "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-[11px] text-muted-foreground">
+                      {vehicle.chassisNo ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                          isMoving
+                            ? "bg-emerald-500/10 text-emerald-700"
+                            : vehicle.deviceStatus === "STOPPED"
+                            ? "bg-slate-500/10 text-slate-600"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            isMoving ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
+                          }`}
+                        />
+                        {vehicle.deviceStatus ?? "Unknown"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="flex items-center gap-1.5 text-sm font-medium">
+                        <Gauge className="h-3.5 w-3.5 text-muted-foreground" />
+                        {vehicle.vehicleSpeed ?? 0}
+                        <span className="text-muted-foreground text-xs font-normal">km/h</span>
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs max-w-[180px]">
+                      <span className="flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                        <span className="truncate">{resolveLocationLabel(vehicle, placeNames, resolvingKeys)}</span>
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <FuelBar value={vehicle.fuelLevelInPer} />
+                    </TableCell>
+                    <TableCell className="text-sm font-medium tabular-nums">
+                      {vehicle.odometer !== undefined && vehicle.odometer !== null
+                        ? `${Number(vehicle.odometer).toLocaleString()} km`
                         : "—"}
-                    </span>
-                  </TableCell>
-                  <TableCell>{vehicle.odometer ?? "—"}</TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               {(loadingVehicles || !vehicles.length) && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
-                    {loadingVehicles
-                      ? "Loading saved vehicle locations…"
-                      : "No saved GPS data. Sync live GPS to get the latest locations."}
+                  <TableCell colSpan={10} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <Bus className="h-8 w-8 opacity-30" />
+                      <span className="text-sm">
+                        {loadingVehicles
+                          ? "Loading saved vehicle locations…"
+                          : "No saved GPS data. Sync live GPS to get the latest locations."}
+                      </span>
+                    </div>
                   </TableCell>
                 </TableRow>
               )}
@@ -456,6 +343,38 @@ export default function StudentTransport() {
         </CardContent>
       </Card>
     </PageContainer>
+  );
+}
+
+function StatCard({ icon, label, value, accent }) {
+  return (
+    <Card className="border-border/60 shadow-sm">
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${accent}`}>
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
+          <div className="text-xl font-semibold tabular-nums">{value}</div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FuelBar({ value }) {
+  if (value === null || value === undefined) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const pct = Math.max(0, Math.min(100, Number(value)));
+  const barColor = pct > 50 ? "bg-emerald-500" : pct > 20 ? "bg-amber-500" : "bg-red-500";
+  return (
+    <div className="flex items-center gap-2 w-24">
+      <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-[11px] font-medium tabular-nums w-9 text-right">{pct}%</span>
+    </div>
   );
 }
 

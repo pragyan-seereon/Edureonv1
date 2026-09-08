@@ -698,6 +698,40 @@ const studentModel = {
     return response.data;
   },
 
+  getMyExamDashboard: async () => {
+    const response = await api.get("/student-portal/exams/dashboard", {
+      params: { session_year: getSessionYear() },
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  getMyExamSchedule: async () => {
+    const response = await api.get("/student-portal/exams/schedule", {
+      params: { session_year: getSessionYear() },
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  getMyExamTypes: async () => {
+    const response = await api.get("/student-portal/exams/types", {
+      params: { session_year: getSessionYear() },
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
+  getMyExamResults: async (examUuid = null) => {
+    const params = { session_year: getSessionYear() };
+    if (examUuid) params.exam_uuid = examUuid;
+    const response = await api.get("/student-portal/exams/results", {
+      params,
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
   getMyGatePasses: async () => {
     const response = await api.get("/student-portal/gate-passes", {
       headers: getHeaders(),

@@ -698,6 +698,14 @@ const studentModel = {
     return response.data;
   },
 
+  getMyDashboard: async () => {
+    const response = await api.get("/student-portal/dashboard", {
+      params: { session_year: getSessionYear() },
+      headers: getHeaders(),
+    });
+    return response.data;
+  },
+
   getMyExamDashboard: async () => {
     const response = await api.get("/student-portal/exams/dashboard", {
       params: { session_year: getSessionYear() },

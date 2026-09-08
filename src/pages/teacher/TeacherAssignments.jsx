@@ -719,10 +719,30 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
   const [formErrorsM, setFormErrorsM] = useState({});
   const [sharingMaterial, setSharingMaterial] = useState(false);
 
-  // Sections available for whichever class is currently picked in the
-  // "Share study material" form. Mirrors the assignment form's
-  // filteredSections, but kept independent so the two dialogs don't
-  // stomp on each other's selection.
+  const [editingMaterialUuid, setEditingMaterialUuid] = useState(null);
+
+const handleEditMaterial = (m) => {
+  setFormM({
+    title: m.title || "",
+    pdfFile: null,
+    externalUrl: m.type === "LINK" ? (m.url || "") : "",
+    subject: m.subjectUuid || "",
+    classNum: m.classUuid || "",
+    section: m.sectionUuid || "",
+    description: m.description || "",
+  });
+  setFormErrorsM({});
+  setEditingMaterialUuid(m.id);
+  setOpenM(true);
+};
+
+const handleUpdateMaterial = async () => {
+  if (!validateMaterialForm()) return toast.error("Complete the required fields.");
+  toast.info("Update isn't connected to the backend yet.");
+  setOpenM(false);
+};
+
+ 
   const filteredSectionsM = useMemo(
     () => sectionsList.filter((s) => s.class_uuid === formM.classNum),
     [formM.classNum, sectionsList],
@@ -1269,7 +1289,7 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
 
   // Shared dialog for sharing study material — rendered inside the
   // Study Materials tab so the trigger button lives with that tab's content.
-  const UploadMaterialDialog = (
+   const UploadMaterialDialog = (
         <Dialog
       open={openM}
       onOpenChange={(v) => {
@@ -1277,18 +1297,25 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
         if (!v) {
           setFormM(emptyM);
           setFormErrorsM({});
+          setEditingMaterialUuid(null);
         }
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm" className="gradient-primary border-0">
+        <Button
+          size="sm"
+          className="gradient-primary border-0"
+          onClick={() => setEditingMaterialUuid(null)}
+        >
           <FileBox className="h-4 w-4" />
           Upload Material
         </Button>
       </DialogTrigger>
            <DialogContent>
         <DialogHeader>
-          <DialogTitle>Share study material</DialogTitle>
+          <DialogTitle>
+            {editingMaterialUuid ? "Edit study material" : "Share study material"}
+          </DialogTitle>
           {/* <DialogDescription>
             Visible and downloadable for students of the selected class.
           </DialogDescription> */}
@@ -1453,15 +1480,20 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
             />
           </div>
         </div>
-        <DialogFooter>
-          <Button type="button" onClick={uploadMaterial} disabled={sharingMaterial}>
-            {sharingMaterial ? "Sharing..." : "share"}
+               <DialogFooter>
+          <Button
+            type="button"
+            onClick={editingMaterialUuid ? handleUpdateMaterial : uploadMaterial}
+            disabled={sharingMaterial}
+          >
+            {editingMaterialUuid
+              ? (sharingMaterial ? "Updating..." : "Update")
+              : (sharingMaterial ? "Sharing..." : "Share")}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
-
   // ---- Detail view: students of one assignment ----
   if (active) {
     return (
@@ -2132,15 +2164,25 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
                       <TableCell className="text-xs tabular-nums">
                         {m.downloads}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDownloadMaterial(m)}
-                        >
-                          <Download className="h-4 w-4" />
-                          Download
-                        </Button>
+                                                                 <TableCell className="text-right" data-no-row>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => handleEditMaterial(m)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => handleDownloadMaterial(m)}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -2270,6 +2312,7 @@ function LessonPlansTab({ teacherName, setMainTab }) {
   };
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
+  const [editingUuid, setEditingUuid] = useState(null);
 
   // Filter sections whenever the chosen class changes; auto-pick the
   // first matching section, and clear it if it no longer belongs.
@@ -2366,6 +2409,33 @@ function LessonPlansTab({ teacherName, setMainTab }) {
     }
   };
 
+    const handleEditPlan = (p) => {
+    setForm({
+      title: p.title || "",
+      subject: p.subjectUuid || "",
+      classNum: p.classUuid || "",
+      section: p.sectionUuid || "",
+      chapter: p.chapter || "",
+      topic: p.topic || "",
+      method: p.method || "Discussion + worked examples",
+      weekOf: p.weekOf || "",
+      periods: p.periods || 1,
+      objectives: p.objectives || "",
+      referenceLink: p.referenceUrl || "",
+      pdfFile: null,
+    });
+    setErrors({});
+    setEditingUuid(p.id);
+    setOpen(true);
+  };
+
+  const handleUpdatePlan = async () => {
+    if (!validateForm()) return toast.error("Complete the required fields.");
+    // TODO: wire this up once an update-lesson-plan endpoint exists.
+    toast.info("Editing lesson plans isn't connected to the backend yet.");
+    setOpen(false);
+  };
+
   return (
     <div className="space-y-4">
       <Card className="border-border/60">
@@ -2384,25 +2454,36 @@ function LessonPlansTab({ teacherName, setMainTab }) {
                 }}
               />
             )}
-          <Dialog
+                    <Dialog
             open={open}
             onOpenChange={(v) => {
               setOpen(v);
               if (!v) {
                 setForm(empty);
                 setErrors({});
+                setEditingUuid(null);
               }
             }}
           >
             <DialogTrigger asChild>
-              <Button size="sm" className="gradient-primary border-0">
+              <Button
+                size="sm"
+                className="gradient-primary border-0"
+                onClick={() => {
+                  setForm(empty);
+                  setErrors({});
+                  setEditingUuid(null);
+                }}
+              >
                 <Plus className="h-4 w-4" />
                 New Lesson Plan
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-xl">
-              <DialogHeader>
-                <DialogTitle>Create lesson plan</DialogTitle>
+                            <DialogHeader>
+                <DialogTitle>
+                  {editingUuid ? "Edit lesson plan" : "Create lesson plan"}
+                </DialogTitle>
               </DialogHeader>
               <div className="grid gap-3 max-h-[65vh] overflow-y-auto pr-1">
                 <div className="space-y-1">
@@ -2618,8 +2699,14 @@ function LessonPlansTab({ teacherName, setMainTab }) {
                 </div>
               </div>
                <DialogFooter>
-                <Button type="button" onClick={save} disabled={saving}>
-                  {saving ? "Saving..." : "Create lesson plan"}
+                <Button
+                  type="button"
+                  onClick={editingUuid ? handleUpdatePlan : save}
+                  disabled={saving}
+                >
+                  {editingUuid
+                    ? "Update lesson plan"
+                    : (saving ? "Saving..." : "Create lesson plan")}
                 </Button>
               </DialogFooter>
                        </DialogContent>
@@ -2654,10 +2741,14 @@ function LessonPlansTab({ teacherName, setMainTab }) {
                   LINK · {p.referenceUrl}
                 </Badge>
               )}
-              <div className="flex gap-2 pt-1">
+                           <div className="flex gap-2 pt-1">
                 <Button size="sm" variant="outline" onClick={() => downloadPlan(p)}>
                   <Download className="h-4 w-4" />
                   Download PDF
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => handleEditPlan(p)}>
+                  <Pencil className="h-4 w-4" />
+                  Edit
                 </Button>
               </div>
             </CardContent>

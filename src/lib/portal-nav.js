@@ -300,7 +300,7 @@ const studentGroups = [
       },
       {
         title: "Exams & Results",
-        url: "/student/results",
+        url: "/student/exams",
         icon: Trophy,
       },
       {
@@ -336,18 +336,13 @@ const studentGroups = [
       },
       {
         title: "Bus Routes",
-        url: "/student/bus-routes",
+        url: "/student/transport",
         icon: Route,
       },
       {
         title: "Gallery",
         url: "/student/gallery",
         icon: Images,
-      },
-      {
-        title: "Communication",
-        url: "/student/communication",
-        icon: MessageSquare,
       },
       {
         title: "Notifications",

@@ -9,11 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Progress } from "../../components/ui/progress";
 import { BookOpen, CalendarDays, Trophy, Download, Clock, MapPin, FileText, Target, TrendingUp, Award } from "lucide-react";
-import { useExams, useMarkEntries } from "../../lib/store";
 import { useCurrentStudent } from "../../lib/student-ctx";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from "recharts";
 import { toast } from "sonner";
+import studentModel from "../../api/studentModel";
 
 // Route registration (add this in your router file, e.g. router.jsx):
 //   import StudentExamsPage from "./pages/student/Exams";
@@ -31,27 +31,71 @@ const TIME_SLOTS = ["09:00 AM – 12:00 PM", "09:00 AM – 11:00 AM", "01:00 PM 
 
 const grade = (pct) => pct >= 91 ? "A1" : pct >= 81 ? "A2" : pct >= 71 ? "B1" : pct >= 61 ? "B2" : pct >= 51 ? "C1" : pct >= 41 ? "C2" : "D";
 const gpa = (pct) => pct >= 91 ? 10 : pct >= 81 ? 9 : pct >= 71 ? 8 : pct >= 61 ? 7 : pct >= 51 ? 6 : pct >= 41 ? 5 : 4;
+const formatExamDate = (date) => date ? new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Date TBD";
+const formatExamTime = (time) => {
+  if (!time) return "Time TBD";
+  const [hours, minutes] = time.split(":");
+  const value = new Date(`1970-01-01T${hours}:${minutes}:00`);
+  return value.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+};
 
 export default function StudentExamsPage() {
-  const exams = useExams();
-  const marks = useMarkEntries();
   const { student: me } = useCurrentStudent();
-  const studentId = me?.id ?? "STU1000";
   const myClass = me?.class ?? "X";
+  const [dashboard, setDashboard] = useState({});
+  const [myExams, setMyExams] = useState([]);
+  const [myMarks, setMyMarks] = useState([]);
+  const [portalTypes, setPortalTypes] = useState([]);
+  const [selectedExam, setSelectedExam] = useState("");
 
-  const myExams = useMemo(() => exams.filter((e) => e.class === myClass || e.class === "X"), [exams, myClass]);
-  const myMarks = useMemo(() => marks.filter((m) => m.studentId === studentId || m.studentName === me?.name), [marks, studentId, me?.name]);
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([studentModel.getMyExamDashboard(), studentModel.getMyExamSchedule(), studentModel.getMyExamTypes(), studentModel.getMyExamResults()])
+      .then(([dashboardData, scheduleData, typesData, resultsData]) => {
+        if (!mounted) return;
+        const resultRows = resultsData?.results ?? [];
+        setDashboard(dashboardData ?? {});
+        setMyExams((scheduleData?.exams ?? []).map((exam) => ({
+          id: exam.exam_uuid,
+          name: exam.exam_name,
+          from: exam.from_date,
+          to: exam.to_date,
+          status: exam.status,
+          subjects: exam.papers?.length ?? 0,
+          class: myClass,
+          papers: exam.papers ?? [],
+        })));
+        setPortalTypes((typesData?.exam_types ?? []).map((type) => ({
+          type: type.name,
+          count: type.exam_count ?? 0,
+          weight: `${type.exam_count ?? 0} exams`,
+          description: type.description || "No description available.",
+          color: "bg-primary/10 text-primary border-primary/20",
+        })));
+        setMyMarks(resultRows.flatMap((result) => (result.subject_marks ?? []).map((mark) => ({
+          id: `${result.result_uuid}-${mark.subject_uuid}`,
+          examId: result.result_uuid,
+          examName: result.exam_name,
+          subject: mark.subject_name,
+          obtained: mark.marks,
+          max: mark.max_marks,
+          isAbsent: mark.is_absent,
+          grade: result.grade,
+        }))));
+        setSelectedExam(resultRows[0]?.result_uuid ?? "");
+      })
+      .catch(() => mounted && toast.error("Unable to load examination portal data."));
+    return () => { mounted = false; };
+  }, [myClass]);
 
   const examIds = useMemo(() => Array.from(new Set(myMarks.map((m) => m.examId))), [myMarks]);
-  const [selectedExam, setSelectedExam] = useState(examIds[0] ?? "");
-
   const examRows = myMarks.filter((m) => m.examId === selectedExam);
   const totalObt = examRows.reduce((s, m) => s + (m.obtained ?? 0), 0);
   const totalMax = examRows.reduce((s, m) => s + m.max, 0);
   const pct = totalMax > 0 ? Math.round((totalObt / totalMax) * 100) : 0;
 
-  const upcoming = myExams.filter((e) => e.status === "Scheduled" || e.status === "In Progress");
-  const completed = myExams.filter((e) => e.status === "Completed");
+  const upcoming = myExams.filter((e) => ["SCHEDULED", "IN PROGRESS"].includes(String(e.status).toUpperCase()));
+  const completed = myExams.filter((e) => String(e.status).toUpperCase() === "COMPLETED");
 
   const radarData = examRows.map((m) => ({ subject: m.subject, score: Math.round(((m.obtained ?? 0) / m.max) * 100), fullMark: 100 }));
   const barData = examRows.map((m) => ({ subject: m.subject, obtained: m.obtained ?? 0, max: m.max }));
@@ -60,8 +104,8 @@ export default function StudentExamsPage() {
     <PageContainer>
       <PageHeader
         eyebrow="Student Portal"
-        title="My Examinations"
-        description={`Class ${myClass} · ${me?.section ?? "B"} · Schedule, exam types and detailed performance reports.`}
+        title="Exams & Results"
+        description="Schedule, exam types and detailed performance reports."
         actions={
           <Button size="sm" className="gradient-primary border-0" onClick={() => toast.success("Admit card downloaded")}>
             <Download className="h-4 w-4" />Admit Card
@@ -70,10 +114,10 @@ export default function StudentExamsPage() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="Upcoming Exams" value={upcoming.length} icon={<CalendarDays className="h-5 w-5" />} tone="primary" />
-        <KpiCard label="Completed" value={completed.length} icon={<BookOpen className="h-5 w-5" />} tone="success" />
-        <KpiCard label="Latest %" value={`${pct}%`} icon={<TrendingUp className="h-5 w-5" />} tone="info" />
-        <KpiCard label="Overall Grade" value={grade(pct)} icon={<Trophy className="h-5 w-5" />} tone="warning" />
+        <KpiCard label="Upcoming Exams" value={dashboard.upcoming_exams ?? upcoming.length} icon={<CalendarDays className="h-5 w-5" />} tone="primary" />
+        <KpiCard label="Completed" value={dashboard.completed_exams ?? completed.length} icon={<BookOpen className="h-5 w-5" />} tone="success" />
+        <KpiCard label="Latest %" value={`${dashboard.latest_percentage ?? pct}%`} icon={<TrendingUp className="h-5 w-5" />} tone="info" />
+        <KpiCard label="Overall Grade" value={dashboard.overall_grade ?? grade(pct)} icon={<Trophy className="h-5 w-5" />} tone="warning" />
       </div>
 
       <Tabs defaultValue="schedule" className="space-y-4">
@@ -96,7 +140,7 @@ export default function StudentExamsPage() {
                     <div>
                       <div className="text-sm font-semibold">{e.name}</div>
                       <div className="text-xs text-muted-foreground flex items-center gap-3 mt-1">
-                        <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" />{e.from} – {e.to}</span>
+                        <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" />{formatExamDate(e.from)} – {formatExamDate(e.to)}</span>
                         <span className="flex items-center gap-1"><BookOpen className="h-3 w-3" />{e.subjects} subjects</span>
                         <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />Class {e.class}</span>
                       </div>
@@ -104,11 +148,11 @@ export default function StudentExamsPage() {
                     <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">{e.status}</Badge>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
-                    {Object.entries(ROOM_MAP).slice(0, e.subjects).map(([subj, room], idx) => (
-                      <div key={subj} className="border rounded-md p-2.5 text-xs bg-muted/20">
-                        <div className="font-medium text-sm">{subj}</div>
-                        <div className="text-muted-foreground flex items-center gap-1 mt-0.5"><Clock className="h-3 w-3" />{TIME_SLOTS[idx % TIME_SLOTS.length]}</div>
-                        <div className="text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />Room {room}</div>
+                    {(e.papers ?? []).map((paper) => (
+                      <div key={paper.paper_uuid} className="border rounded-md p-2.5 text-xs bg-muted/20">
+                        <div className="font-medium text-sm">{paper.subject_name ?? paper.paper_name}</div>
+                        <div className="text-muted-foreground flex items-center gap-1 mt-0.5"><Clock className="h-3 w-3" />{formatExamDate(paper.date)} · {formatExamTime(paper.time)}{paper.duration_minutes ? ` (${paper.duration_minutes} min)` : ""}</div>
+                        <div className="text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />{paper.room_name ? `Room ${paper.room_name}` : "Room TBD"}</div>
                       </div>
                     ))}
                   </div>
@@ -118,7 +162,7 @@ export default function StudentExamsPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/60">
+          {completed.length > 0 && <Card className="border-border/60">
             <CardHeader className="pb-2"><CardTitle className="font-display text-base">Past Exams</CardTitle></CardHeader>
             <CardContent className="p-0 overflow-x-auto">
               <Table>
@@ -133,16 +177,15 @@ export default function StudentExamsPage() {
                       <TableCell><Button variant="ghost" size="sm" asChild><Link to="/student/results">View</Link></Button></TableCell>
                     </TableRow>
                   ))}
-                  {completed.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-xs text-muted-foreground py-6">No past exams.</TableCell></TableRow>}
                 </TableBody>
               </Table>
             </CardContent>
-          </Card>
+          </Card>}
         </TabsContent>
 
         <TabsContent value="types" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {EXAM_TYPES.map((t) => (
+            {(portalTypes.length ? portalTypes : EXAM_TYPES).map((t) => (
               <Card key={t.type} className="border-border/60">
                 <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
                   <CardTitle className="font-display text-base flex items-center gap-2"><Award className="h-4 w-4" />{t.type}</CardTitle>
@@ -197,7 +240,7 @@ export default function StudentExamsPage() {
               <div className="flex items-center gap-2">
                 <Select value={selectedExam} onValueChange={setSelectedExam}>
                   <SelectTrigger className="h-9 w-56"><SelectValue /></SelectTrigger>
-                  <SelectContent>{examIds.map((id) => <SelectItem key={id} value={id}>{exams.find((e) => e.id === id)?.name ?? id}</SelectItem>)}</SelectContent>
+                  <SelectContent>{examIds.map((id) => <SelectItem key={id} value={id}>{myMarks.find((mark) => mark.examId === id)?.examName ?? id}</SelectItem>)}</SelectContent>
                 </Select>
                 <Button size="sm" variant="outline" onClick={() => toast.success("Report card PDF downloaded")}><Download className="h-4 w-4" />PDF</Button>
               </div>

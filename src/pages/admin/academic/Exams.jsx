@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable no-unused-vars */
 /* eslint-disable no-undef */
 import { useNavigate } from "react-router-dom";
@@ -71,7 +72,9 @@ import {
   PolarRadiusAxis,
   Radar,
 } from "recharts";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
+import { getExamCategories, createExamCategory, updateExamCategory, deleteExamCategory, getExams, createExam,updateExam,deleteExam,} from "../../../api/exam";
+import { getClasses } from "../../../api/Class";
 import { toast } from "sonner";
 import { CrudDialog } from "../../../components/crud-dialog";
 import { ExcelUpload } from "../../../components/excel-upload";
@@ -91,15 +94,12 @@ import {
 } from "../../../components/ui/select";
 import { Label } from "../../../components/ui/label";
 import {
-  useExams,
   useQuestions,
   useStudents,
-  examsApi,
   questionsApi,
   useStoredResults,
   storedResultsApi,
 } from "../../../lib/store";
-// Same pagination primitives used by the Timetable Engine page, so every
 // data table in the app paginates and displays "Rows per page" the same way.
 import {
   PaginationBar,
@@ -258,7 +258,6 @@ export default function Exams() {
   const [tab, setTab] = useState("categories");
   const [reportOpen, setReportOpen] = useState(false);
   const [reportStudent, setReportStudent] = useState(null);
-  const exams = useExams();
   const questions = useQuestions();
   const students = useStudents();
   const navigate = useNavigate();
@@ -290,12 +289,82 @@ export default function Exams() {
   const [dashDetail, setDashDetail] = useState(null);
 
   // ---- Exam Categories (UI-only local state) ----
-  const [categories, setCategories] = useState([
-    { id: "c1", name: "Term 1", description: "First Term · Periodic + Final", weight: 50 },
-    { id: "c2", name: "Term 2", description: "Second Term · Periodic + Final", weight: 50 },
-    { id: "c3", name: "Half-Yearly", description: "Mid-session assessment", weight: 30 },
-    { id: "c4", name: "Pre-Board", description: "Mock board examination", weight: 100 },
-  ]);
+const [categories, setCategories] = useState([]);
+const [categoriesLoading, setCategoriesLoading] = useState(true);
+  // ---- Exams (from API) ----
+const [exams, setExams] = useState([]);
+const [examsLoading, setExamsLoading] = useState(true);
+
+  const mapExam = (e) => ({
+    id: e.exam_uuid,
+    categoryUuid: e.category_uuid,
+    name: e.category_name,
+    classUuid: e.class_uuid,
+    class: e.class_name,
+    from: e.from_date,
+    to: e.to_date,
+    subjects: e.no_of_subjects,
+    status: e.status,
+  });
+
+  const loadExams = async () => {
+    try {
+      setExamsLoading(true);
+      const data = await getExams();
+      const list = (data?.items ?? data ?? []).map(mapExam);
+      setExams(list);
+    } catch (err) {
+      toast.error("Could not load exams");
+    } finally {
+      setExamsLoading(false);
+    }
+  };
+
+const loadCategories = async () => {
+  try {
+    setCategoriesLoading(true);
+    const data = await getExamCategories();
+   const list = (data?.items ?? data ?? []).map((c) => ({
+  id: c.category_uuid,
+  name: c.category_name,
+  description: c.description ?? "",
+}));
+    setCategories(list);
+  } catch (err) {
+    toast.error("Could not load exam categories");
+  } finally {
+    setCategoriesLoading(false);
+  }
+};
+
+// ---- Classes (from API) ----
+const [classesData, setClassesData] = useState([]);
+const [classesLoading, setClassesLoading] = useState(true);
+
+const loadClasses = async () => {
+  try {
+    setClassesLoading(true);
+    const res = await getClasses();
+    const list = (res?.data ?? []).map((c) => ({
+      id: c.class_uuid,
+      name: c.class_name,
+      stream: c.stream,
+    }));
+    setClassesData(list);
+  } catch (err) {
+    toast.error("Could not load classes");
+  } finally {
+    setClassesLoading(false);
+  }
+};
+
+useEffect(() => {
+  loadCategories();
+  loadClasses();
+  loadExams();
+}, []);
+
+
   const [catOpen, setCatOpen] = useState(false);
   const [catEdit, setCatEdit] = useState(null);
 
@@ -353,18 +422,45 @@ export default function Exams() {
     }));
   };
 
-  const submitExam = (d) => {
+     const submitExam = async (d) => {
+    if (!Number(d.subjects) || Number(d.subjects) < 1) {
+      toast.error("No. of Subjects must be at least 1");
+      return;
+    }
+    const matchedCategory = categories.find((c) => c.name === d.name);
+    const matchedClass = classesData.find((c) => c.name === d.class);
+
+    if (!matchedCategory) {
+      toast.error("Please select a valid exam name");
+      return;
+    }
+    if (!matchedClass) {
+      toast.error("Please select a valid class");
+      return;
+    }
+
     const payload = {
-      name: String(d.name),
-      class: String(d.class),
-      from: String(d.from),
-      to: String(d.to),
-      subjects: Number(d.subjects) || 1,
+      category_uuid: matchedCategory.id,
+      class_uuid: matchedClass.id,
+      from_date: String(d.from),
+      to_date: String(d.to),
+      no_of_subjects: Number(d.subjects) || 1,
       status: d.status || "Scheduled",
     };
-    if (examEdit) examsApi.update(examEdit.id, payload);
-    else examsApi.add(payload);
-    toast.success(examEdit ? "Exam updated" : "Exam created");
+
+    try {
+      if (examEdit) {
+        const updated = await updateExam(examEdit.id, payload);
+        setExams((p) => p.map((x) => (x.id === examEdit.id ? mapExam(updated) : x)));
+        toast.success("Exam updated");
+      } else {
+        const created = await createExam(payload);
+        setExams((p) => [...p, mapExam(created)]);
+        toast.success("Exam created");
+      }
+    } catch (err) {
+      toast.error(examEdit ? "Could not update exam" : "Could not create exam");
+    }
   };
   const submitQ = (d) => {
     const question = String(d.question || "").trim();
@@ -495,11 +591,11 @@ export default function Exams() {
     toast.success("Marks exported");
   };
 
-  const classOptions = ["VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+    const classOptions = classesData.length
+    ? classesData.map((c) => c.name)
+    : ["VI", "VII", "VIII", "IX", "X", "XI", "XII"];
   const subjectOptions = ["Math", "Science", "English", "Social", "Hindi", "CS", "Biology", "Economics"];
-  const examTypeOptions = Array.from(
-    new Set(["Unit Test", "Term 1", "Term 2", "Half-Yearly", "Pre-Board", ...categories.map((c) => c.name)]),
-  );
+  const examTypeOptions = categories.map((c) => c.name);
 
   const filteredQ = questions.filter((q) => {
     if (search && !(q.subject + q.chapter + q.id + q.question).toLowerCase().includes(search.toLowerCase())) return false;
@@ -772,10 +868,10 @@ export default function Exams() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => toast.info(`${c.name} · ${c.description}`)}>
+                            {/* <DropdownMenuItem onClick={() => toast.info(`${c.name} · ${c.description}`)}>
                               <Eye className="h-4 w-4" />
                               View
-                            </DropdownMenuItem>
+                            </DropdownMenuItem> */}
                             <DropdownMenuItem
                               onClick={() => {
                                 setCatEdit(c);
@@ -788,10 +884,15 @@ export default function Exams() {
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
-                              onClick={() => {
-                                setCategories((p) => p.filter((x) => x.id !== c.id));
-                                toast.success("Category removed");
-                              }}
+                             onClick={async () => {
+  try {
+    await deleteExamCategory(c.id);
+    setCategories((p) => p.filter((x) => x.id !== c.id));
+    toast.success("Category removed");
+  } catch (err) {
+    toast.error("Could not delete category");
+  }
+}}
                             >
                               <Trash2 className="h-4 w-4" />
                               Delete
@@ -801,13 +902,20 @@ export default function Exams() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {!categoriesPage.pageItems.length && (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-8">
-                        No categories yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
+{categoriesLoading && (
+  <TableRow>
+    <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-8">
+      Loading categories…
+    </TableCell>
+  </TableRow>
+)}
+{!categoriesLoading && !categoriesPage.pageItems.length && (
+  <TableRow>
+    <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-8">
+      No categories yet.
+    </TableCell>
+  </TableRow>
+)}
                 </TableBody>
               </Table>
               <PaginationBar {...categoriesPage} itemLabel="categories" showPageSize={false} />
@@ -904,12 +1012,17 @@ export default function Exams() {
     Edit
   </DropdownMenuItem>
   <DropdownMenuSeparator />
-  <DropdownMenuItem
+   <DropdownMenuItem
     className="text-destructive focus:text-destructive"
-    onClick={(e) => {
+    onClick={async (e) => {
       e.stopPropagation();
-      examsApi.remove(u.id);
-      toast.success("Exam deleted");
+      try {
+        await deleteExam(u.id);
+        setExams((p) => p.filter((x) => x.id !== u.id));
+        toast.success("Exam deleted");
+      } catch (err) {
+        toast.error("Could not delete exam");
+      }
     }}
   >
     <Trash2 className="h-4 w-4" />
@@ -920,7 +1033,14 @@ export default function Exams() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {!examsPage.pageItems.length && (
+                                   {examsLoading && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
+                        Loading exams…
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!examsLoading && !examsPage.pageItems.length && (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
                         No exams scheduled yet.
@@ -1264,9 +1384,9 @@ export default function Exams() {
                 </div>
                 <div>
                   <Label className="text-xs">Class</Label>
-                  <Select value={solnDraft.className} onValueChange={(v) => setSolnDraft((p) => ({ ...p, className: v }))}>
+                                   <Select value={solnDraft.className} onValueChange={(v) => setSolnDraft((p) => ({ ...p, className: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{["VI", "VII", "VIII", "IX", "X", "XI", "XII"].map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                    <SelectContent>{classOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div>
@@ -1361,9 +1481,9 @@ export default function Exams() {
           <Card className="border-border/60">
             <CardContent className="p-3 flex flex-wrap gap-2 items-center">
               <span className="text-[10px] uppercase text-muted-foreground mr-1">Filters</span>
-              <Select value={meClass} onValueChange={setMeClass}>
+                           <Select value={meClass} onValueChange={setMeClass}>
                 <SelectTrigger className="h-8 w-28"><SelectValue placeholder="Class" /></SelectTrigger>
-                <SelectContent>{["VI", "VII", "VIII", "IX", "X", "XI", "XII"].map((c) => <SelectItem key={c} value={c}>Class {c}</SelectItem>)}</SelectContent>
+                <SelectContent>{classOptions.map((c) => <SelectItem key={c} value={c}>Class {c}</SelectItem>)}</SelectContent>
               </Select>
               <Select value={meSection} onValueChange={setMeSection}>
                 <SelectTrigger className="h-8 w-28"><SelectValue placeholder="Section" /></SelectTrigger>
@@ -1705,7 +1825,7 @@ export default function Exams() {
       </Tabs>
 
       {/* ================= Create/Edit Exam Dialog ================= */}
-      <CrudDialog
+           <CrudDialog
         open={examOpen}
         onOpenChange={setExamOpen}
         title={examEdit ? "Edit Exam" : "Create New Exam"}
@@ -1721,27 +1841,26 @@ export default function Exams() {
               }
             : undefined
         }
-        fields={[
-          { name: "name", label: "Exam Name" },
+               fields={[
+          { name: "name", label: "Exam Name", type: "select", options: examTypeOptions, required: true },
           {
             name: "class",
             label: "Class",
             type: "select",
-            options: ["VI", "VII", "VIII", "IX", "X", "XI", "XII"],
+            options: classOptions,
+            required: true,
           },
-          // Calendar date pickers (native date input renders a calendar UI)
-          { name: "from", label: "From Date", type: "date" },
-          { name: "to", label: "To Date", type: "date" },
-          { name: "subjects", label: "No. of Subjects", type: "number" },
+          { name: "from", label: "From Date", type: "date", required: true },
+          { name: "to", label: "To Date", type: "date", required: true },
+          { name: "subjects", label: "No. of Subjects", type: "number", required: true },
           {
             name: "status",
             label: "Status",
             type: "select",
-            // On creation, only allow "Scheduled". Editing an existing exam
-            // still allows moving through the full lifecycle.
             options: examEdit
-              ? [ "Scheduled", "In Progress", "Completed"]
+              ? ["Scheduled", "In Progress", "Completed"]
               : ["Scheduled"],
+            required: true,
           },
         ]}
         submitLabel={examEdit ? "Save Exam" : "Create Exam"}
@@ -1962,38 +2081,50 @@ export default function Exams() {
         onSubmit={generatePaper}
       />
 
-      <CrudDialog
-        open={catOpen}
-        onOpenChange={(v) => {
-          setCatOpen(v);
-          if (!v) setCatEdit(null);
-        }}
-        title={catEdit ? "Edit Exam Category" : "New Exam Category"}
-        initial={catEdit ? { name: catEdit.name, description: catEdit.description } : undefined}
-        fields={[
-          { name: "name", label: "Category Name" },
-          { name: "description", label: "Description", type: "textarea" },
-        ]}
-        submitLabel={catEdit ? "Save Category" : "Create Category"}
-        onSubmit={(d) => {
-          if (catEdit) {
-            setCategories((p) =>
-              p.map((x) =>
-                x.id === catEdit.id
-                  ? { ...x, name: String(d.name), description: String(d.description || "") }
-                  : x,
-              ),
-            );
-            toast.success("Category updated");
-          } else {
-            setCategories((p) => [
-              ...p,
-              { id: `c-${Date.now()}`, name: String(d.name), description: String(d.description || ""), weight: Number(d.weight) || 100 },
-            ]);
-            toast.success("Category added");
-          }
-        }}
-      />
+<CrudDialog
+  open={catOpen}
+  onOpenChange={(v) => {
+    setCatOpen(v);
+    if (!v) setCatEdit(null);
+  }}
+  title={catEdit ? "Edit Exam Category" : "New Exam Category"}
+  initial={catEdit ? { name: catEdit.name, description: catEdit.description } : undefined}
+  fields={[
+    { name: "name", label: "Category Name", required: true },
+    { name: "description", label: "Description", type: "textarea" },
+  ]}
+  submitLabel={catEdit ? "Save Category" : "Create Category"}
+  onSubmit={async (d) => {
+    const name = String(d.name || "").trim();
+    if (!name) {
+      toast.error("Category name is required");
+      return;
+    }
+    const payload = { category_name: name, description: String(d.description || "") };
+    try {
+      if (catEdit) {
+        const updated = await updateExamCategory(catEdit.id, payload);
+        setCategories((p) =>
+          p.map((x) =>
+            x.id === catEdit.id
+              ? { id: catEdit.id, name: updated?.category_name ?? payload.category_name, description: updated?.description ?? payload.description }
+              : x,
+          ),
+        );
+        toast.success("Category updated");
+      } else {
+        const created = await createExamCategory(payload);
+        setCategories((p) => [
+          ...p,
+          { id: created.category_uuid, name: created.category_name, description: created.description ?? "" },
+        ]);
+        toast.success("Category added");
+      }
+    } catch (err) {
+      toast.error(catEdit ? "Could not update category" : "Could not create category");
+    }
+  }}
+/>
 
       <CrudDialog
         open={paperOpen}
@@ -2006,7 +2137,7 @@ export default function Exams() {
         initial={paperEdit ? { ...paperEdit } : undefined}
         fields={[
           { name: "category", label: "Category", type: "select", options: categories.map((c) => c.name) },
-          { name: "className", label: "Class", type: "select", options: ["VI", "VII", "VIII", "IX", "X", "XI", "XII"] },
+          { name: "className", label: "Class", type: "select", options: classOptions },
           { name: "subject", label: "Subject" },
           { name: "paper", label: "Paper (e.g. Paper 1)" },
           { name: "date", label: "Date", type: "date" },
@@ -2034,11 +2165,11 @@ export default function Exams() {
         }}
       />
 
-      <MultiPaperDialog
+       <MultiPaperDialog
         open={multiPaperOpen}
         onOpenChange={setMultiPaperOpen}
         categories={categories.map((c) => c.name)}
-        classOptions={["VI", "VII", "VIII", "IX", "X", "XI", "XII"]}
+        classOptions={classOptions}
         onSubmit={(newPapers) => {
           setPapers((p) => [...p, ...newPapers]);
           toast.success(`${newPapers.length} paper(s) added`);

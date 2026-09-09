@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/immutability */
 /* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable no-unused-vars */
 /* eslint-disable no-undef */
@@ -73,7 +74,7 @@ import {
   Radar,
 } from "recharts";
 import { useMemo, useRef, useState, useEffect } from "react";
-import { getExamCategories, createExamCategory, updateExamCategory, deleteExamCategory, getExams, createExam,updateExam,deleteExam,} from "../../../api/exam";
+import { getExamCategories, createExamCategory, updateExamCategory, deleteExamCategory, getExams, createExam,updateExam,deleteExam,getClassSubjects,getRooms, createExamPapersBulk, getExamPapers, getExamPaperById, updateExamPaper, deleteExamPaper, importExamPapers  } from "../../../api/exam";
 import { getClasses } from "../../../api/Class";
 import { toast } from "sonner";
 import { CrudDialog } from "../../../components/crud-dialog";
@@ -267,10 +268,110 @@ export default function Exams() {
   const [qEdit, setQEdit] = useState(null);
   const [multiAddOpen, setMultiAddOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
-  const [search, setSearch] = useState("");
+   const [search, setSearch] = useState("");
+
+  // ---- Classes (from API) ----
+  const [classesData, setClassesData] = useState([]);
+  const [classesLoading, setClassesLoading] = useState(true);
+
+  const [roomsData, setRoomsData] = useState([]);
+const [roomsLoading, setRoomsLoading] = useState(true);
+
+const loadRooms = async () => {
+  try {
+    setRoomsLoading(true);
+    const data = await getRooms();
+    const list = (data ?? []).map((r) => ({
+      uuid: r.room_uuid,
+      name: r.room_name,
+      number: r.room_number,
+      capacity: r.capacity,
+    }));
+    setRoomsData(list);
+  } catch (err) {
+    toast.error("Could not load rooms");
+  } finally {
+    setRoomsLoading(false);
+  }
+};
+
+  const loadClasses = async () => {
+    try {
+      setClassesLoading(true);
+      const res = await getClasses();
+      const list = (res?.data ?? []).map((c) => ({
+        id: c.class_uuid,
+        name: c.class_name,
+        stream: c.stream,
+      }));
+      setClassesData(list);
+    } catch (err) {
+      toast.error("Could not load classes");
+    } finally {
+      setClassesLoading(false);
+    }
+  };
+
+  const [classSubjectsMap, setClassSubjectsMap] = useState({});
+
+useEffect(() => {
+  if (!classesData.length) return;
+  let cancelled = false;
+  (async () => {
+    const entries = await Promise.all(
+      classesData.map(async (c) => {
+        try {
+          const data = await getClassSubjects(c.id);
+          const list = (data ?? []).map((s) => s.subject_name);
+          return [c.name, Array.from(new Set(list))];
+        } catch {
+          return [c.name, []];
+        }
+      }),
+    );
+    if (!cancelled) setClassSubjectsMap(Object.fromEntries(entries));
+  })();
+  return () => { cancelled = true; };
+}, [classesData]);
+
+const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
   const [qfClass, setQfClass] = useState("all");
   const [qfSubject, setQfSubject] = useState("all");
   const [qfExam, setQfExam] = useState("all");
+  const [qfSubjectOptions, setQfSubjectOptions] = useState([]);
+  const [qfSubjectsLoading, setQfSubjectsLoading] = useState(false);
+
+  useEffect(() => {
+    if (qfClass === "all") {
+      setQfSubjectOptions([]);
+      setQfSubject("all");
+      return;
+    }
+    const matchedClass = classesData.find((c) => c.name === qfClass);
+    if (!matchedClass) {
+      setQfSubjectOptions([]);
+      return;
+    }
+    (async () => {
+      try {
+        setQfSubjectsLoading(true);
+        const data = await getClassSubjects(matchedClass.id);
+        const list = (data ?? []).map((s) => ({
+          uuid: s.subject_uuid,
+          name: s.subject_name,
+        }));
+        // dedupe by subject_uuid (API returns one row per faculty assigned)
+        const unique = Array.from(new Map(list.map((s) => [s.uuid, s])).values());
+        setQfSubjectOptions(unique);
+        setQfSubject("all");
+      } catch (err) {
+        toast.error("Could not load subjects for this class");
+        setQfSubjectOptions([]);
+      } finally {
+        setQfSubjectsLoading(false);
+      }
+    })();
+  }, [qfClass, classesData]);
 
   // ---- Marks Entry filters (Class / Section / Year / Exam) ----
   // NOTE: the table below still renders the local mock `marks` array,
@@ -338,51 +439,83 @@ const loadCategories = async () => {
 };
 
 // ---- Classes (from API) ----
-const [classesData, setClassesData] = useState([]);
-const [classesLoading, setClassesLoading] = useState(true);
-
-const loadClasses = async () => {
-  try {
-    setClassesLoading(true);
-    const res = await getClasses();
-    const list = (res?.data ?? []).map((c) => ({
-      id: c.class_uuid,
-      name: c.class_name,
-      stream: c.stream,
-    }));
-    setClassesData(list);
-  } catch (err) {
-    toast.error("Could not load classes");
-  } finally {
-    setClassesLoading(false);
-  }
-};
-
 useEffect(() => {
   loadCategories();
   loadClasses();
   loadExams();
+  loadRooms();
+  loadPapers();
 }, []);
-
 
   const [catOpen, setCatOpen] = useState(false);
   const [catEdit, setCatEdit] = useState(null);
 
   // ---- Subjects, Papers and Schedule ----
-  const [papers, setPapers] = useState([
-    { id: "p1", category: "Term 1", className: "X", subject: "Mathematics", paper: "Paper 1", date: "2025-09-12", time: "09:30", duration: 180, maxMarks: 80, room: "Hall A" },
-    { id: "p2", category: "Term 1", className: "X", subject: "Science", paper: "Paper 1", date: "2025-09-14", time: "09:30", duration: 180, maxMarks: 80, room: "Hall A" },
-    { id: "p3", category: "Term 1", className: "X", subject: "English", paper: "Paper 1", date: "2025-09-16", time: "09:30", duration: 180, maxMarks: 80, room: "Hall B" },
-  ]);
+  const [papers, setPapers] = useState([]);
+  const [papersLoading, setPapersLoading] = useState(true);
   const [paperOpen, setPaperOpen] = useState(false);
   const [paperEdit, setPaperEdit] = useState(null);
   const [multiPaperOpen, setMultiPaperOpen] = useState(false);
 
+  const mapPaper = (p) => ({
+    id: p.paper_uuid,
+    category: p.category_name,
+    className: p.class_name,
+    subject: p.subject_name,
+    paper: p.paper_name,
+    date: p.paper_date,
+    time: p.paper_time,
+    duration: p.duration_minutes,
+    maxMarks: p.max_marks,
+    room: p.room_name ? `${p.room_name} (${p.room_number})` : "",
+  });
+
+  const loadPapers = async () => {
+    try {
+      setPapersLoading(true);
+      const data = await getExamPapers();
+      const list = (data?.items ?? data ?? []).map(mapPaper);
+      setPapers(list);
+    } catch (err) {
+      toast.error("Could not load exam papers");
+    } finally {
+      setPapersLoading(false);
+    }
+  };
+
+  // Subject options for the single Edit-Paper dialog, scoped to the
+  // paper's class. [{ uuid, name }]
+   const [editSubjects, setEditSubjects] = useState([]);
+  const [editSubjectsLoading, setEditSubjectsLoading] = useState(false);
+  const [papersImporting, setPapersImporting] = useState(false);
+  const papersImportRef = useRef(null);
   // ---- Solutions ----
   const [solutions, setSolutions] = useState([]);
   const solnRef = useRef(null);
   const [solnDraft, setSolnDraft] = useState({ category: "Term 1", className: "X" });
+  const [solnSubjectOptions, setSolnSubjectOptions] = useState([]);
 
+  useEffect(() => {
+    if (!solnDraft.className) {
+      setSolnSubjectOptions([]);
+      return;
+    }
+    const matchedClass = classesData.find((c) => c.name === solnDraft.className);
+    if (!matchedClass) {
+      setSolnSubjectOptions([]);
+      return;
+    }
+    (async () => {
+      try {
+        const data = await getClassSubjects(matchedClass.id);
+        const list = (data ?? []).map((s) => ({ uuid: s.subject_uuid, name: s.subject_name }));
+        setSolnSubjectOptions(Array.from(new Map(list.map((s) => [s.uuid, s])).values()));
+      } catch (err) {
+        toast.error("Could not load subjects for this class");
+        setSolnSubjectOptions([]);
+      }
+    })();
+  }, [solnDraft.className, classesData]);
   // ---- Results mapping ----
   const [resCourse, setResCourse] = useState("CBSE");
   const [resClass, setResClass] = useState("X");
@@ -596,6 +729,7 @@ useEffect(() => {
     : ["VI", "VII", "VIII", "IX", "X", "XI", "XII"];
   const subjectOptions = ["Math", "Science", "English", "Social", "Hindi", "CS", "Biology", "Economics"];
   const examTypeOptions = categories.map((c) => c.name);
+  const examNameOptions = Array.from(new Set(exams.map((e) => e.name))).filter(Boolean);
 
   const filteredQ = questions.filter((q) => {
     if (search && !(q.subject + q.chapter + q.id + q.question).toLowerCase().includes(search.toLowerCase())) return false;
@@ -1062,26 +1196,39 @@ useEffect(() => {
               </div>
               <div className="flex gap-2 items-center">
                 <RowsPerPageSelect {...papersPage} />
-                <ExcelUpload
-                  label="Import Papers"
-                  templateHeaders={["category", "className", "subject", "paper", "date", "time", "duration", "maxMarks", "room"]}
-                  templateName="exam-papers-template.xlsx"
-                  onRows={(rows) => {
-                    const fresh = rows.filter((r) => r.subject).map((r, i) => ({
-                      id: `xp-${Date.now()}-${i}`,
-                      category: r.category || "Term 1",
-                      className: r.className || "X",
-                      subject: r.subject,
-                      paper: r.paper || "Paper 1",
-                      date: r.date || "",
-                      time: r.time || "09:30",
-                      duration: Number(r.duration) || 180,
-                      maxMarks: Number(r.maxMarks) || 80,
-                      room: r.room || "Hall A",
-                    }));
-                    setPapers((p) => [...p, ...fresh]);
+                                <input
+                  ref={papersImportRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  hidden
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    try {
+                      setPapersImporting(true);
+                      const res = await importExamPapers(file);
+                      await loadPapers();
+                      toast.success(
+                        res?.message ||
+                          `${res?.created_papers ?? 0} paper(s) imported`,
+                      );
+                    } catch (err) {
+                      toast.error("Could not import papers");
+                    } finally {
+                      setPapersImporting(false);
+                    }
                   }}
                 />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={papersImporting}
+                  onClick={() => papersImportRef.current?.click()}
+                >
+                  <Upload className="h-4 w-4" />
+                  {papersImporting ? "Importing…" : "Import Papers"}
+                </Button>
                 <Button
                   size="sm"
                   className="gradient-primary border-0"
@@ -1130,18 +1277,64 @@ useEffect(() => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
+                            {/* <DropdownMenuItem
                               onClick={() =>
                                 toast.info(`${p.subject} · ${p.paper} · ${p.date} ${p.time} · ${p.room}`)
                               }
                             >
                               <Eye className="h-4 w-4" />
                               View
-                            </DropdownMenuItem>
+                            </DropdownMenuItem> */}
                             <DropdownMenuItem
-                              onClick={() => {
-                                setPaperEdit(p);
-                                setPaperOpen(true);
+                              onClick={async () => {
+                                try {
+                                  const full = await getExamPaperById(p.id);
+                                  const matchedClass = classesData.find(
+                                    (c) => c.id === full.class_uuid,
+                                  );
+                                  setEditSubjects([]);
+                                  if (matchedClass) {
+                                    try {
+                                      setEditSubjectsLoading(true);
+                                      const subjData = await getClassSubjects(matchedClass.id);
+                                      const unique = Array.from(
+                                        new Map(
+                                          (subjData ?? []).map((s) => [
+                                            s.subject_uuid,
+                                            { uuid: s.subject_uuid, name: s.subject_name },
+                                          ]),
+                                        ).values(),
+                                      );
+                                      setEditSubjects(unique);
+                                    } catch {
+                                      toast.error("Could not load subjects for this class");
+                                    } finally {
+                                      setEditSubjectsLoading(false);
+                                    }
+                                  }
+                                  setPaperEdit({
+                                    id: full.paper_uuid,
+                                    examUuid: full.exam_uuid,
+                                    categoryUuid: full.category_uuid,
+                                    category: full.category_name,
+                                    classUuid: full.class_uuid,
+                                    className: full.class_name,
+                                    subjectUuid: full.subject_uuid,
+                                    subject: full.subject_name,
+                                    roomUuid: full.room_uuid,
+                                    room: full.room_name
+                                      ? `${full.room_name} (${full.room_number})`
+                                      : "",
+                                    paper: full.paper_name,
+                                    date: full.paper_date,
+                                    time: (full.paper_time || "09:30:00").slice(0, 5),
+                                    duration: full.duration_minutes,
+                                    maxMarks: full.max_marks,
+                                  });
+                                  setPaperOpen(true);
+                                } catch (err) {
+                                  toast.error("Could not load paper details");
+                                }
                               }}
                             >
                               <Pencil className="h-4 w-4" />
@@ -1150,7 +1343,15 @@ useEffect(() => {
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
-                              onClick={() => setPapers((x) => x.filter((y) => y.id !== p.id))}
+                              onClick={async () => {
+                                try {
+                                  await deleteExamPaper(p.id);
+                                  setPapers((x) => x.filter((y) => y.id !== p.id));
+                                  toast.success("Paper deleted");
+                                } catch (err) {
+                                  toast.error("Could not delete paper");
+                                }
+                              }}
                             >
                               <Trash2 className="h-4 w-4" />
                               Delete
@@ -1160,7 +1361,14 @@ useEffect(() => {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {!papers.length && (
+                  {papersLoading && (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
+                        Loading papers…
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!papersLoading && !papers.length && (
                     <TableRow>
                       <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
                         No papers yet.
@@ -1195,11 +1403,18 @@ useEffect(() => {
                     {classOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Select value={qfSubject} onValueChange={setQfSubject}>
-                  <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Subject" /></SelectTrigger>
+                             <Select value={qfSubject} onValueChange={setQfSubject} disabled={qfClass === "all"}>
+                  <SelectTrigger className="h-8 w-32">
+                    <SelectValue placeholder={qfClass === "all" ? "Pick class first" : "Subject"} />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Subjects</SelectItem>
-                    {subjectOptions.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    {qfSubjectsLoading && (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>
+                    )}
+                    {qfSubjectOptions.map((s) => (
+                      <SelectItem key={s.uuid} value={s.name}>{s.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Select value={qfExam} onValueChange={setQfExam}>
@@ -1389,9 +1604,20 @@ useEffect(() => {
                     <SelectContent>{classOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-                <div>
+                                <div>
                   <Label className="text-xs">Subject</Label>
-                  <Input value={solnDraft.subject ?? ""} onChange={(e) => setSolnDraft((p) => ({ ...p, subject: e.target.value }))} placeholder="Mathematics" />
+                  <Select
+                    value={solnDraft.subject ?? ""}
+                    onValueChange={(v) => setSolnDraft((p) => ({ ...p, subject: v }))}
+                    disabled={!solnDraft.className}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
+                    <SelectContent>
+                      {solnSubjectOptions.map((s) => (
+                        <SelectItem key={s.uuid} value={s.name}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label className="text-xs">Paper</Label>
@@ -2130,52 +2356,149 @@ useEffect(() => {
         open={paperOpen}
         onOpenChange={(v) => {
           setPaperOpen(v);
-          if (!v) setPaperEdit(null);
+          if (!v) {
+            setPaperEdit(null);
+            setEditSubjects([]);
+          }
         }}
         title={paperEdit ? "Edit Paper" : "Add Subject / Paper"}
-        description="Schedule a subject paper with date, time, room and max marks."
         initial={paperEdit ? { ...paperEdit } : undefined}
         fields={[
-          { name: "category", label: "Category", type: "select", options: categories.map((c) => c.name) },
+          { name: "category", label: "Category", type: "select", options: examNameOptions },
           { name: "className", label: "Class", type: "select", options: classOptions },
-          { name: "subject", label: "Subject" },
+          {
+            name: "subject",
+            label: "Subject",
+            type: "select",
+            options: editSubjects.length
+              ? editSubjects.map((s) => s.name)
+              : paperEdit?.subject
+                ? [paperEdit.subject]
+                : [],
+          },
           { name: "paper", label: "Paper (e.g. Paper 1)" },
           { name: "date", label: "Date", type: "date" },
           { name: "time", label: "Time (HH:MM)" },
           { name: "duration", label: "Duration (mins)", type: "number" },
           { name: "maxMarks", label: "Max Marks", type: "number" },
-          { name: "room", label: "Room / Hall" },
+          {
+            name: "room",
+            label: "Room / Hall",
+            type: "select",
+            options: roomsData.map((r) => `${r.name} (${r.number})`),
+          },
         ]}
         submitLabel={paperEdit ? "Save Paper" : "Add Paper"}
-        onSubmit={(d) => {
-          const payload = {
-            id: paperEdit?.id ?? `xp-${Date.now()}`,
-            category: String(d.category),
-            className: String(d.className),
-            subject: String(d.subject),
-            paper: String(d.paper || "Paper 1"),
-            date: String(d.date),
-            time: String(d.time || "09:30"),
-            duration: Number(d.duration) || 180,
-            maxMarks: Number(d.maxMarks) || 80,
-            room: String(d.room || "Hall A"),
+        onSubmit={async (d) => {
+          const matchedClass = classesData.find((c) => c.name === d.className);
+          const matchedExam = exams.find(
+            (e) => e.name === d.category && e.class === d.className,
+          );
+          const subjMatch = editSubjects.find((s) => s.name === d.subject);
+          const roomMatch = roomsData.find(
+            (r) => `${r.name} (${r.number})` === d.room,
+          );
+
+          const subjectUuid = subjMatch?.uuid || paperEdit?.subjectUuid;
+          const roomUuid = roomMatch?.uuid || paperEdit?.roomUuid;
+
+          if (!matchedClass || !matchedExam || !subjectUuid) {
+            toast.error("Please pick a valid category, class and subject");
+            return;
+          }
+
+          const paperPayload = {
+            class_uuid: matchedClass.id,
+            subject_uuid: subjectUuid,
+            room_uuid: roomUuid || null,
+            paper_name: String(d.paper || "Paper 1"),
+            paper_date: String(d.date),
+            paper_time: d.time ? `${d.time}:00` : "09:30:00",
+            duration_minutes: Number(d.duration) || 180,
+            max_marks: Number(d.maxMarks) || 80,
           };
-          setPapers((p) => (paperEdit ? p.map((x) => (x.id === paperEdit.id ? payload : x)) : [...p, payload]));
-          toast.success(paperEdit ? "Paper updated" : "Paper added");
+
+          try {
+            if (paperEdit) {
+              await updateExamPaper(paperEdit.id, paperPayload);
+              toast.success("Paper updated");
+            } else {
+              await createExamPapersBulk(matchedExam.id, [paperPayload]);
+              toast.success("Paper added");
+            }
+            await loadPapers();
+          } catch (err) {
+            toast.error(paperEdit ? "Could not update paper" : "Could not add paper");
+          }
         }}
       />
 
-       <MultiPaperDialog
-        open={multiPaperOpen}
-        onOpenChange={setMultiPaperOpen}
-        categories={categories.map((c) => c.name)}
-        classOptions={classOptions}
-        onSubmit={(newPapers) => {
-          setPapers((p) => [...p, ...newPapers]);
-          toast.success(`${newPapers.length} paper(s) added`);
-        }}
-      />
+   <MultiPaperDialog
+  open={multiPaperOpen}
+  onOpenChange={setMultiPaperOpen}
+  categories={examNameOptions}
+  classOptions={classOptions}
+  classesData={classesData}
+  rooms={roomsData}
+  roomsLoading={roomsLoading}
+   onSubmit={async (newPapers) => {
+    const skipped = [];
 
+    // Group by exam_uuid since the API takes ONE exam_uuid per call,
+    // with a "papers" array of per-paper fields only.
+    const groups = new Map(); // exam_uuid -> [{ class_uuid, subject_uuid, ... }]
+
+    for (const p of newPapers) {
+      const matchedClass = classesData.find((c) => c.name === p.className);
+      const matchedExam = exams.find(
+        (e) => e.name === p.category && e.class === p.className,
+      );
+
+      if (!matchedClass || !matchedExam || !p.subjectUuid) {
+        skipped.push(`${p.category} · ${p.className} · ${p.subject || "—"}`);
+        continue;
+      }
+
+      const examUuid = matchedExam.id;
+      if (!groups.has(examUuid)) groups.set(examUuid, []);
+      groups.get(examUuid).push({
+        class_uuid: matchedClass.id,
+        subject_uuid: p.subjectUuid,
+        room_uuid: p.roomUuid || null,
+        paper_name: p.paper || "Paper 1",
+        paper_date: p.date || null,
+        paper_time: p.time ? `${p.time}:00` : null,
+        duration_minutes: Number(p.duration) || 180,
+        max_marks: Number(p.maxMarks) || 80,
+      });
+    }
+
+    if (skipped.length) {
+      toast.error(`Skipped ${skipped.length} row(s) — no matching exam/class/subject found: ${skipped.join(", ")}`);
+    }
+    if (!groups.size) return;
+
+       let createdCount = 0;
+    let anyFailed = false;
+
+    for (const [examUuid, papersForExam] of groups) {
+      try {
+        const res = await createExamPapersBulk(examUuid, papersForExam);
+        createdCount += res?.items?.length ?? papersForExam.length;
+      } catch (err) {
+        anyFailed = true;
+      }
+    }
+
+    if (createdCount) {
+      await loadPapers(); 
+      toast.success(`${createdCount} paper(s) added`);
+    }
+    if (anyFailed) {
+      toast.error("Some papers could not be created");
+    }
+  }}
+/>
       <ReportCardDialog
         open={reportOpen}
         onOpenChange={(v) => {

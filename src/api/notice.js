@@ -8,7 +8,7 @@ const getHeaders = () => {
     "X-Institute-UUID": instituteUUID,
   };
 };
-// const NOTICES_BASE_URL = "http://127.0.0.1:8000"; 
+
 
 // ---------------- Notices ----------------
 
@@ -79,3 +79,5 @@ export const unpublishNoticeById = async (uuid) => {
   });
   return data;
 };
+
+

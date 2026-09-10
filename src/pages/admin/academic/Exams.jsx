@@ -75,6 +75,7 @@ import {
 } from "recharts";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { getExamCategories, createExamCategory, updateExamCategory, deleteExamCategory, getExams, createExam,updateExam,deleteExam,getClassSubjects,getRooms, createExamPapersBulk, getExamPapers, getExamPaperById, updateExamPaper, deleteExamPaper, importExamPapers  } from "../../../api/exam";
+import {getQuestionBank,getQuestionBankById,createQuestion,createQuestionsBulk,updateQuestionBank,deleteQuestionBank,importQuestionBank,} from "../../../api/question";
 import { getClasses } from "../../../api/Class";
 import { toast } from "sonner";
 import { CrudDialog } from "../../../components/crud-dialog";
@@ -94,13 +95,7 @@ import {
   SelectValue,
 } from "../../../components/ui/select";
 import { Label } from "../../../components/ui/label";
-import {
-  useQuestions,
-  useStudents,
-  questionsApi,
-  useStoredResults,
-  storedResultsApi,
-} from "../../../lib/store";
+import { useStudents,useStoredResults,storedResultsApi,} from "../../../lib/store";
 // data table in the app paginates and displays "Rows per page" the same way.
 import {
   PaginationBar,
@@ -259,7 +254,8 @@ export default function Exams() {
   const [tab, setTab] = useState("categories");
   const [reportOpen, setReportOpen] = useState(false);
   const [reportStudent, setReportStudent] = useState(null);
-  const questions = useQuestions();
+   const [questions, setQuestions] = useState([]);
+  const [questionsLoading, setQuestionsLoading] = useState(true);
   const students = useStudents();
   const navigate = useNavigate();
   const [examOpen, setExamOpen] = useState(false);
@@ -335,6 +331,13 @@ useEffect(() => {
 }, [classesData]);
 
 const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
+  const resolveSubjectUuid = async (className, subjectName) => {
+    const matchedClass = classesData.find((c) => c.name === className);
+    if (!matchedClass) return null;
+    const data = await getClassSubjects(matchedClass.id);
+    const match = (data ?? []).find((s) => s.subject_name === subjectName);
+    return match?.subject_uuid ?? null;
+  };
   const [qfClass, setQfClass] = useState("all");
   const [qfSubject, setQfSubject] = useState("all");
   const [qfExam, setQfExam] = useState("all");
@@ -445,6 +448,7 @@ useEffect(() => {
   loadExams();
   loadRooms();
   loadPapers();
+  loadQuestions();
 }, []);
 
   const [catOpen, setCatOpen] = useState(false);
@@ -469,6 +473,33 @@ useEffect(() => {
     maxMarks: p.max_marks,
     room: p.room_name ? `${p.room_name} (${p.room_number})` : "",
   });
+
+    const mapQuestion = (q) => ({
+    id: q.question_uuid,
+    classUuid: q.class_uuid,
+    className: q.class_name,
+    subjectUuid: q.subject_uuid,
+    subject: q.subject_name,
+    categoryUuid: q.category_uuid,
+    examType: q.category_name,
+    chapter: q.chapter_topic,
+    diff: q.difficulty,
+    marks: q.marks,
+    question: q.question,
+    answer: q.answer_key,
+  });
+
+  const loadQuestions = async () => {
+    try {
+      setQuestionsLoading(true);
+      const data = await getQuestionBank();
+      setQuestions((data?.items ?? data ?? []).map(mapQuestion));
+    } catch (err) {
+      toast.error("Could not load question bank");
+    } finally {
+      setQuestionsLoading(false);
+    }
+  };
 
   const loadPapers = async () => {
     try {
@@ -523,15 +554,16 @@ useEffect(() => {
   const [resCategory, setResCategory] = useState("Term 1");
   const [resultRows, setResultRows] = useState({});
 
-  // ---- Question Bank import (class + file chosen together, then submit) ----
+    // ---- Question Bank import (class + file chosen together, then submit) ----
   const [importClassOpen, setImportClassOpen] = useState(false);
   const [importClass, setImportClass] = useState("");
-  const [importStagedRows, setImportStagedRows] = useState(null);
+  const [importFile, setImportFile] = useState(null);
   const [importFileLabel, setImportFileLabel] = useState("");
+  const [importSubmitting, setImportSubmitting] = useState(false);
 
   const resetImportDialog = () => {
     setImportClass("");
-    setImportStagedRows(null);
+    setImportFile(null);
     setImportFileLabel("");
   };
 
@@ -595,59 +627,72 @@ useEffect(() => {
       toast.error(examEdit ? "Could not update exam" : "Could not create exam");
     }
   };
-  const submitQ = (d) => {
+  const submitQ = async (d) => {
     const question = String(d.question || "").trim();
     if (!question) return toast.error("Question text is required");
-    const pdf = createQuestionPdf({
-      subject: String(d.subject),
-      chapter: String(d.chapter),
-      question,
-      answer: String(d.answer || ""),
-      marks: Number(d.marks) || 1,
-    });
+
+    const matchedClass = classesData.find((c) => c.name === d.className);
+    const matchedCategory = categories.find((c) => c.name === d.examType);
+    const subjectUuid = await resolveSubjectUuid(d.className, d.subject);
+
+    if (!matchedClass || !matchedCategory || !subjectUuid) {
+      toast.error("Please pick a valid class, subject and examination type");
+      return;
+    }
+
     const payload = {
-      subject: String(d.subject),
-      chapter: String(d.chapter),
-      question,
-      answer: String(d.answer || ""),
-      diff: d.diff || "Medium",
+      class_uuid: matchedClass.id,
+      subject_uuid: subjectUuid,
+      category_uuid: matchedCategory.id,
+      chapter_topic: String(d.chapter || ""),
+      difficulty: d.diff || "Medium",
       marks: Number(d.marks) || 1,
-      className: String(d.className || ""),
-      examType: String(d.examType || ""),
-      pdfName: pdf.name,
-      pdfUrl: pdf.url,
+      question,
+      answer_key: String(d.answer || ""),
     };
-    if (qEdit) questionsApi.update(qEdit.id, payload);
-    else questionsApi.add(payload);
-    toast.success(
-      qEdit ? "Question updated and PDF regenerated" : "Question added and stored as PDF",
-    );
+
+       try {
+      if (qEdit) {
+        await updateQuestionBank(qEdit.id, payload);
+        await loadQuestions();
+        toast.success("Question updated");
+      } else {
+        await createQuestion(payload);
+        await loadQuestions();
+        toast.success("Question added");
+      }
+    } catch (err) {
+      toast.error(qEdit ? "Could not update question" : "Could not add question");
+    }
   };
-  const submitMultiQ = (meta, items) => {
-    items.forEach((it) => {
-      const questionText = stripHtml(it.question);
-      const answerText = stripHtml(it.answer);
-      const pdf = createQuestionPdf({
-        subject: meta.subject,
-        chapter: it.chapter,
-        question: questionText,
-        answer: answerText,
-        marks: it.marks || 1,
-      });
-      questionsApi.add({
-        subject: meta.subject,
-        chapter: it.chapter,
-        question: questionText,
-        answer: answerText,
-        diff: it.diff,
-        marks: it.marks || 1,
-        className: meta.className,
-        examType: meta.examType,
-        pdfName: pdf.name,
-        pdfUrl: pdf.url,
-      });
-    });
-    toast.success(`${items.length} question${items.length > 1 ? "s" : ""} added to ${meta.className} · ${meta.subject} · ${meta.examType}`);
+    const submitMultiQ = async (meta, items) => {
+    const matchedClass = classesData.find((c) => c.name === meta.className);
+    const matchedCategory = categories.find((c) => c.name === meta.examType);
+    const subjectUuid = await resolveSubjectUuid(meta.className, meta.subject);
+
+    if (!matchedClass || !matchedCategory || !subjectUuid) {
+      toast.error("Please pick a valid class, subject and examination type");
+      return;
+    }
+
+    const payloads = items.map((it) => ({
+      class_uuid: matchedClass.id,
+      subject_uuid: subjectUuid,
+      category_uuid: matchedCategory.id,
+      chapter_topic: it.chapter || "",
+      difficulty: it.diff || "Medium",
+      marks: Number(it.marks) || 1,
+      question: stripHtml(it.question),
+      answer_key: stripHtml(it.answer),
+    }));
+    try {
+      const res = await createQuestionsBulk(payloads);
+      const count = res?.total_created ?? payloads.length;
+      await loadQuestions();
+      toast.success(`${count} question${count > 1 ? "s" : ""} added`);
+    } catch (err) {
+      toast.error("Could not add questions");
+    }
   };
   const generatePaper = (d) => {
     const target = Number(d.marks) || 50;
@@ -1476,7 +1521,7 @@ useEffect(() => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>ID</TableHead>
+                    {/* <TableHead>ID</TableHead> */}
                     <TableHead>Question</TableHead>
                     <TableHead>Class</TableHead>
                     <TableHead>Subject</TableHead>
@@ -1491,7 +1536,7 @@ useEffect(() => {
                 <TableBody>
                   {questionsPage.pageItems.map((q) => (
                     <TableRow key={q.id}>
-                      <TableCell className="font-mono text-xs">{q.id}</TableCell>
+                      {/* <TableCell className="font-mono text-xs">{q.id}</TableCell> */}
                       <TableCell className="max-w-sm">
                         <div className="text-sm font-medium line-clamp-2">{q.question}</div>
                         <div className="text-[11px] text-muted-foreground line-clamp-1">
@@ -1522,8 +1567,22 @@ useEffect(() => {
                         </Badge>
                       </TableCell>
                       <TableCell className="tabular-nums">{q.marks}</TableCell>
-                      <TableCell>
-                        <Button variant="outline" size="sm" className="h-7" onClick={() => openQuestionPdf(q)}>
+                                           <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7"
+                          onClick={() => {
+                            const pdf = createQuestionPdf({
+                              subject: q.subject,
+                              chapter: q.chapter,
+                              question: q.question,
+                              answer: q.answer,
+                              marks: q.marks,
+                            });
+                            window.open(pdf.url, "_blank", "noopener,noreferrer");
+                          }}
+                        >
                           <FileText className="h-3.5 w-3.5" />
                           Open
                         </Button>
@@ -1545,11 +1604,16 @@ useEffect(() => {
                               <Pencil className="h-4 w-4" />
                               Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem
+                                                      <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
-                              onClick={() => {
-                                questionsApi.remove(q.id);
-                                toast.success("Question deleted");
+                              onClick={async () => {
+                                try {
+                                  await deleteQuestionBank(q.id);
+                                  setQuestions((p) => p.filter((x) => x.id !== q.id));
+                                  toast.success("Question deleted");
+                                } catch (err) {
+                                  toast.error("Could not delete question");
+                                }
                               }}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1560,7 +1624,14 @@ useEffect(() => {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {!questionsPage.pageItems.length && (
+                                    {questionsLoading && (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
+                        Loading questions…
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!questionsLoading && !questionsPage.pageItems.length && (
                     <TableRow>
                       <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
                         No questions match the current filters.
@@ -2097,7 +2168,6 @@ useEffect(() => {
         open={qOpen}
         onOpenChange={setQOpen}
         title={qEdit ? "Edit Question" : "Add Question to Bank"}
-        description="Manually enter the full question, answer key and marks. Saving stores a PDF copy for the question record."
         initial={
           qEdit
             ? {
@@ -2116,11 +2186,16 @@ useEffect(() => {
           { name: "className", label: "Class", type: "select", options: classOptions },
           { name: "examType", label: "Examination Type", type: "select", options: examTypeOptions },
           {
-            name: "subject",
-            label: "Subject",
-            type: "select",
-            options: ["Math", "Science", "English", "Social", "Hindi", "CS", "Biology", "Economics"],
-          },
+  name: "subject",
+  label: "Subject",
+  type: "select",
+  options: Array.from(
+    new Set([
+      ...(qEdit ? subjectsForClass(qEdit.className) : []),
+      ...(qEdit?.subject ? [qEdit.subject] : []),
+    ]),
+  ),
+},
           { name: "chapter", label: "Chapter" },
           { name: "question", label: "Question Text", type: "textarea" },
           { name: "answer", label: "Answer Key / Evaluation Notes", type: "textarea" },
@@ -2136,151 +2211,95 @@ useEffect(() => {
         onSubmit={submitQ}
       />
 
-      <MultiQuestionDialog
+           <MultiQuestionDialog
         open={multiAddOpen}
         onOpenChange={setMultiAddOpen}
         classes={classOptions}
-        subjects={subjectOptions}
+        subjectsForClass={subjectsForClass}
         examTypes={examTypeOptions}
         onSubmit={submitMultiQ}
       />
 
-      {/* ================= Import Questions Dialog (Class + File chosen together) ================= */}
-      <Dialog
-        open={importClassOpen}
-        onOpenChange={(v) => {
-          setImportClassOpen(v);
-          if (!v) resetImportDialog();
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Import Questions</DialogTitle>
-          </DialogHeader>
+            {/* ================= Import Questions Dialog (Class + File chosen together) ================= */}
+     <Dialog
+  open={importClassOpen}
+  onOpenChange={(v) => {
+    setImportClassOpen(v);
+    if (!v) resetImportDialog();
+  }}
+>
+  <DialogContent className="max-w-sm">
+    <DialogHeader>
+      <DialogTitle>Import Questions</DialogTitle>
+    </DialogHeader>
 
-          <div className="space-y-2">
-            <Label className="text-xs">Class</Label>
-            <Select value={importClass} onValueChange={setImportClass}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select class" />
-              </SelectTrigger>
-              <SelectContent>
-                {classOptions.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    Class {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+    <div className="space-y-2 pt-2">
+      <Label className="text-xs">File</Label>
+      <div className="flex items-center gap-3">
+        <label className="inline-flex items-center px-3 py-1.5 rounded-md border border-input bg-muted/50 text-sm font-medium cursor-pointer hover:bg-muted transition-colors">
+          Choose File
+          <input
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              setImportFile(file);
+              setImportFileLabel(file.name);
+            }}
+          />
+        </label>
+        <span className="text-sm text-muted-foreground truncate">
+          {importFileLabel || "No file chosen"}
+        </span>
+      </div>
+    </div>
 
-<div className="space-y-2 pt-2">
-  <Label className="text-xs">File</Label>
-  <div className="flex items-center gap-3">
-    <label className="inline-flex items-center px-3 py-1.5 rounded-md border border-input bg-muted/50 text-sm font-medium cursor-pointer hover:bg-muted transition-colors">
-      Choose Files
-      <input
-        type="file"
-        accept=".xlsx,.xls,.csv"
-        hidden
-        onChange={async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          try {
-            const XLSX = await import("xlsx");
-            const buf = await file.arrayBuffer();
-            const wb = XLSX.read(buf, { type: "array" });
-            const ws = wb.Sheets[wb.SheetNames[0]];
-            const rawRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    <DialogFooter className="pt-2">
+      <Button variant="outline" size="sm" onClick={() => setImportClassOpen(false)}>
+        Cancel
+      </Button>
+      <Button
+        size="sm"
+        className="gradient-primary border-0"
+        disabled={!importFile || importSubmitting}
+       onClick={async () => {
+  try {
+    setImportSubmitting(true);
+    const matchedClass = classesData.find((c) => c.name === importClass);
+    const res = await importQuestionBank(importFile, matchedClass?.id);
+            await loadQuestions();
 
-            // Normalize keys: lowercase + trim, so "Question", " question ", etc. all match
-            const normalized = rawRows.map((row) => {
-              const out = {};
-              Object.keys(row).forEach((k) => {
-                out[k.trim().toLowerCase()] = row[k];
-              });
-              return out;
-            });
+            const created = res?.total_created ?? 0;
+            const skipped = res?.total_skipped ?? 0;
+            const errors = res?.total_errors ?? 0;
+            const extra = [
+              skipped ? `${skipped} skipped` : null,
+              errors ? `${errors} error(s)` : null,
+            ].filter(Boolean).join(", ");
 
-            const valid = normalized.filter(
-              (r) => String(r.question || "").trim().length > 0
+            toast.success(
+              res?.message
+                ? `${res.message}${extra ? ` (${extra})` : ""}`
+                : `${created} question${created === 1 ? "" : "s"} imported${extra ? ` — ${extra}` : ""}`,
             );
 
-            console.log("Parsed rows:", normalized.length, "Valid:", valid.length, normalized);
-
-            setImportStagedRows(valid);
-            setImportFileLabel(file.name);
-
-            if (valid.length === 0) {
-              toast.error(
-                `No valid rows found. Make sure the sheet has a "question" column (found columns: ${
-                  normalized[0] ? Object.keys(normalized[0]).join(", ") : "none"
-                }).`
-              );
-            } else {
-              toast.success(`${valid.length} question${valid.length === 1 ? "" : "s"} ready`);
-            }
+            setImportClassOpen(false);
+            resetImportDialog();
           } catch (err) {
-            console.error("File parse error:", err);
-            toast.error("Could not read file");
+            toast.error("Could not import questions");
           } finally {
-            e.target.value = "";
+            setImportSubmitting(false);
           }
         }}
-      />
-    </label>
-    <span className="text-sm text-muted-foreground truncate">
-      {importFileLabel || "No file chosen"}
-    </span>
-  </div>
-  {importStagedRows && importStagedRows.length > 0 && (
-    <div className="text-xs text-muted-foreground pt-1">
-      {importStagedRows.length} question{importStagedRows.length === 1 ? "" : "s"} parsed from file.
-    </div>
-  )}
-</div>
-
-          <DialogFooter className="pt-2">
-            <Button variant="outline" size="sm" onClick={() => setImportClassOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="gradient-primary border-0"
-              disabled={!importClass || !importStagedRows || importStagedRows.length === 0}
-              onClick={() => {
-                let n = 0;
-                importStagedRows.forEach((r) => {
-                  const pdf = createQuestionPdf({
-                    subject: r.subject || "Math",
-                    chapter: r.chapter || "",
-                    question: r.question,
-                    answer: r.answer || "",
-                    marks: Number(r.marks) || 1,
-                  });
-                  questionsApi.add({
-                    subject: r.subject || "Math",
-                    chapter: r.chapter || "",
-                    question: r.question,
-                    answer: r.answer || "",
-                    diff: r.diff || "Medium",
-                    marks: Number(r.marks) || 1,
-                    className: importClass,
-                    pdfName: pdf.name,
-                    pdfUrl: pdf.url,
-                  });
-                  n++;
-                });
-                if (n) toast.success(`${n} questions added to Class ${importClass}`);
-                setImportClassOpen(false);
-                resetImportDialog();
-              }}
-            >
-              Submit
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      >
+        {importSubmitting ? "Importing…" : "Submit"}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
 
       <CrudDialog
         open={genOpen}

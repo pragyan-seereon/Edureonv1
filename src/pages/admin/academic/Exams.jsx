@@ -76,7 +76,7 @@ import {
 import { useMemo, useRef, useState, useEffect } from "react";
 import { getExamCategories, createExamCategory, updateExamCategory, deleteExamCategory, getExams, createExam,updateExam,deleteExam,getClassSubjects,getRooms, createExamPapersBulk, getExamPapers, getExamPaperById, updateExamPaper, deleteExamPaper, importExamPapers, importExamMarks , getExamMarks, updateExamMarks, publishExamMarks, } from "../../../api/exam";
 import {getQuestionBank,getQuestionBankById,createQuestion,createQuestionsBulk,updateQuestionBank,deleteQuestionBank,importQuestionBank,} from "../../../api/question";
-import { getClasses } from "../../../api/Class";
+import { getClasses,getSections } from "../../../api/Class";
 import { toast } from "sonner";
 import { CrudDialog } from "../../../components/crud-dialog";
 import { ExcelUpload } from "../../../components/excel-upload";
@@ -238,6 +238,8 @@ async function downloadExcelTemplate({ filename, sheetName, headers }) {
 }
 
 const DASH_SUBJECTS = ["Mathematics", "Science", "English", "Social Science", "Hindi"];
+const EXAMS_TAB_STORAGE_KEY = "edureon.exams.active-tab";
+const EXAMS_TAB_VALUES = new Set(["categories", "schedule", "papers", "qb", "marks", "results"]);
 
 function buildDashRows(students) {
   const rows = students.map((s, i) => {
@@ -264,7 +266,10 @@ function buildDashRows(students) {
 }
 
 export default function Exams() {
-  const [tab, setTab] = useState("categories");
+  const [tab, setTab] = useState(() => {
+    const savedTab = window.sessionStorage.getItem(EXAMS_TAB_STORAGE_KEY);
+    return EXAMS_TAB_VALUES.has(savedTab) ? savedTab : "categories";
+  });
   const [reportOpen, setReportOpen] = useState(false);
   const [reportStudent, setReportStudent] = useState(null);
    const [questions, setQuestions] = useState([]);
@@ -321,7 +326,13 @@ const loadRooms = async () => {
     }
   };
 
-  const [classSubjectsMap, setClassSubjectsMap] = useState({});
+  const [sectionsData, setSectionsData] = useState([]);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
+
+  const sectionsForClass = () => sectionsData;
+
+const [classSubjectsMap, setClassSubjectsMap] = useState({});
+
 
 useEffect(() => {
   if (!classesData.length) return;
@@ -396,6 +407,59 @@ const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
   const [meYear, setMeYear] = useState("2025-26");
   const [meExam, setMeExam] = useState("");
   const [sharedStudents, setSharedStudents] = useState({}); // { [studentUuid]: true } — tracks which rows were shared
+
+  useEffect(() => {
+    const selectedClass = classesData.find((item) => item.name === meClass);
+    if (!selectedClass) {
+      setSectionsData([]);
+      setMeSection("");
+      return;
+    }
+
+    let cancelled = false;
+    const loadSectionsForClass = async () => {
+      try {
+        setSectionsLoading(true);
+        const response = await getSections(selectedClass.id);
+        const rows = response?.data ?? response ?? [];
+        const sections = (Array.isArray(rows) ? rows : [])
+          .filter((section) => !section.class_uuid || section.class_uuid === selectedClass.id)
+          .map((section) => ({
+            id: section.section_uuid ?? section.id,
+            name: section.section_name ?? section.name,
+          }))
+          .filter((section) => section.id && section.name);
+        const uniqueSections = Array.from(
+          new Map(sections.map((section) => [section.id, section])).values(),
+        );
+
+        if (!cancelled) {
+          setSectionsData(uniqueSections);
+          setMeSection((current) =>
+            uniqueSections.some((section) => section.name === current) ? current : "",
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setSectionsData([]);
+          setMeSection("");
+          toast.error("Could not load sections for this class");
+        }
+      } finally {
+        if (!cancelled) setSectionsLoading(false);
+      }
+    };
+
+    loadSectionsForClass();
+    return () => {
+      cancelled = true;
+    };
+  }, [meClass, classesData]);
+
+  const handleMarkClassChange = (className) => {
+    setMeClass(className);
+    setMeSection("");
+  };
 
   // ---- Exam Marks (from API) ----
    // ---- Exams (from API) ----
@@ -498,6 +562,7 @@ const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
 
   const handleTabChange = (nextTab) => {
     setTab(nextTab);
+    window.sessionStorage.setItem(EXAMS_TAB_STORAGE_KEY, nextTab);
     if (nextTab === "marks") loadExamMarks();
   };
 
@@ -521,28 +586,32 @@ const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
     }));
   };
 
-  const saveMarksRow = async (m) => {
+   const saveMarksRow = async (m) => {
     const edited = editedMarks[m.resultUuid] ?? {};
     let totalMarks = 0;
     let totalMax = 0;
-    m.subjects.forEach((s) => {
+
+    const subjectMarks = m.subjects.map((s) => {
       const raw = edited[s.uuid];
       const val = raw !== undefined && raw !== "" ? Number(raw) : Number(s.marks ?? 0);
-      totalMarks += Number.isNaN(val) ? 0 : val;
+      const marks = Number.isNaN(val) ? 0 : val;
+
+      if (!s.isAbsent) totalMarks += marks;
       totalMax += Number(s.max) || 0;
+
+      return {
+        subject_uuid: s.uuid,
+        marks,
+        is_absent: !!s.isAbsent,
+      };
     });
-    const percentage = totalMax ? Math.round((totalMarks / totalMax) * 10000) / 100 : 0;
-    const g = grade(percentage);
-    const status = percentage >= 33 ? "PASS" : "FAIL";
 
     try {
       setSavingMarks((p) => ({ ...p, [m.resultUuid]: true }));
       await updateExamMarks(m.resultUuid, {
         total_marks: totalMarks,
         total_max_marks: totalMax,
-        percentage,
-        grade: g.g,
-        status,
+        subject_marks: subjectMarks,
       });
       toast.success(`Marks updated for ${m.name}`);
       setEditedMarks((p) => {
@@ -926,16 +995,16 @@ const resetMarksImportDialog = () => {
     toast.success(`Paper generated: ${picked.length} questions · ${total} marks`);
   };
 
-    // ---- Marks Entry -> Publish single student's report to their portal ----
+  // ---- Marks Entry -> Publish single student's report to their portal ----
   const shareReportToStudent = async (m) => {
     const stu = students.find((s) => s.id === m.studentUuid);
-    if (!stu) {
-      toast.error(`No matching student record found for ${m.name}. Check Students module.`);
-      return;
-    }
-
     const matchedClass = classesData.find((c) => c.name === meClass);
     const matchedExam = exams.find((e) => e.name === meExam && e.class === meClass);
+
+    if (!matchedClass || !matchedExam || !m.resultUuid || !m.studentUuid || !m.sectionUuid) {
+      toast.error("Select a valid class, exam, and section before publishing");
+      return;
+    }
 
     try {
       setPublishingRow((p) => ({ ...p, [m.resultUuid]: true }));
@@ -947,24 +1016,27 @@ const resetMarksImportDialog = () => {
         studentUuids: [m.studentUuid],
       });
 
-      const entry = {
-        studentId: stu.id,
-        studentName: stu.name,
-        admissionNo: stu.admissionNo,
-        marks: Object.fromEntries(m.subjects.map((s) => [s.name, s.marks])),
-      };
-      storedResultsApi.saveBatch(meClass, meSection, meExam, [entry]);
-      storedResultsApi.publish(meClass, meSection, meExam);
+      // Keep the legacy local portal view in sync only when its local student
+      // record is available. The API publish above is the source of truth.
+      if (stu) {
+        const entry = {
+          studentId: stu.id,
+          studentName: stu.name,
+          admissionNo: stu.admissionNo,
+          marks: Object.fromEntries(m.subjects.map((s) => [s.name, s.marks])),
+        };
+        storedResultsApi.saveBatch(meClass, meSection, meExam, [entry]);
+        storedResultsApi.publish(meClass, meSection, meExam);
+      }
 
       setSharedStudents((p) => ({ ...p, [m.studentUuid]: true }));
-      toast.success(`Report published to ${stu.name}'s student portal`);
+      toast.success(`Report published to ${m.name}'s student portal`);
     } catch (err) {
-      toast.error(`Could not publish report for ${stu.name}`);
+      toast.error(`Could not publish report for ${m.name}`);
     } finally {
       setPublishingRow((p) => ({ ...p, [m.resultUuid]: false }));
     }
   };
-  // ---- Marks Entry -> Export the current class/section/exam marks as CSV ----
     // ---- Marks Entry -> Import marks from Excel ----
   const handleMarksImportResult = (res) => {
     const saved = res?.saved ?? 0;
@@ -1141,9 +1213,13 @@ const resetMarksImportDialog = () => {
                 <div className="space-y-1">
                   <Label className="text-xs">Section</Label>
                   <Select value={dashSection} onValueChange={setDashSection}>
-                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent>{["A", "B", "C", "D"].map((c) => <SelectItem key={c} value={c}>Section {c}</SelectItem>)}</SelectContent>
-                  </Select>
+  <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+  <SelectContent>
+    {sectionsForClass(dashClass).map((s) => (
+      <SelectItem key={s} value={s}>Section {s}</SelectItem>
+    ))}
+  </SelectContent>
+</Select>
                 </div>
                 <Button size="sm" className="gradient-primary border-0" onClick={() => setDashApplied(true)}>
                   Apply Filters
@@ -2039,14 +2115,18 @@ const resetMarksImportDialog = () => {
           <Card className="border-border/60">
             <CardContent className="p-3 flex flex-wrap gap-2 items-center">
               <span className="text-[10px] uppercase text-muted-foreground mr-1">Filters</span>
-                           <Select value={meClass} onValueChange={setMeClass}>
+                           <Select value={meClass} onValueChange={handleMarkClassChange}>
                 <SelectTrigger className="h-8 w-28"><SelectValue placeholder="Class" /></SelectTrigger>
                 <SelectContent>{classOptions.map((c) => <SelectItem key={c} value={c}>Class {c}</SelectItem>)}</SelectContent>
               </Select>
-              <Select value={meSection} onValueChange={setMeSection}>
-                <SelectTrigger className="h-8 w-28"><SelectValue placeholder="Section" /></SelectTrigger>
-                <SelectContent>{["A", "B", "C", "D"].map((s) => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}</SelectContent>
-              </Select>
+              <Select value={meSection} onValueChange={setMeSection} disabled={!meClass || sectionsLoading}>
+  <SelectTrigger className="h-8 w-28"><SelectValue placeholder="Section" /></SelectTrigger>
+  <SelectContent>
+    {sectionsForClass().map((section) => (
+      <SelectItem key={section.id} value={section.name}>Section {section.name}</SelectItem>
+    ))}
+  </SelectContent>
+</Select>
               {/* <Select value={meYear} onValueChange={setMeYear}>
                 <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Academic Year" /></SelectTrigger>
                 <SelectContent>{["2024-25", "2025-26", "2026-27"].map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent>
@@ -2061,9 +2141,9 @@ const resetMarksImportDialog = () => {
           <Card className="border-border/60">
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
-                <CardTitle className="text-base">
+                {/* <CardTitle className="text-base">
                   Marks Entry · Class {meClass}-{meSection} · {meExam} · AY {meYear}
-                </CardTitle>
+                </CardTitle> */}
               </div>
                           <div className="flex gap-2 items-center">
                 <RowsPerPageSelect {...marksPage} />
@@ -2090,15 +2170,40 @@ const resetMarksImportDialog = () => {
                     const matchedClass = classesData.find((c) => c.name === meClass);
                     const matchedExam = exams.find((e) => e.name === meExam && e.class === meClass);
 
+                    if (!matchedClass || !matchedExam) {
+                      toast.error("Select a valid class and exam before publishing");
+                      return;
+                    }
+
                     try {
                       setPublishingAll(true);
-                      await publishExamMarks({
-                        examUuid: matchedExam?.id,
-                        classUuid: matchedClass?.id,
-                        sectionUuid: examMarks[0]?.sectionUuid,
-                        resultUuids: examMarks.map((m) => m.resultUuid),
-                        studentUuids: examMarks.map((m) => m.studentUuid),
+                      // The publish API requires one section UUID per request.
+                      // Group all visible rows so "Publish All" also works when
+                      // the Section filter is not selected.
+                      const rowsBySection = new Map();
+                      examMarks.forEach((mark) => {
+                        if (!mark.sectionUuid || !mark.resultUuid || !mark.studentUuid) return;
+                        const rows = rowsBySection.get(mark.sectionUuid) ?? [];
+                        rows.push(mark);
+                        rowsBySection.set(mark.sectionUuid, rows);
                       });
+
+                      if (!rowsBySection.size) {
+                        toast.error("No publishable results were found");
+                        return;
+                      }
+
+                      await Promise.all(
+                        Array.from(rowsBySection.entries()).map(([sectionUuid, rows]) =>
+                          publishExamMarks({
+                            examUuid: matchedExam.id,
+                            classUuid: matchedClass.id,
+                            sectionUuid,
+                            resultUuids: rows.map((mark) => mark.resultUuid),
+                            studentUuids: rows.map((mark) => mark.studentUuid),
+                          }),
+                        ),
+                      );
 
                       examMarks.forEach((m) => {
                         const stu = students.find((s) => s.id === m.studentUuid);
@@ -2666,9 +2771,9 @@ const resetMarksImportDialog = () => {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Import Marks</DialogTitle>
-            <DialogDescription>
+            {/* <DialogDescription>
               Pick the exam and class this file belongs to, then choose the file.
-            </DialogDescription>
+            </DialogDescription> */}
           </DialogHeader>
 
           <div className="space-y-3 pt-2">

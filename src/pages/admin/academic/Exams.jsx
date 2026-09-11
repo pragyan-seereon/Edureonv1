@@ -238,6 +238,8 @@ async function downloadExcelTemplate({ filename, sheetName, headers }) {
 }
 
 const DASH_SUBJECTS = ["Mathematics", "Science", "English", "Social Science", "Hindi"];
+const EXAMS_TAB_STORAGE_KEY = "edureon.exams.active-tab";
+const EXAMS_TAB_VALUES = new Set(["categories", "schedule", "papers", "qb", "marks", "results"]);
 
 function buildDashRows(students) {
   const rows = students.map((s, i) => {
@@ -264,7 +266,10 @@ function buildDashRows(students) {
 }
 
 export default function Exams() {
-  const [tab, setTab] = useState("categories");
+  const [tab, setTab] = useState(() => {
+    const savedTab = window.sessionStorage.getItem(EXAMS_TAB_STORAGE_KEY);
+    return EXAMS_TAB_VALUES.has(savedTab) ? savedTab : "categories";
+  });
   const [reportOpen, setReportOpen] = useState(false);
   const [reportStudent, setReportStudent] = useState(null);
    const [questions, setQuestions] = useState([]);
@@ -557,6 +562,7 @@ const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
 
   const handleTabChange = (nextTab) => {
     setTab(nextTab);
+    window.sessionStorage.setItem(EXAMS_TAB_STORAGE_KEY, nextTab);
     if (nextTab === "marks") loadExamMarks();
   };
 

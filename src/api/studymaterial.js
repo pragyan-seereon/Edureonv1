@@ -32,7 +32,7 @@ export const createStudyMaterial = async (formData) => {
 
 // Update an existing study material
 export const updateStudyMaterial = async (material_uuid, formData) => {
-  const { data } = await api.patch(`/materials/${material_uuid}`, formData, {
+  const { data } = await api.put(`/materials/${material_uuid}`, formData, {
     headers: {
       ...getHeaders(),
       "Content-Type": "multipart/form-data",

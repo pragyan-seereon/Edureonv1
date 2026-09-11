@@ -64,12 +64,38 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { getLessonPlans, createLessonPlan, downloadLessonPlan } from "../../api/lessonplan";
-import {getStudyMaterials,createStudyMaterial,downloadStudyMaterial,} from "../../api/studymaterial";
-import {getAssignments,publishAssignment,getAssignmentDetail,updateAssignment,deleteAssignment,} from "../../api/assignment";
-import {getAssignmentStudents,getAssignmentSubmissions,gradeSubmission,getAssignmentInquiries,replyAssignmentInquiry,} from "../../api/teacherassignment";
+import {
+  getLessonPlans,
+  createLessonPlan,
+  downloadLessonPlan,
+  getLessonPlanDetail,
+  updateLessonPlan,
+} from "../../api/lessonplan";
+import {
+  getStudyMaterials,
+  createStudyMaterial,
+  downloadStudyMaterial,
+  updateStudyMaterial,
+} from "../../api/studymaterial";
+import {
+  getAssignments,
+  publishAssignment,
+  getAssignmentDetail,
+  updateAssignment,
+  deleteAssignment,
+} from "../../api/assignment";
+import {
+  getAssignmentStudents,
+  getAssignmentSubmissions,
+  gradeSubmission,
+  getAssignmentInquiries,
+  replyAssignmentInquiry,
+} from "../../api/teacherassignment";
 import { getTeacherClasses } from "../../api/teacherclass";
-import {PaginationBar, RowsPerPageSelect,} from "../../components/pagination-controls";
+import {
+  PaginationBar,
+  RowsPerPageSelect,
+} from "../../components/pagination-controls";
 
 import useSessionStore from "../../store/sessionStore";
 import { useTeacherCtx } from "../../lib/teacher-ctx";
@@ -104,7 +130,12 @@ const mapInquiry = (i) => ({
   repliedAt: i.replied_at,
 });
 
-const ASSIGNMENT_TYPES = ["Homework", "Project", "Group Assignment", "Classwork"];
+const ASSIGNMENT_TYPES = [
+  "Homework",
+  "Project",
+  "Group Assignment",
+  "Classwork",
+];
 const ASSIGN_TO_OPTIONS = ["Entire Class", "Selected Students", "Custom Group"];
 const ASSIGN_TO_MAP = {
   "Entire Class": "ENTIRE_CLASS",
@@ -139,7 +170,11 @@ const mapAssignment = (a) => ({
   duration: a.duration_minutes,
   maxMarks: a.max_marks,
   status:
-    a.status === "PUBLISHED" ? "Published" : a.status === "DRAFT" ? "Draft" : a.status,
+    a.status === "PUBLISHED"
+      ? "Published"
+      : a.status === "DRAFT"
+        ? "Draft"
+        : a.status,
   totalStudents: a.total_students ?? 0,
   pendingCount: a.pending_count ?? 0,
   submittedCount: a.submitted_count ?? 0,
@@ -150,10 +185,14 @@ const mapAssignment = (a) => ({
 });
 
 const formatRole = (role) =>
-  role ? role.split("_").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ") : "—";
+  role
+    ? role
+        .split("_")
+        .map((w) => w[0] + w.slice(1).toLowerCase())
+        .join(" ")
+    : "—";
 
 const canModify = (a) => !a.createdByRole || a.createdByRole === "TEACHER";
-
 
 const mapMaterial = (m) => ({
   id: m.material_uuid,
@@ -192,7 +231,7 @@ const mapLessonPlan = (p) => ({
 });
 
 export default function TeacherAssignmentsPage() {
-   const { teacherName } = useTeacherCtx();
+  const { teacherName } = useTeacherCtx();
 
   const [materials, setMaterials] = useState([]);
   const [materialsLoading, setMaterialsLoading] = useState(false);
@@ -227,11 +266,19 @@ export default function TeacherAssignmentsPage() {
   const [replyDrafts, setReplyDrafts] = useState({}); // { [inquiry_uuid]: string }
   const [replyingId, setReplyingId] = useState(null);
 
-  const loadSubmissions = async (assignmentUuid, page = 1, pageSize = subPageSize) => {
+  const loadSubmissions = async (
+    assignmentUuid,
+    page = 1,
+    pageSize = subPageSize,
+  ) => {
     if (!assignmentUuid) return;
     setSubLoading(true);
     try {
-      const res = await getAssignmentSubmissions(assignmentUuid, page, pageSize);
+      const res = await getAssignmentSubmissions(
+        assignmentUuid,
+        page,
+        pageSize,
+      );
       setSubRows((res?.data ?? []).map(mapSubmission));
       setSubTotal(res?.pagination?.total ?? 0);
       setSubPage(res?.pagination?.page ?? page);
@@ -312,10 +359,9 @@ export default function TeacherAssignmentsPage() {
   const [activeId, setActiveId] = useState(null);
   const [activeSub, setActiveSub] = useState(null);
   const [classF, setClassF] = useState("All");
- const [mainTab, setMainTab] = useState("assignments");
-   const mine = allAssignments;
+  const [mainTab, setMainTab] = useState("assignments");
+  const mine = allAssignments;
 
- 
   const classOptions = useMemo(() => {
     const set = new Set(mine.map((a) => a.klass).filter(Boolean));
     return [...set].sort();
@@ -327,19 +373,28 @@ export default function TeacherAssignmentsPage() {
   );
 
   const [assignPage, setAssignPage] = useState(1);
-const [assignPageSize, setAssignPageSize] = useState(10);
+  const [assignPageSize, setAssignPageSize] = useState(10);
 
-useEffect(() => {
-  setAssignPage(1);
-}, [classF, mine.length]);
+  useEffect(() => {
+    setAssignPage(1);
+  }, [classF, mine.length]);
 
-const assignTotalPages = Math.max(1, Math.ceil(filtered.length / assignPageSize));
-const pagedAssignments = useMemo(
-  () => filtered.slice((assignPage - 1) * assignPageSize, assignPage * assignPageSize),
-  [filtered, assignPage, assignPageSize],
-);
-const assignRangeStart = filtered.length ? (assignPage - 1) * assignPageSize + 1 : 0;
-const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
+  const assignTotalPages = Math.max(
+    1,
+    Math.ceil(filtered.length / assignPageSize),
+  );
+  const pagedAssignments = useMemo(
+    () =>
+      filtered.slice(
+        (assignPage - 1) * assignPageSize,
+        assignPage * assignPageSize,
+      ),
+    [filtered, assignPage, assignPageSize],
+  );
+  const assignRangeStart = filtered.length
+    ? (assignPage - 1) * assignPageSize + 1
+    : 0;
+  const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
 
   const active = activeId ? mine.find((a) => a.id === activeId) : undefined;
 
@@ -380,7 +435,7 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
     draftUuid: null,
     existingAttachments: [],
   };
-   const [formA, setFormA] = useState(emptyA);
+  const [formA, setFormA] = useState(emptyA);
   const [formErrors, setFormErrors] = useState({});
   const [subjectsList, setSubjectsList] = useState([]);
   const [sectionsList, setSectionsList] = useState([]);
@@ -398,11 +453,12 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
   const [updating, setUpdating] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
-   // Loads the teacher's classes/sections/subjects the first time either
+  // Loads the teacher's classes/sections/subjects the first time either
   // dialog is opened, then caches them for the rest of the session.
   useEffect(() => {
     if (!openA && !openM) return;
-    if (classesList.length || sectionsList.length || subjectsList.length) return;
+    if (classesList.length || sectionsList.length || subjectsList.length)
+      return;
 
     let cancelled = false;
 
@@ -454,7 +510,13 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
     return () => {
       cancelled = true;
     };
-  }, [openA, openM, classesList.length, sectionsList.length, subjectsList.length]);
+  }, [
+    openA,
+    openM,
+    classesList.length,
+    sectionsList.length,
+    subjectsList.length,
+  ]);
   // Filter sections whenever the chosen class changes, auto-pick the
   // first section for a fresh form. When editing an existing assignment,
   // keep whatever section came back from getAssignmentDetail.
@@ -470,39 +532,42 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
 
   // Load students of the chosen class/section when needed for the
   // "Selected Students" / "Custom Group" picker.
- useEffect(() => {
-  if (!formA.classNum || !formA.section) {
-    setStudents([]);
-    return;
-  }
-  if (formA.assignTo !== "Selected Students" && formA.assignTo !== "Custom Group") {
-    return;
-  }
-
-  let cancelled = false;
-
-  const load = async () => {
-    setStudentsLoading(true);
-    try {
-      const res = await getAssignmentStudents(formA.classNum, formA.section);
-      if (cancelled) return;
-      setStudents(res?.data ?? []);
-    } catch (err) {
-      console.log(err);
-      if (!cancelled) {
-        toast.error("Failed to load students");
-        setStudents([]);
-      }
-    } finally {
-      if (!cancelled) setStudentsLoading(false);
+  useEffect(() => {
+    if (!formA.classNum || !formA.section) {
+      setStudents([]);
+      return;
     }
-  };
+    if (
+      formA.assignTo !== "Selected Students" &&
+      formA.assignTo !== "Custom Group"
+    ) {
+      return;
+    }
 
-  load();
-  return () => {
-    cancelled = true;
-  };
-}, [formA.classNum, formA.section, formA.assignTo]);
+    let cancelled = false;
+
+    const load = async () => {
+      setStudentsLoading(true);
+      try {
+        const res = await getAssignmentStudents(formA.classNum, formA.section);
+        if (cancelled) return;
+        setStudents(res?.data ?? []);
+      } catch (err) {
+        console.log(err);
+        if (!cancelled) {
+          toast.error("Failed to load students");
+          setStudents([]);
+        }
+      } finally {
+        if (!cancelled) setStudentsLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [formA.classNum, formA.section, formA.assignTo]);
 
   const toggleStudent = (uuid) =>
     setFormA((f) => {
@@ -539,9 +604,12 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
     fd.append("assignment_type", formA.type.toUpperCase().replace(/\s+/g, "_"));
     fd.append("assign_to", ASSIGN_TO_MAP[formA.assignTo] || "ENTIRE_CLASS");
 
-    if (formA.assignTo === "Custom Group") fd.append("group_name", formA.groupName);
+    if (formA.assignTo === "Custom Group")
+      fd.append("group_name", formA.groupName);
     if (formA.assignTo !== "Entire Class") {
-      [...formA.studentIds].forEach((uuid) => fd.append("selected_student_uuids", uuid));
+      [...formA.studentIds].forEach((uuid) =>
+        fd.append("selected_student_uuids", uuid),
+      );
     }
 
     fd.append("instructions", formA.instructions);
@@ -566,7 +634,9 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
     section_uuid: formA.section,
     assignment_type: formA.type.toUpperCase().replace(/\s+/g, "_"),
     assign_to: ASSIGN_TO_MAP[formA.assignTo] || "ENTIRE_CLASS",
-    ...(formA.assignTo === "Custom Group" ? { group_name: formA.groupName } : {}),
+    ...(formA.assignTo === "Custom Group"
+      ? { group_name: formA.groupName }
+      : {}),
     ...(formA.assignTo !== "Entire Class"
       ? { selected_student_uuids: [...formA.studentIds] }
       : {}),
@@ -581,7 +651,8 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
   // eslint-disable-next-line no-unused-vars
 
   const handlePublish = async () => {
-    if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
+    if (!validateAssignmentForm())
+      return toast.error("Complete the required fields.");
 
     const fd = buildFormData();
     fd.append("status", "PUBLISHED");
@@ -609,9 +680,11 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
   // Loads an existing assignment into the form and opens the dialog in
   // "edit" mode. Normalizes whatever shape the backend returns the
   // selected-students list in, since that varies by endpoint.
-   const handleEdit = async (a) => {
+  const handleEdit = async (a) => {
     if (!canModify(a)) {
-      toast.error(`This assignment was created by ${formatRole(a.createdByRole)}. You can't edit it.`);
+      toast.error(
+        `This assignment was created by ${formatRole(a.createdByRole)}. You can't edit it.`,
+      );
       return;
     }
     try {
@@ -625,7 +698,7 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
         [];
 
       const normalizedSelectedIds = rawSelected.map((s) =>
-        typeof s === "string" ? s : s.student_uuid ?? s.id ?? s.uuid,
+        typeof s === "string" ? s : (s.student_uuid ?? s.id ?? s.uuid),
       );
 
       setFormA({
@@ -640,7 +713,9 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
         instructions: detail.instructions || "",
         due: detail.assignment_date || "",
         endDate: detail.due_date || "",
-        duration: detail.duration_minutes ? String(detail.duration_minutes) : "",
+        duration: detail.duration_minutes
+          ? String(detail.duration_minutes)
+          : "",
         maxMarks: detail.max_marks ?? 20,
         pdfFile: null,
         videoFile: null,
@@ -658,7 +733,8 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
   };
 
   const handleUpdate = async () => {
-    if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
+    if (!validateAssignmentForm())
+      return toast.error("Complete the required fields.");
 
     setUpdating(true);
     try {
@@ -674,7 +750,9 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
       }
     } catch (err) {
       console.log(err);
-      toast.error(err?.response?.data?.message || "Failed to update assignment");
+      toast.error(
+        err?.response?.data?.message || "Failed to update assignment",
+      );
     } finally {
       setUpdating(false);
     }
@@ -682,10 +760,15 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
 
   const handleDelete = async (a) => {
     if (!canModify(a)) {
-      toast.error(`This assignment was created by ${formatRole(a.createdByRole)}. You can't delete it.`);
+      toast.error(
+        `This assignment was created by ${formatRole(a.createdByRole)}. You can't delete it.`,
+      );
       return;
     }
-    if (!window.confirm(`Delete assignment "${a.title}"? This cannot be undone.`)) return;
+    if (
+      !window.confirm(`Delete assignment "${a.title}"? This cannot be undone.`)
+    )
+      return;
     setDeletingId(a.id);
     try {
       const res = await deleteAssignment(a.id);
@@ -697,7 +780,9 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
       }
     } catch (err) {
       console.log(err);
-      toast.error(err?.response?.data?.message || "Failed to delete assignment");
+      toast.error(
+        err?.response?.data?.message || "Failed to delete assignment",
+      );
     } finally {
       setDeletingId(null);
     }
@@ -721,28 +806,59 @@ const assignRangeEnd = Math.min(assignPage * assignPageSize, filtered.length);
 
   const [editingMaterialUuid, setEditingMaterialUuid] = useState(null);
 
-const handleEditMaterial = (m) => {
-  setFormM({
-    title: m.title || "",
-    pdfFile: null,
-    externalUrl: m.type === "LINK" ? (m.url || "") : "",
-    subject: m.subjectUuid || "",
-    classNum: m.classUuid || "",
-    section: m.sectionUuid || "",
-    description: m.description || "",
-  });
-  setFormErrorsM({});
-  setEditingMaterialUuid(m.id);
-  setOpenM(true);
-};
+  const handleEditMaterial = (m) => {
+    setFormM({
+      title: m.title || "",
+      pdfFile: null,
+      externalUrl: m.type === "LINK" ? m.url || "" : "",
+      subject: m.subjectUuid || "",
+      classNum: m.classUuid || "",
+      section: m.sectionUuid || "",
+      description: m.description || "",
+    });
+    setFormErrorsM({});
+    setEditingMaterialUuid(m.id);
+    setOpenM(true);
+  };
 
-const handleUpdateMaterial = async () => {
-  if (!validateMaterialForm()) return toast.error("Complete the required fields.");
-  toast.info("Update isn't connected to the backend yet.");
-  setOpenM(false);
-};
+  const handleUpdateMaterial = async () => {
+    if (!validateMaterialForm(true))
+      return toast.error("Complete the required fields.");
+    if (!editingMaterialUuid) return;
 
- 
+    const fd = new FormData();
+    fd.append("title", formM.title);
+    fd.append("subject_uuid", formM.subject);
+    fd.append("class_uuid", formM.classNum);
+    fd.append("section_uuid", formM.section);
+    fd.append("description", formM.description || "");
+    fd.append("external_url", formM.externalUrl || "");
+    if (formM.pdfFile) fd.append("pdf", formM.pdfFile);
+
+    setSharingMaterial(true);
+    try {
+      const res = await updateStudyMaterial(editingMaterialUuid, fd);
+      if (res?.success) {
+        toast.success(res.message || "Study material updated");
+        setMaterials((rows) =>
+          rows.map((r) =>
+            r.id === editingMaterialUuid ? mapMaterial(res.data) : r,
+          ),
+        );
+        setOpenM(false);
+        setFormM(emptyM);
+        setEditingMaterialUuid(null);
+      } else {
+        toast.error(res?.message || "Failed to update material");
+      }
+    } catch (err) {
+      console.log(err);
+      toast.error(err?.response?.data?.message || "Failed to update material");
+    } finally {
+      setSharingMaterial(false);
+    }
+  };
+
   const filteredSectionsM = useMemo(
     () => sectionsList.filter((s) => s.class_uuid === formM.classNum),
     [formM.classNum, sectionsList],
@@ -760,21 +876,22 @@ const handleUpdateMaterial = async () => {
     });
   }, [filteredSectionsM]);
 
-       const validateMaterialForm = () => {
+  const validateMaterialForm = (isEdit = false) => {
     const errors = {};
     if (!formM.title.trim()) errors.title = "Title is required.";
     if (!formM.subject) errors.subject = "Select a subject.";
     if (!formM.classNum) errors.classNum = "Select a class.";
     if (!formM.section) errors.section = "Select a section.";
-    if (!formM.pdfFile && !formM.externalUrl.trim()) {
+    if (!isEdit && !formM.pdfFile && !formM.externalUrl.trim()) {
       errors.attachment = "Attach a PDF or enter a resource URL.";
     }
     setFormErrorsM(errors);
     return Object.keys(errors).length === 0;
   };
 
-     const uploadMaterial = async () => {
-    if (!validateMaterialForm()) return toast.error("Complete the required fields.");
+  const uploadMaterial = async () => {
+    if (!validateMaterialForm(false))
+      return toast.error("Complete the required fields.");
 
     const fd = new FormData();
 
@@ -806,14 +923,16 @@ const handleUpdateMaterial = async () => {
     }
   };
 
-   const handleDownloadMaterial = async (m) => {
+  const handleDownloadMaterial = async (m) => {
     try {
       const res = await downloadStudyMaterial(m.id);
       const url = res?.data?.url || res?.url || m.url;
       if (!url) return toast.error("Download link unavailable");
       window.open(url, "_blank", "noopener,noreferrer");
       setMaterials((rows) =>
-        rows.map((r) => (r.id === m.id ? { ...r, downloads: r.downloads + 1 } : r)),
+        rows.map((r) =>
+          r.id === m.id ? { ...r, downloads: r.downloads + 1 } : r,
+        ),
       );
     } catch (err) {
       console.log(err);
@@ -841,11 +960,17 @@ const handleUpdateMaterial = async () => {
   const matRangeEnd = Math.min(matPage * matPageSize, materials.length);
 
   const existingPdf = useMemo(
-    () => (formA.existingAttachments || []).find((att) => att.attachment_type === "PDF"),
+    () =>
+      (formA.existingAttachments || []).find(
+        (att) => att.attachment_type === "PDF",
+      ),
     [formA.existingAttachments],
   );
   const existingVideo = useMemo(
-    () => (formA.existingAttachments || []).find((att) => att.attachment_type === "VIDEO"),
+    () =>
+      (formA.existingAttachments || []).find(
+        (att) => att.attachment_type === "VIDEO",
+      ),
     [formA.existingAttachments],
   );
 
@@ -953,7 +1078,11 @@ const handleUpdateMaterial = async () => {
                 value={formA.classNum}
                 onValueChange={(v) => {
                   setFormA({ ...formA, classNum: v });
-                  setFormErrors((errors) => ({ ...errors, classNum: "", section: "" }));
+                  setFormErrors((errors) => ({
+                    ...errors,
+                    classNum: "",
+                    section: "",
+                  }));
                 }}
               >
                 <SelectTrigger>
@@ -968,7 +1097,9 @@ const handleUpdateMaterial = async () => {
                 </SelectContent>
               </Select>
               {formErrors.classNum && (
-                <p className="text-xs text-destructive">{formErrors.classNum}</p>
+                <p className="text-xs text-destructive">
+                  {formErrors.classNum}
+                </p>
               )}
             </div>
             <div className="space-y-1.5">
@@ -987,7 +1118,10 @@ const handleUpdateMaterial = async () => {
                 </SelectTrigger>
                 <SelectContent>
                   {filteredSections.map((item) => (
-                    <SelectItem key={item.section_uuid} value={item.section_uuid}>
+                    <SelectItem
+                      key={item.section_uuid}
+                      value={item.section_uuid}
+                    >
                       {item.section_name}
                     </SelectItem>
                   ))}
@@ -1050,7 +1184,9 @@ const handleUpdateMaterial = async () => {
             <Input
               placeholder="Group name (e.g. Team Alpha)"
               value={formA.groupName}
-              onChange={(e) => setFormA({ ...formA, groupName: e.target.value })}
+              onChange={(e) =>
+                setFormA({ ...formA, groupName: e.target.value })
+              }
             />
           )}
 
@@ -1078,10 +1214,10 @@ const handleUpdateMaterial = async () => {
                       className="flex items-center gap-2 text-sm cursor-pointer"
                     >
                       <Checkbox
-  checked={formA.studentIds.has(s.student_uuid)}
-  onCheckedChange={() => toggleStudent(s.student_uuid)}
-/>
-{s.student_name}
+                        checked={formA.studentIds.has(s.student_uuid)}
+                        onCheckedChange={() => toggleStudent(s.student_uuid)}
+                      />
+                      {s.student_name}
                     </label>
                   ))}
                 </div>
@@ -1098,7 +1234,9 @@ const handleUpdateMaterial = async () => {
               placeholder="Instructions"
               rows={4}
               value={formA.instructions}
-              onChange={(e) => setFormA({ ...formA, instructions: e.target.value })}
+              onChange={(e) =>
+                setFormA({ ...formA, instructions: e.target.value })
+              }
             />
           </div>
 
@@ -1146,7 +1284,9 @@ const handleUpdateMaterial = async () => {
               <Input
                 placeholder="e.g. 60 mins"
                 value={formA.duration}
-                onChange={(e) => setFormA({ ...formA, duration: e.target.value })}
+                onChange={(e) =>
+                  setFormA({ ...formA, duration: e.target.value })
+                }
               />
             </div>
           </div>
@@ -1178,8 +1318,14 @@ const handleUpdateMaterial = async () => {
                   htmlFor="pdf-upload-teacher"
                   className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
                 >
-                  <span className={formA.pdfFile ? "truncate" : "text-muted-foreground"}>
-                    {formA.pdfFile ? formA.pdfFile.name : "Attach PDF (file name)"}
+                  <span
+                    className={
+                      formA.pdfFile ? "truncate" : "text-muted-foreground"
+                    }
+                  >
+                    {formA.pdfFile
+                      ? formA.pdfFile.name
+                      : "Attach PDF (file name)"}
                   </span>
                 </label>
                 <input
@@ -1211,7 +1357,11 @@ const handleUpdateMaterial = async () => {
                   htmlFor="video-upload-teacher"
                   className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
                 >
-                  <span className={formA.videoFile ? "truncate" : "text-muted-foreground"}>
+                  <span
+                    className={
+                      formA.videoFile ? "truncate" : "text-muted-foreground"
+                    }
+                  >
                     {formA.videoFile ? formA.videoFile.name : "Video file name"}
                   </span>
                 </label>
@@ -1221,7 +1371,10 @@ const handleUpdateMaterial = async () => {
                   accept="video/*"
                   className="hidden"
                   onChange={(e) =>
-                    setFormA({ ...formA, videoFile: e.target.files?.[0] ?? null })
+                    setFormA({
+                      ...formA,
+                      videoFile: e.target.files?.[0] ?? null,
+                    })
                   }
                 />
               </div>
@@ -1277,7 +1430,10 @@ const handleUpdateMaterial = async () => {
               >
                 {savingDraft ? "Saving..." : "Save draft"}
               </Button> */}
-              <Button onClick={handlePublish} disabled={publishing || savingDraft}>
+              <Button
+                onClick={handlePublish}
+                disabled={publishing || savingDraft}
+              >
                 {publishing ? "Publishing..." : "Publish"}
               </Button>
             </>
@@ -1289,8 +1445,8 @@ const handleUpdateMaterial = async () => {
 
   // Shared dialog for sharing study material — rendered inside the
   // Study Materials tab so the trigger button lives with that tab's content.
-   const UploadMaterialDialog = (
-        <Dialog
+  const UploadMaterialDialog = (
+    <Dialog
       open={openM}
       onOpenChange={(v) => {
         setOpenM(v);
@@ -1311,17 +1467,19 @@ const handleUpdateMaterial = async () => {
           Upload Material
         </Button>
       </DialogTrigger>
-           <DialogContent>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {editingMaterialUuid ? "Edit study material" : "Share study material"}
+            {editingMaterialUuid
+              ? "Edit study material"
+              : "Share study material"}
           </DialogTitle>
           {/* <DialogDescription>
             Visible and downloadable for students of the selected class.
           </DialogDescription> */}
         </DialogHeader>
         <div className="grid gap-3">
-                    <div className="space-y-1">
+          <div className="space-y-1">
             <Label className="text-xs">
               Title <span className="text-destructive">*</span>
             </Label>
@@ -1373,7 +1531,11 @@ const handleUpdateMaterial = async () => {
                 value={formM.classNum}
                 onValueChange={(v) => {
                   setFormM({ ...formM, classNum: v, section: "" });
-                  setFormErrorsM((errors) => ({ ...errors, classNum: "", section: "" }));
+                  setFormErrorsM((errors) => ({
+                    ...errors,
+                    classNum: "",
+                    section: "",
+                  }));
                 }}
               >
                 <SelectTrigger aria-invalid={Boolean(formErrorsM.classNum)}>
@@ -1388,7 +1550,9 @@ const handleUpdateMaterial = async () => {
                 </SelectContent>
               </Select>
               {formErrorsM.classNum && (
-                <p className="text-xs text-destructive">{formErrorsM.classNum}</p>
+                <p className="text-xs text-destructive">
+                  {formErrorsM.classNum}
+                </p>
               )}
             </div>
             <div className="space-y-1">
@@ -1412,14 +1576,19 @@ const handleUpdateMaterial = async () => {
                 </SelectTrigger>
                 <SelectContent>
                   {filteredSectionsM.map((item) => (
-                    <SelectItem key={item.section_uuid} value={item.section_uuid}>
+                    <SelectItem
+                      key={item.section_uuid}
+                      value={item.section_uuid}
+                    >
                       {item.section_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {formErrorsM.section && (
-                <p className="text-xs text-destructive">{formErrorsM.section}</p>
+                <p className="text-xs text-destructive">
+                  {formErrorsM.section}
+                </p>
               )}
             </div>
           </div>
@@ -1434,7 +1603,11 @@ const handleUpdateMaterial = async () => {
                 htmlFor="material-upload"
                 className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
               >
-                <span className={formM.pdfFile ? "truncate" : "text-muted-foreground"}>
+                <span
+                  className={
+                    formM.pdfFile ? "truncate" : "text-muted-foreground"
+                  }
+                >
                   {formM.pdfFile ? formM.pdfFile.name : "Attach PDF"}
                 </span>
               </label>
@@ -1452,7 +1625,9 @@ const handleUpdateMaterial = async () => {
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">Resource URL (optional if PDF attached)</Label>
+            <Label className="text-xs">
+              Resource URL (optional if PDF attached)
+            </Label>
             <div className="relative">
               <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
@@ -1466,7 +1641,9 @@ const handleUpdateMaterial = async () => {
               />
             </div>
             {formErrorsM.attachment && (
-              <p className="text-xs text-destructive">{formErrorsM.attachment}</p>
+              <p className="text-xs text-destructive">
+                {formErrorsM.attachment}
+              </p>
             )}
           </div>
           <div className="space-y-1">
@@ -1480,15 +1657,21 @@ const handleUpdateMaterial = async () => {
             />
           </div>
         </div>
-               <DialogFooter>
+        <DialogFooter>
           <Button
             type="button"
-            onClick={editingMaterialUuid ? handleUpdateMaterial : uploadMaterial}
+            onClick={
+              editingMaterialUuid ? handleUpdateMaterial : uploadMaterial
+            }
             disabled={sharingMaterial}
           >
             {editingMaterialUuid
-              ? (sharingMaterial ? "Updating..." : "Update")
-              : (sharingMaterial ? "Sharing..." : "Share")}
+              ? sharingMaterial
+                ? "Updating..."
+                : "Update"
+              : sharingMaterial
+                ? "Sharing..."
+                : "Share"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1668,10 +1851,14 @@ const handleUpdateMaterial = async () => {
                         {studentNameByUuid.get(i.studentUuid) || "Student"}
                       </div>
                       <div className="text-[10px] text-muted-foreground">
-                        {i.createdAt ? new Date(i.createdAt).toLocaleString() : ""}
+                        {i.createdAt
+                          ? new Date(i.createdAt).toLocaleString()
+                          : ""}
                       </div>
                     </div>
-                    <Badge variant={i.status === "REPLIED" ? "default" : "outline"}>
+                    <Badge
+                      variant={i.status === "REPLIED" ? "default" : "outline"}
+                    >
                       {i.status === "REPLIED" ? "Replied" : "Open"}
                     </Badge>
                   </div>
@@ -1694,7 +1881,10 @@ const handleUpdateMaterial = async () => {
                         placeholder="Write a reply..."
                         value={replyDrafts[i.id] || ""}
                         onChange={(e) =>
-                          setReplyDrafts((d) => ({ ...d, [i.id]: e.target.value }))
+                          setReplyDrafts((d) => ({
+                            ...d,
+                            [i.id]: e.target.value,
+                          }))
                         }
                       />
                       <Button
@@ -1711,7 +1901,10 @@ const handleUpdateMaterial = async () => {
           </CardContent>
         </Card>
 
-        <Dialog open={!!activeSub} onOpenChange={(v) => !v && setActiveSub(null)}>
+        <Dialog
+          open={!!activeSub}
+          onOpenChange={(v) => !v && setActiveSub(null)}
+        >
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>{activeSub?.studentName}</DialogTitle>
@@ -1765,49 +1958,58 @@ const handleUpdateMaterial = async () => {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Feedback</Label>
-                  <Input defaultValue={activeSub?.feedback ?? ""} id="tsub-fb" />
+                  <Input
+                    defaultValue={activeSub?.feedback ?? ""}
+                    id="tsub-fb"
+                  />
                 </div>
               </div>
             </div>
-           <DialogFooter>
-  {/* <Button
+            <DialogFooter>
+              {/* <Button
     variant="outline"
     onClick={() => activeSub && printSubmission(activeSub, active)}
   >
     <Download className="h-4 w-4" />
     Download as PDF
   </Button> */}
-  <Button
-    disabled={grading}
-    onClick={async () => {
-      if (!activeSub) return;
-      const m = Number(document.getElementById("tsub-marks")?.value || 0);
-      const fb = document.getElementById("tsub-fb")?.value || "";
-      setGrading(true);
-      try {
-        const res = await gradeSubmission(active.id, activeSub.id, {
-          obtained_marks: m,
-          feedback: fb,
-          grading_is_draft: false,
-        });
-        if (res?.success) {
-          toast.success(res.message || "Grade published to student");
-          setActiveSub(null);
-          loadSubmissions(active.id, subPage, subPageSize);
-        } else {
-          toast.error(res?.message || "Failed to publish grade");
-        }
-      } catch (err) {
-        console.log(err);
-        toast.error(err?.response?.data?.message || "Failed to publish grade");
-      } finally {
-        setGrading(false);
-      }
-    }}
-  >
-    {grading ? "Publishing..." : "Publish grade"}
-  </Button>
-</DialogFooter>
+              <Button
+                disabled={grading}
+                onClick={async () => {
+                  if (!activeSub) return;
+                  const m = Number(
+                    document.getElementById("tsub-marks")?.value || 0,
+                  );
+                  const fb = document.getElementById("tsub-fb")?.value || "";
+                  setGrading(true);
+                  try {
+                    const res = await gradeSubmission(active.id, activeSub.id, {
+                      obtained_marks: m,
+                      feedback: fb,
+                      grading_is_draft: false,
+                    });
+                    if (res?.success) {
+                      toast.success(
+                        res.message || "Grade published to student",
+                      );
+                      setActiveSub(null);
+                      loadSubmissions(active.id, subPage, subPageSize);
+                    } else {
+                      toast.error(res?.message || "Failed to publish grade");
+                    }
+                  } catch (err) {
+                    console.log(err);
+                    toast.error(
+                      err?.response?.data?.message || "Failed to publish grade",
+                    );
+                  } finally {
+                    setGrading(false);
+                  }
+                }}
+              >
+                {grading ? "Publishing..." : "Publish grade"}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </PageContainer>
@@ -1816,9 +2018,7 @@ const handleUpdateMaterial = async () => {
 
   return (
     <PageContainer>
-      <PageHeader
-        title="Assignments & Materials"
-      />
+      <PageHeader title="Assignments & Materials" />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
         <KpiCard
@@ -1846,30 +2046,30 @@ const handleUpdateMaterial = async () => {
           tone="info"
         />
       </div>
-<Tabs value={mainTab} onValueChange={setMainTab}>
-  <TabsList>
-    <TabsTrigger value="assignments">Assignments</TabsTrigger>
-    <TabsTrigger value="materials">Study Materials</TabsTrigger>
-    <TabsTrigger value="plans">Lesson Plans</TabsTrigger>
-  </TabsList>
+      <Tabs value={mainTab} onValueChange={setMainTab}>
+        <TabsList>
+          <TabsTrigger value="assignments">Assignments</TabsTrigger>
+          <TabsTrigger value="materials">Study Materials</TabsTrigger>
+          <TabsTrigger value="plans">Lesson Plans</TabsTrigger>
+        </TabsList>
 
-                <TabsContent value="assignments" className="mt-4 space-y-4">
+        <TabsContent value="assignments" className="mt-4 space-y-4">
           <Card className="border-border/60">
             <CardContent className="p-3 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Class</span>
-              <Select value={classF} onValueChange={setClassF}>
-  <SelectTrigger className="h-8 w-32">
-    <SelectValue />
-  </SelectTrigger>
-  <SelectContent>
-    {["All", ...classOptions].map((c) => (
-      <SelectItem key={c} value={c}>
-        {c}
-      </SelectItem>
-    ))}
-  </SelectContent>
-</Select>
+                <Select value={classF} onValueChange={setClassF}>
+                  <SelectTrigger className="h-8 w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["All", ...classOptions].map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               {NewAssignmentDialog}
             </CardContent>
@@ -1894,117 +2094,121 @@ const handleUpdateMaterial = async () => {
                     />
                   </div>
                   <div className="overflow-x-auto">
-                  <Table>
-                                        
+                    <Table>
                       <TableHeader>
-                      <TableRow>
-                        <TableHead>ID</TableHead>
-                        <TableHead>Title</TableHead>
-                        <TableHead>Subject</TableHead>
-                        <TableHead>Class</TableHead>
-                        <TableHead>Due</TableHead>
-                        <TableHead>Created By</TableHead>
-                        <TableHead>Submissions</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="w-20">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Title</TableHead>
+                          <TableHead>Subject</TableHead>
+                          <TableHead>Class</TableHead>
+                          <TableHead>Due</TableHead>
+                          <TableHead>Created By</TableHead>
+                          <TableHead>Submissions</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="w-20">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
                       <TableBody>
-                      {pagedAssignments.map((a) => {
-                        const total = a.totalStudents ?? 0;
-                        const done =
-                          (a.submittedCount ?? 0) + (a.reviewedCount ?? 0);
-                        const pct = total
-                          ? Math.round((done / total) * 100)
-                          : 0;
-                        return (
-                          <TableRow
-                            key={a.id}
-                            className="cursor-pointer hover:bg-muted/40"
-                            onClick={(e) => {
-                              if (e.target.closest("[data-no-row]")) return;
-                              setActiveId(a.id);
-                            }}
-                          >
-                            <TableCell className="font-mono text-xs">
-                              {a.assignmentNo || a.id}
-                            </TableCell>
-                            <TableCell className="font-medium">
-                              {a.title}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="secondary">{a.subject}</Badge>
-                            </TableCell>
-                            <TableCell>{a.klass}</TableCell>
-                                                        <TableCell className="text-xs">
-                              {a.due || "—"}
-                            </TableCell>
-                            <TableCell>
-                              {canModify(a) ? (
-                                <span className="text-xs text-muted-foreground">You</span>
-                              ) : (
-                                <Badge variant="outline" className="text-[10px]">
-                                  {formatRole(a.createdByRole)}
+                        {pagedAssignments.map((a) => {
+                          const total = a.totalStudents ?? 0;
+                          const done =
+                            (a.submittedCount ?? 0) + (a.reviewedCount ?? 0);
+                          const pct = total
+                            ? Math.round((done / total) * 100)
+                            : 0;
+                          return (
+                            <TableRow
+                              key={a.id}
+                              className="cursor-pointer hover:bg-muted/40"
+                              onClick={(e) => {
+                                if (e.target.closest("[data-no-row]")) return;
+                                setActiveId(a.id);
+                              }}
+                            >
+                              <TableCell className="font-mono text-xs">
+                                {a.assignmentNo || a.id}
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                {a.title}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{a.subject}</Badge>
+                              </TableCell>
+                              <TableCell>{a.klass}</TableCell>
+                              <TableCell className="text-xs">
+                                {a.due || "—"}
+                              </TableCell>
+                              <TableCell>
+                                {canModify(a) ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    You
+                                  </span>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px]"
+                                  >
+                                    {formatRole(a.createdByRole)}
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2 w-40">
+                                  <Progress value={pct} className="h-1.5" />
+                                  <span className="text-xs tabular-nums">
+                                    {done}/{total}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    a.status === "Published"
+                                      ? "default"
+                                      : a.status === "Draft"
+                                        ? "outline"
+                                        : "secondary"
+                                  }
+                                >
+                                  {a.status}
                                 </Badge>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2 w-40">
-                                <Progress value={pct} className="h-1.5" />
-                                <span className="text-xs tabular-nums">
-                                  {done}/{total}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={
-                                  a.status === "Published"
-                                    ? "default"
-                                    : a.status === "Draft"
-                                      ? "outline"
-                                      : "secondary"
-                                }
-                              >
-                                {a.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell data-no-row>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className={`h-7 w-7 ${!canModify(a) ? "opacity-40" : ""}`}
-                                  onClick={() => handleEdit(a)}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className={`h-7 w-7 text-destructive hover:text-destructive ${!canModify(a) ? "opacity-40" : ""}`}
-                                  onClick={() => handleDelete(a)}
-                                  disabled={deletingId === a.id}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
+                              </TableCell>
+                              <TableCell data-no-row>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={`h-7 w-7 ${!canModify(a) ? "opacity-40" : ""}`}
+                                    onClick={() => handleEdit(a)}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={`h-7 w-7 text-destructive hover:text-destructive ${!canModify(a) ? "opacity-40" : ""}`}
+                                    onClick={() => handleDelete(a)}
+                                    disabled={deletingId === a.id}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        {filtered.length === 0 && (
+                          <TableRow>
+                            <TableCell
+                              colSpan={9}
+                              className="text-center py-8 text-sm text-muted-foreground"
+                            >
+                              No assignments yet for your classes.
                             </TableCell>
                           </TableRow>
-                        );
-                      })}
-                      {filtered.length === 0 && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={9}
-                            className="text-center py-8 text-sm text-muted-foreground"
-                          >
-                            No assignments yet for your classes.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                        )}
+                      </TableBody>
+                    </Table>
                   </div>
                   <PaginationBar
                     rangeStart={assignRangeStart}
@@ -2043,10 +2247,16 @@ const handleUpdateMaterial = async () => {
                           <CardTitle className="text-sm font-display">
                             {a.title}
                           </CardTitle>
-                                                   <CardDescription className="text-xs mt-0.5">
+                          <CardDescription className="text-xs mt-0.5">
                             {a.subject} · Class {a.klass} · Due {a.due || "—"}
                             {!canModify(a) && (
-                              <> · <span className="text-muted-foreground">by {formatRole(a.createdByRole)}</span></>
+                              <>
+                                {" "}
+                                ·{" "}
+                                <span className="text-muted-foreground">
+                                  by {formatRole(a.createdByRole)}
+                                </span>
+                              </>
                             )}
                           </CardDescription>
                         </div>
@@ -2067,7 +2277,7 @@ const handleUpdateMaterial = async () => {
                             data-no-row
                             onClick={(e) => e.stopPropagation()}
                           >
-                                                       <Button
+                            <Button
                               variant="ghost"
                               size="icon"
                               className={`h-7 w-7 ${!canModify(a) ? "opacity-40" : ""}`}
@@ -2136,78 +2346,78 @@ const handleUpdateMaterial = async () => {
                 />
               </div>
               <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Classes</TableHead>
-                    <TableHead>Downloads</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Title</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Subject</TableHead>
+                      <TableHead>Classes</TableHead>
+                      <TableHead>Downloads</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
                   <TableBody>
-                  {pagedMaterials.map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell className="font-medium">
-                        {m.title}
-                        <div className="text-[11px] text-muted-foreground">
-                          {m.description}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{m.type}</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs">{m.subject}</TableCell>
-                      <TableCell className="text-xs">{m.klass}</TableCell>
-                      <TableCell className="text-xs tabular-nums">
-                        {m.downloads}
-                      </TableCell>
-                                                                 <TableCell className="text-right" data-no-row>
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => handleEditMaterial(m)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => handleDownloadMaterial(m)}
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {materialsLoading && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        className="text-center py-8 text-sm text-muted-foreground"
-                      >
-                        Loading materials...
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {!materialsLoading && materials.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        className="text-center py-8 text-sm text-muted-foreground"
-                      >
-                        No study materials shared yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-                            </Table>
+                    {pagedMaterials.map((m) => (
+                      <TableRow key={m.id}>
+                        <TableCell className="font-medium">
+                          {m.title}
+                          <div className="text-[11px] text-muted-foreground">
+                            {m.description}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{m.type}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs">{m.subject}</TableCell>
+                        <TableCell className="text-xs">{m.klass}</TableCell>
+                        <TableCell className="text-xs tabular-nums">
+                          {m.downloads}
+                        </TableCell>
+                        <TableCell className="text-right" data-no-row>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleEditMaterial(m)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleDownloadMaterial(m)}
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {materialsLoading && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={6}
+                          className="text-center py-8 text-sm text-muted-foreground"
+                        >
+                          Loading materials...
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {!materialsLoading && materials.length === 0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={6}
+                          className="text-center py-8 text-sm text-muted-foreground"
+                        >
+                          No study materials shared yet.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
               </div>
               <PaginationBar
                 rangeStart={matRangeStart}
@@ -2224,8 +2434,8 @@ const handleUpdateMaterial = async () => {
         </TabsContent>
 
         <TabsContent value="plans" className="mt-4">
-  <LessonPlansTab teacherName={teacherName} setMainTab={setMainTab} />
-</TabsContent>
+          <LessonPlansTab teacherName={teacherName} setMainTab={setMainTab} />
+        </TabsContent>
       </Tabs>
     </PageContainer>
   );
@@ -2264,7 +2474,8 @@ function LessonPlansTab({ teacherName, setMainTab }) {
 
   useEffect(() => {
     if (!open) return;
-    if (classesList.length || sectionsList.length || subjectsList.length) return;
+    if (classesList.length || sectionsList.length || subjectsList.length)
+      return;
 
     let cancelled = false;
     (async () => {
@@ -2278,11 +2489,21 @@ function LessonPlansTab({ teacherName, setMainTab }) {
         const subjectsMap = new Map();
         rows.forEach((row) => {
           if (row.class_uuid && !classesMap.has(row.class_uuid))
-            classesMap.set(row.class_uuid, { class_uuid: row.class_uuid, class_name: row.class_name });
+            classesMap.set(row.class_uuid, {
+              class_uuid: row.class_uuid,
+              class_name: row.class_name,
+            });
           if (row.section_uuid && !sectionsMap.has(row.section_uuid))
-            sectionsMap.set(row.section_uuid, { section_uuid: row.section_uuid, section_name: row.section_name, class_uuid: row.class_uuid });
+            sectionsMap.set(row.section_uuid, {
+              section_uuid: row.section_uuid,
+              section_name: row.section_name,
+              class_uuid: row.class_uuid,
+            });
           if (row.subject_uuid && !subjectsMap.has(row.subject_uuid))
-            subjectsMap.set(row.subject_uuid, { subject_uuid: row.subject_uuid, subject_name: row.subject_name });
+            subjectsMap.set(row.subject_uuid, {
+              subject_uuid: row.subject_uuid,
+              subject_name: row.subject_name,
+            });
         });
 
         setClassesList([...classesMap.values()]);
@@ -2293,14 +2514,16 @@ function LessonPlansTab({ teacherName, setMainTab }) {
         toast.error("Failed to load classes");
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [open, classesList.length, sectionsList.length, subjectsList.length]);
 
   const empty = {
     title: "",
-    subject: "",   // subject_uuid
-    classNum: "",  // class_uuid
-    section: "",   // section_uuid
+    subject: "", // subject_uuid
+    classNum: "", // class_uuid
+    section: "", // section_uuid
     chapter: "",
     topic: "",
     method: "Discussion + worked examples",
@@ -2309,6 +2532,8 @@ function LessonPlansTab({ teacherName, setMainTab }) {
     objectives: "",
     referenceLink: "",
     pdfFile: null,
+    existingPdfName: "",
+    existingPdfUrl: "",
   };
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
@@ -2323,12 +2548,14 @@ function LessonPlansTab({ teacherName, setMainTab }) {
       ...prev,
       section: sec.some((s) => s.section_uuid === prev.section)
         ? prev.section
-        : (sec.length ? sec[0].section_uuid : ""),
+        : sec.length
+          ? sec[0].section_uuid
+          : "",
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.classNum, sectionsList]);
 
-    const mine = plans;
+  const mine = plans;
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -2354,7 +2581,8 @@ function LessonPlansTab({ teacherName, setMainTab }) {
     if (!form.classNum) errs.classNum = "Select a class.";
     if (!form.section) errs.section = "Select a section.";
     if (!form.weekOf) errs.weekOf = "Select week of.";
-    if (!form.periods || form.periods < 1) errs.periods = "Periods must be at least 1.";
+    if (!form.periods || form.periods < 1)
+      errs.periods = "Periods must be at least 1.";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -2391,7 +2619,9 @@ function LessonPlansTab({ teacherName, setMainTab }) {
       }
     } catch (err) {
       console.log(err);
-      toast.error(err?.response?.data?.message || "Failed to create lesson plan");
+      toast.error(
+        err?.response?.data?.message || "Failed to create lesson plan",
+      );
     } finally {
       setSaving(false);
     }
@@ -2409,38 +2639,82 @@ function LessonPlansTab({ teacherName, setMainTab }) {
     }
   };
 
-    const handleEditPlan = (p) => {
-    setForm({
-      title: p.title || "",
-      subject: p.subjectUuid || "",
-      classNum: p.classUuid || "",
-      section: p.sectionUuid || "",
-      chapter: p.chapter || "",
-      topic: p.topic || "",
-      method: p.method || "Discussion + worked examples",
-      weekOf: p.weekOf || "",
-      periods: p.periods || 1,
-      objectives: p.objectives || "",
-      referenceLink: p.referenceUrl || "",
-      pdfFile: null,
-    });
-    setErrors({});
-    setEditingUuid(p.id);
-    setOpen(true);
+  const handleEditPlan = async (p) => {
+    try {
+      const res = await getLessonPlanDetail(p.id);
+      const d = res?.data ?? res;
+      setForm({
+        title: d.title || "",
+        subject: d.subject_uuid || "",
+        classNum: d.class_uuid || "",
+        section: d.section_uuid || "",
+        chapter: d.chapter || "",
+        topic: d.topic || "",
+        method: d.teaching_method || "Discussion + worked examples",
+        weekOf: d.week_of || "",
+        periods: d.periods || 1,
+        objectives: d.learning_objectives || "",
+        referenceLink: d.reference_url || "",
+        pdfFile: null,
+        existingPdfName: d.pdf_file_name || "",
+        existingPdfUrl: d.pdf_url || "",
+      });
+      setErrors({});
+      setEditingUuid(d.lesson_plan_uuid || p.id);
+      setOpen(true);
+    } catch (err) {
+      console.log(err);
+      toast.error("Failed to load lesson plan for editing");
+    }
   };
 
   const handleUpdatePlan = async () => {
     if (!validateForm()) return toast.error("Complete the required fields.");
-    // TODO: wire this up once an update-lesson-plan endpoint exists.
-    toast.info("Editing lesson plans isn't connected to the backend yet.");
-    setOpen(false);
+
+    const fd = new FormData();
+    fd.append("title", form.title);
+    fd.append("subject_uuid", form.subject);
+    fd.append("class_uuid", form.classNum);
+    fd.append("section_uuid", form.section);
+    fd.append("week_of", form.weekOf);
+    fd.append("periods", form.periods);
+    fd.append("chapter", form.chapter || "");
+    fd.append("topic", form.topic || "");
+    fd.append("learning_objectives", form.objectives || "");
+    fd.append("teaching_method", form.method || "");
+    fd.append("reference_url", form.referenceLink || "");
+    if (form.pdfFile) fd.append("pdf", form.pdfFile);
+
+    setSaving(true);
+    try {
+      const res = await updateLessonPlan(editingUuid, fd);
+      if (res?.success) {
+        toast.success(res.message || "Lesson plan updated");
+        setPlans((rows) =>
+          rows.map((r) => (r.id === editingUuid ? mapLessonPlan(res.data) : r)),
+        );
+        setOpen(false);
+        setForm(empty);
+        setErrors({});
+        setEditingUuid(null);
+      } else {
+        toast.error(res?.message || "Failed to update lesson plan");
+      }
+    } catch (err) {
+      console.log(err);
+      toast.error(
+        err?.response?.data?.message || "Failed to update lesson plan",
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="space-y-4">
       <Card className="border-border/60">
         <CardContent className="p-3 flex items-center justify-between gap-2">
-                  <div className="text-xs text-muted-foreground flex items-center gap-2">
+          <div className="text-xs text-muted-foreground flex items-center gap-2">
             <NotebookPen className="h-3.5 w-3.5" />
             {mine.length} lesson plan(s)
           </div>
@@ -2454,263 +2728,302 @@ function LessonPlansTab({ teacherName, setMainTab }) {
                 }}
               />
             )}
-                    <Dialog
-            open={open}
-            onOpenChange={(v) => {
-              setOpen(v);
-              if (!v) {
-                setForm(empty);
-                setErrors({});
-                setEditingUuid(null);
-              }
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button
-                size="sm"
-                className="gradient-primary border-0"
-                onClick={() => {
+            <Dialog
+              open={open}
+              onOpenChange={(v) => {
+                setOpen(v);
+                if (!v) {
                   setForm(empty);
                   setErrors({});
                   setEditingUuid(null);
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                New Lesson Plan
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-xl">
-                            <DialogHeader>
-                <DialogTitle>
-                  {editingUuid ? "Edit lesson plan" : "Create lesson plan"}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-3 max-h-[65vh] overflow-y-auto pr-1">
-                <div className="space-y-1">
-                  <Label className="text-xs">
-                    Title <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    value={form.title}
-                    aria-invalid={Boolean(errors.title)}
-                    onChange={(e) => {
-                      setForm({ ...form, title: e.target.value });
-                      setErrors((er) => ({ ...er, title: "" }));
-                    }}
-                  />
-                  {errors.title && (
-                    <p className="text-xs text-destructive">{errors.title}</p>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-3 gap-3">
+                }
+              }}
+            >
+              <DialogTrigger asChild>
+                <Button
+                  size="sm"
+                  className="gradient-primary border-0"
+                  onClick={() => {
+                    setForm(empty);
+                    setErrors({});
+                    setEditingUuid(null);
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  New Lesson Plan
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-xl">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingUuid ? "Edit lesson plan" : "Create lesson plan"}
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-3 max-h-[65vh] overflow-y-auto pr-1">
                   <div className="space-y-1">
                     <Label className="text-xs">
-                      Subject <span className="text-destructive">*</span>
-                    </Label>
-                    <Select
-                      value={form.subject}
-                      onValueChange={(v) => {
-                        setForm({ ...form, subject: v });
-                        setErrors((er) => ({ ...er, subject: "" }));
-                      }}
-                    >
-                      <SelectTrigger aria-invalid={Boolean(errors.subject)}>
-                        <SelectValue placeholder="Subject" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {subjectsList.map((s) => (
-                          <SelectItem key={s.subject_uuid} value={s.subject_uuid}>
-                            {s.subject_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {errors.subject && (
-                      <p className="text-xs text-destructive">{errors.subject}</p>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">
-                      Class <span className="text-destructive">*</span>
-                    </Label>
-                    <Select
-                      value={form.classNum}
-                      onValueChange={(v) => {
-                        setForm({ ...form, classNum: v });
-                        setErrors((er) => ({ ...er, classNum: "", section: "" }));
-                      }}
-                    >
-                      <SelectTrigger aria-invalid={Boolean(errors.classNum)}>
-                        <SelectValue placeholder="Class" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {classesList.map((c) => (
-                          <SelectItem key={c.class_uuid} value={c.class_uuid}>
-                            {c.class_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {errors.classNum && (
-                      <p className="text-xs text-destructive">{errors.classNum}</p>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">
-                      Section <span className="text-destructive">*</span>
-                    </Label>
-                    <Select
-                      value={form.section}
-                      onValueChange={(v) => {
-                        setForm({ ...form, section: v });
-                        setErrors((er) => ({ ...er, section: "" }));
-                      }}
-                    >
-                      <SelectTrigger aria-invalid={Boolean(errors.section)}>
-                        <SelectValue placeholder="Section" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredSections.map((s) => (
-                          <SelectItem key={s.section_uuid} value={s.section_uuid}>
-                            {s.section_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {errors.section && (
-                      <p className="text-xs text-destructive">{errors.section}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Chapter + Topic */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Chapter</Label>
-                    <Input
-                      value={form.chapter}
-                      onChange={(e) => setForm({ ...form, chapter: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Topic</Label>
-                    <Input
-                      value={form.topic}
-                      onChange={(e) => setForm({ ...form, topic: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                {/* Week Of + Periods */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">
-                      Week Of <span className="text-destructive">*</span>
+                      Title <span className="text-destructive">*</span>
                     </Label>
                     <Input
-                      type="date"
-                      value={form.weekOf}
-                      aria-invalid={Boolean(errors.weekOf)}
+                      value={form.title}
+                      aria-invalid={Boolean(errors.title)}
                       onChange={(e) => {
-                        setForm({ ...form, weekOf: e.target.value });
-                        setErrors((er) => ({ ...er, weekOf: "" }));
+                        setForm({ ...form, title: e.target.value });
+                        setErrors((er) => ({ ...er, title: "" }));
                       }}
                     />
-                    {errors.weekOf && (
-                      <p className="text-xs text-destructive">{errors.weekOf}</p>
+                    {errors.title && (
+                      <p className="text-xs text-destructive">{errors.title}</p>
                     )}
                   </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">
+                        Subject <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        value={form.subject}
+                        onValueChange={(v) => {
+                          setForm({ ...form, subject: v });
+                          setErrors((er) => ({ ...er, subject: "" }));
+                        }}
+                      >
+                        <SelectTrigger aria-invalid={Boolean(errors.subject)}>
+                          <SelectValue placeholder="Subject" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {subjectsList.map((s) => (
+                            <SelectItem
+                              key={s.subject_uuid}
+                              value={s.subject_uuid}
+                            >
+                              {s.subject_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {errors.subject && (
+                        <p className="text-xs text-destructive">
+                          {errors.subject}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">
+                        Class <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        value={form.classNum}
+                        onValueChange={(v) => {
+                          setForm({ ...form, classNum: v });
+                          setErrors((er) => ({
+                            ...er,
+                            classNum: "",
+                            section: "",
+                          }));
+                        }}
+                      >
+                        <SelectTrigger aria-invalid={Boolean(errors.classNum)}>
+                          <SelectValue placeholder="Class" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {classesList.map((c) => (
+                            <SelectItem key={c.class_uuid} value={c.class_uuid}>
+                              {c.class_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {errors.classNum && (
+                        <p className="text-xs text-destructive">
+                          {errors.classNum}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">
+                        Section <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        value={form.section}
+                        onValueChange={(v) => {
+                          setForm({ ...form, section: v });
+                          setErrors((er) => ({ ...er, section: "" }));
+                        }}
+                      >
+                        <SelectTrigger aria-invalid={Boolean(errors.section)}>
+                          <SelectValue placeholder="Section" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filteredSections.map((s) => (
+                            <SelectItem
+                              key={s.section_uuid}
+                              value={s.section_uuid}
+                            >
+                              {s.section_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {errors.section && (
+                        <p className="text-xs text-destructive">
+                          {errors.section}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Chapter + Topic */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Chapter</Label>
+                      <Input
+                        value={form.chapter}
+                        onChange={(e) =>
+                          setForm({ ...form, chapter: e.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Topic</Label>
+                      <Input
+                        value={form.topic}
+                        onChange={(e) =>
+                          setForm({ ...form, topic: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  {/* Week Of + Periods */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">
+                        Week Of <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        type="date"
+                        value={form.weekOf}
+                        aria-invalid={Boolean(errors.weekOf)}
+                        onChange={(e) => {
+                          setForm({ ...form, weekOf: e.target.value });
+                          setErrors((er) => ({ ...er, weekOf: "" }));
+                        }}
+                      />
+                      {errors.weekOf && (
+                        <p className="text-xs text-destructive">
+                          {errors.weekOf}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">
+                        Periods <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={form.periods}
+                        aria-invalid={Boolean(errors.periods)}
+                        onChange={(e) => {
+                          setForm({ ...form, periods: Number(e.target.value) });
+                          setErrors((er) => ({ ...er, periods: "" }));
+                        }}
+                      />
+                      {errors.periods && (
+                        <p className="text-xs text-destructive">
+                          {errors.periods}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="space-y-1">
-                    <Label className="text-xs">
-                      Periods <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={form.periods}
-                      aria-invalid={Boolean(errors.periods)}
-                      onChange={(e) => {
-                        setForm({ ...form, periods: Number(e.target.value) });
-                        setErrors((er) => ({ ...er, periods: "" }));
-                      }}
-                    />
-                    {errors.periods && (
-                      <p className="text-xs text-destructive">{errors.periods}</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Learning objectives</Label>
-                  <Textarea
-                    rows={3}
-                    value={form.objectives}
-                    onChange={(e) =>
-                      setForm({ ...form, objectives: e.target.value })
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Teaching method</Label>
-                  <Input
-                    value={form.method}
-                    onChange={(e) =>
-                      setForm({ ...form, method: e.target.value })
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Reference URL</Label>
-                  <div className="flex items-center gap-2">
-                    <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    <Input
-                      placeholder="https://…"
-                      value={form.referenceLink}
-                      onChange={(e) => setForm({ ...form, referenceLink: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Attach PDF</Label>
-                  <div className="relative">
-                    <Paperclip className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                    <label
-                      htmlFor="lesson-plan-pdf-upload"
-                      className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
-                    >
-                      <span className={form.pdfFile ? "truncate" : "text-muted-foreground"}>
-                        {form.pdfFile ? form.pdfFile.name : "Attach PDF (optional)"}
-                      </span>
-                    </label>
-                    <input
-                      id="lesson-plan-pdf-upload"
-                      type="file"
-                      accept="application/pdf"
-                      className="hidden"
+                    <Label className="text-xs">Learning objectives</Label>
+                    <Textarea
+                      rows={3}
+                      value={form.objectives}
                       onChange={(e) =>
-                        setForm({ ...form, pdfFile: e.target.files?.[0] ?? null })
+                        setForm({ ...form, objectives: e.target.value })
                       }
                     />
                   </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Teaching method</Label>
+                    <Input
+                      value={form.method}
+                      onChange={(e) =>
+                        setForm({ ...form, method: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Reference URL</Label>
+                    <div className="flex items-center gap-2">
+                      <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="https://…"
+                        value={form.referenceLink}
+                        onChange={(e) =>
+                          setForm({ ...form, referenceLink: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Attach PDF</Label>
+                    <div className="relative">
+                      <Paperclip className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                      <label
+                        htmlFor="lesson-plan-pdf-upload"
+                        className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
+                      >
+                        <span
+                          className={
+                            form.pdfFile ? "truncate" : "text-muted-foreground"
+                          }
+                        >
+                          {form.pdfFile
+                            ? form.pdfFile.name
+                            : "Attach PDF (optional)"}
+                        </span>
+                      </label>
+                      <input
+                        id="lesson-plan-pdf-upload"
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            pdfFile: e.target.files?.[0] ?? null,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
-               <DialogFooter>
-                <Button
-                  type="button"
-                  onClick={editingUuid ? handleUpdatePlan : save}
-                  disabled={saving}
-                >
-                  {editingUuid
-                    ? "Update lesson plan"
-                    : (saving ? "Saving..." : "Create lesson plan")}
-                </Button>
-              </DialogFooter>
-                       </DialogContent>
-          </Dialog>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    onClick={editingUuid ? handleUpdatePlan : save}
+                    disabled={saving}
+                  >
+                    {editingUuid
+                      ? saving
+                        ? "Updating..."
+                        : "Update lesson plan"
+                      : saving
+                        ? "Saving..."
+                        : "Create lesson plan"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </CardContent>
       </Card>
@@ -2741,12 +3054,20 @@ function LessonPlansTab({ teacherName, setMainTab }) {
                   LINK · {p.referenceUrl}
                 </Badge>
               )}
-                           <div className="flex gap-2 pt-1">
-                <Button size="sm" variant="outline" onClick={() => downloadPlan(p)}>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => downloadPlan(p)}
+                >
                   <Download className="h-4 w-4" />
                   Download PDF
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => handleEditPlan(p)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleEditPlan(p)}
+                >
                   <Pencil className="h-4 w-4" />
                   Edit
                 </Button>

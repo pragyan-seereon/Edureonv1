@@ -55,7 +55,7 @@ import { format } from "date-fns";
 import { getClasses } from "../../api/Class";
 import { getSections } from "../../api/section";
 import { getAcademicCalendar,saveAcademicCalendarDraft,publishAcademicCalendar,getAcademicCalendarById,updateAcademicCalendar,deleteAcademicCalendar,publishAcademicCalendarById,unpublishAcademicCalendarById,} from "../../api/academicCalendar";
-import { getNotices, saveNoticeDraft, publishNotice, updateNotice, deleteNotice ,getNoticeById,publishNoticeById, unpublishNoticeById } from "../../api/notice";
+import { getNotices, getNoticeCategories, createNoticeCategory, updateNoticeCategory, deleteNoticeCategory, saveNoticeDraft, publishNotice, updateNotice, deleteNotice ,getNoticeById,publishNoticeById, unpublishNoticeById } from "../../api/notice";
 import {getEvents,saveEventDraft,publishEvent,getEventById,updateEvent,deleteEvent,publishEventById,unpublishEventById,} from "../../api/event";
 import { getHolidays, saveHolidayDraft, publishHoliday, getHolidayById, updateHoliday, deleteHoliday, publishHolidayById, unpublishHolidayById,} from "../../api/holidayCalendar";
 import {validateCalendarForm,isCalendarFormValid,validateNoticeForm,isNoticeFormValid,} from "../../lib/subjectValidation";
@@ -67,6 +67,14 @@ import {
 
 const cats = ["Academic", "Events", "Fees", "Holiday", "Exam", "General"];
 const auds = ["All", "Teachers", "Students", "Parents", "Staff", "Class"];
+
+// The /communications (Notices) backend schema (NoteCreateRequest /
+// NoteUpdateRequest) has NO class_uuid / section_uuid fields at all, so a
+// "Class" audience picked here would be saved with nothing to say which
+// class it targets. Only offer the audiences the backend can actually
+// store for this endpoint; "Class" stays available for Academic Calendar /
+// Events / Holidays, which DO collect class_uuid / section_uuid.
+const NOTE_AUDIENCES = ["All", "Teachers", "Students", "Parents", "Staff"];
 
 const ACCEPTED_TYPES = ["application/pdf", "image/", "video/"];
 const MAX_FILE_SIZE_MB = 25;
@@ -110,10 +118,25 @@ const getResponseList = (response) => {
   return [];
 };
 
+// The /communications router validates with Pydantic, so a bad value comes
+// back as a 422 with `detail` as a LIST of {loc, msg, type} objects rather
+// than a plain string. The previous version only handled the string/object
+// shape, so validation failures (e.g. a missing/invalid category_uuid) fell
+// through to the generic fallback message and hid the real reason. Handle
+// all three shapes FastAPI can send.
 const getApiErrorMessage = (error, fallback) => {
   const detail = error?.response?.data?.detail;
-  const payload = detail && typeof detail === "object" ? detail : error?.response?.data;
 
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => item?.msg)
+      .filter(Boolean);
+    if (messages.length > 0) return messages.join(" ");
+  }
+
+  const payload = detail && typeof detail === "object" && !Array.isArray(detail) ? detail : error?.response?.data;
+
+  if (typeof detail === "string") return detail;
   if (typeof payload === "string") return payload;
   if (typeof payload?.message === "string") return payload.message;
   if (typeof error?.message === "string") return error.message;
@@ -165,6 +188,33 @@ const buildNoticeFormData = ({
     }
   });
 
+  return formData;
+};
+
+// Matches NoteCreateRequest / NoteUpdateRequest.as_form on the backend
+// exactly: category_uuid, title, start_date, end_date, description,
+// audience (upper-case enum), plus the separate `attachments` file list
+// parameter the router reads independently of the payload model. `status`
+// is intentionally NOT sent here — the router forces it to DRAFT/PUBLISHED
+// for the save-draft/publish endpoints, and NoteUpdateRequest treats a
+// missing field as "leave unchanged" for plain updates.
+const buildCommunicationNoteFormData = ({
+  title,
+  body,
+  categoryUUID,
+  audience,
+  startDate,
+  endDate,
+  attachments = [],
+}) => {
+  const formData = new FormData();
+  formData.append("title", title);
+  formData.append("description", body);
+  formData.append("category_uuid", categoryUUID);
+  formData.append("audience", AUDIENCE_MAP[audience] ?? audience);
+  formData.append("start_date", startDate);
+  formData.append("end_date", endDate);
+  attachments.forEach((attachment) => formData.append("attachments", attachment));
   return formData;
 };
 
@@ -325,8 +375,9 @@ const getCalendarTargetClass = (item) => {
   return item.target_class ?? item.targetClass ?? "";
 };
 
-const getNoticeUUID = (item) => item.notice_uuid ?? item.uuid ?? item.id;
+const getNoticeUUID = (item) => item.notes_uuid ?? item.notice_uuid ?? item.uuid ?? item.id;
 const getNoticeBody = (item) => item.description ?? item.body ?? "";
+const getNoticeCategory = (item) => item.category?.name ?? item.category_name ?? "";
 const getNoticeStatus = (item) => {
   const status = String(item.status ?? "DRAFT").toLowerCase();
   return status.charAt(0).toUpperCase() + status.slice(1);
@@ -396,13 +447,23 @@ const getHolidayTargetClass = (item) => {
 
 export default function Notices() {
   const [notices, setNotices] = useState([]);
+  const [noticeCategories, setNoticeCategories] = useState([]);
+  const [workspaceTab, setWorkspaceTab] = useState("categories");
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("notices");
   const [formErrors, setFormErrors] = useState({});
   const [classesList, setClassesList] = useState([]);
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [sectionsList, setSectionsList] = useState([]);
-  const [loadingSections, setLoadingSections] = useState(false); 
+  const [loadingSections, setLoadingSections] = useState(false);
+
+  // ---------------- Dynamic category creation ----------------
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+
  const [form, setForm] = useState({
   title: "",
   body: "",
@@ -458,7 +519,7 @@ const [openMenuUUID, setOpenMenuUUID] = useState(null);
 }, []);
 
  useEffect(() => {
-  if (form.audience !== "Class") return;
+  if (form.audience !== "Class" || !["academic", "events", "holidays"].includes(activeTab)) return;
 
   const loadClasses = async () => {
     setLoadingClasses(true);
@@ -476,10 +537,10 @@ const [openMenuUUID, setOpenMenuUUID] = useState(null);
   };
 
   loadClasses();
-}, [form.audience]);
+}, [activeTab, form.audience]);
 
 useEffect(() => {
-  if (form.audience !== "Class") return;
+  if (form.audience !== "Class" || !["academic", "events", "holidays"].includes(activeTab)) return;
 
   const loadSections = async () => {
     setLoadingSections(true);
@@ -497,7 +558,7 @@ useEffect(() => {
   };
 
   loadSections();
-}, [form.audience]);
+}, [activeTab, form.audience]);
 
 const filteredSections = sectionsList.filter(
   (s) => String(s.class_uuid ?? s.classUUID) === String(form.selectedClassUUID)
@@ -520,9 +581,96 @@ const filteredSections = sectionsList.filter(
     }
   }, []);
 
+  const fetchNoticeCategories = useCallback(async () => {
+    try {
+      const response = await getNoticeCategories();
+      const categories = Array.isArray(response) ? response : response?.data ?? [];
+      setNoticeCategories(categories);
+    } catch (err) {
+      toast.error("Failed to load communication categories");
+    }
+  }, []);
+
+  // ---------------- Create a category on the fly ----------------
+  const handleCreateCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    setSavingCategory(true);
+    try {
+      const response = await createNoticeCategory(name);
+      const created = response?.data ?? response;
+      setNoticeCategories((prev) => [...prev, created]);
+      setActiveTab(`category:${created.categories_uuid}`);
+      setNewCategoryName("");
+      setAddingCategory(false);
+      toast.success("Category added");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to add category"));
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const handleUpdateCategory = async () => {
+    const name = editingCategoryName.trim();
+    if (!editingCategory || !name) return;
+    setSavingCategory(true);
+    try {
+      const response = await updateNoticeCategory(editingCategory.categories_uuid, name);
+      const updated = response?.data ?? response;
+      setNoticeCategories((current) => current.map((category) =>
+        category.categories_uuid === updated.categories_uuid ? updated : category
+      ));
+      setEditingCategory(null);
+      setEditingCategoryName("");
+      toast.success("Category updated");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to update category"));
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const handleDeleteCategory = async (category) => {
+    if (!window.confirm(`Delete the ${category.name} category?`)) return;
+    setSavingCategory(true);
+    try {
+      await deleteNoticeCategory(category.categories_uuid);
+      setNoticeCategories((current) => current.filter(
+        (item) => item.categories_uuid !== category.categories_uuid
+      ));
+      if (activeTab === `category:${category.categories_uuid}`) {
+        setActiveTab("notices");
+      }
+      toast.success("Category deleted");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to delete category"));
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (noticeCategories.length === 0) return;
+    const selectedCategoryUUID = activeTab.startsWith("category:")
+      ? activeTab.slice("category:".length)
+      : null;
+    setForm((current) => ({
+      ...current,
+      category: selectedCategoryUUID ?? (
+        noticeCategories.some((category) => category.categories_uuid === current.category)
+          ? current.category
+          : noticeCategories[0].categories_uuid
+      ),
+    }));
+  }, [activeTab, noticeCategories]);
+
  useEffect(() => {
-if (activeTab !== "academic" && activeTab !== "events" && activeTab !== "holidays") fetchNotices();
-  }, [activeTab, fetchNotices]);
+if (activeTab !== "academic" && activeTab !== "events" && activeTab !== "holidays") {
+  fetchNotices();
+  fetchNoticeCategories();
+}
+  }, [activeTab, fetchNotices, fetchNoticeCategories]);
 
   const fetchEvents = useCallback(async () => {
     setLoadingEvents(true);
@@ -604,6 +752,16 @@ const closeDialog = () => {
       );
       if (!isNoticeFormValid(errors)) {
         setFormErrors(errors);
+        return;
+      }
+
+      // The /communications endpoints require a real category_uuid
+      // (NoteCreateRequest.category_uuid). Catch a missing/blank value here
+      // with a clear message instead of letting it hit the server as a 422.
+      const isNotesEndpoint = activeTab === "notices" || activeTab.startsWith("category:");
+      if (isNotesEndpoint && !form.category) {
+        setFormErrors((e) => ({ ...e, category: "Select or create a category first." }));
+        toast.error("Select or create a category first.");
         return;
       }
     }
@@ -733,9 +891,10 @@ const closeDialog = () => {
         closeDialog();
       } catch (err) {
         toast.error(
-          err.response?.data?.message ??
-            err.response?.data?.detail ??
-            (publish ? "Failed to publish event" : "Failed to save event draft")
+          getApiErrorMessage(
+            err,
+            publish ? "Failed to publish event" : "Failed to save event draft"
+          )
         );
       } finally {
         setSavingEvent(false);
@@ -772,8 +931,10 @@ const closeDialog = () => {
     closeDialog();
   } catch (err) {
     toast.error(
-      err.response?.data?.message ?? err.response?.data?.detail ??
-      (publish ? "Failed to publish holiday" : "Failed to save holiday draft")
+      getApiErrorMessage(
+        err,
+        publish ? "Failed to publish holiday" : "Failed to save holiday draft"
+      )
     );
   } finally {
     setSavingHoliday(false);
@@ -781,20 +942,18 @@ const closeDialog = () => {
   return;
 }
 
-    // Notices / Holidays -> build multipart form data for the
-    // Notices / Events / Holidays -> build multipart form data for the
-    // create-draft / publish endpoints (attachments ride along here).
-   const formData = buildNoticeFormData({
+    // Notices -> build multipart form data matching NoteCreateRequest /
+    // NoteUpdateRequest.as_form on the /communications router exactly
+    // (category_uuid, title, description, start_date, end_date, audience,
+    // plus the separate `attachments` file list).
+   const formData = buildCommunicationNoteFormData({
       title: form.title,
       body: form.body,
-      category: form.category,
+      categoryUUID: form.category,
       audience: form.audience,
-      classUUID: form.audience === "Class" ? form.selectedClassUUID : undefined,
-      sectionUUID: form.audience === "Class" ? form.selectedSectionUUID : undefined,
       startDate: format(form.dateRange.from, "yyyy-MM-dd"),
       endDate: format(form.dateRange.to ?? form.dateRange.from, "yyyy-MM-dd"),
       attachments: form.attachments,
-      existingAttachments: form.existingAttachments ?? [],
     });
 
 setSavingNotice(true);
@@ -946,6 +1105,10 @@ setSavingNotice(true);
   };
 const openEditNotice = async (item) => {
     const uuid = getNoticeUUID(item);
+    if (!uuid) {
+      toast.error("This notice has no communication UUID and cannot be edited.");
+      return;
+    }
     setOpenMenuUUID(null);
     setEditingNoticeUUID(uuid);
     setFormErrors({});
@@ -954,18 +1117,17 @@ const openEditNotice = async (item) => {
     try {
       const response = await getNoticeById(uuid);
       const detail = response?.data ?? response;
-      const firstAudience = Array.isArray(detail.audiences) ? detail.audiences[0] : null;
       setForm({
         title: detail.title ?? "",
         body: getNoticeBody(detail),
-        category: CATEGORY_REVERSE_MAP[detail.category] ?? detail.category ?? "Academic",
+        category: detail.category_uuid ?? "",
         audience:
           AUDIENCE_REVERSE_MAP[getNoticeAudience(detail)] ??
           getNoticeAudience(detail) ??
           "All",
-        targetClass: firstAudience?.section_name ?? "",
-        selectedClassUUID: firstAudience?.class_uuid ?? "",
-        selectedSectionUUID: firstAudience?.section_uuid ?? "",
+        targetClass: "",
+        selectedClassUUID: "",
+        selectedSectionUUID: "",
         attachments: [],
         existingAttachments: getNoticeAttachments(detail),
         dateRange: {
@@ -988,7 +1150,10 @@ const openEditNotice = async (item) => {
 
   const handleDeleteNotice = async (item) => {
     const uuid = getNoticeUUID(item);
-    if (!uuid) return;
+    if (!uuid) {
+      toast.error("This notice has no communication UUID and cannot be deleted.");
+      return;
+    }
     setOpenMenuUUID(null);
     if (!window.confirm(`Delete "${item.title}"? This cannot be undone.`)) return;
 
@@ -1253,33 +1418,29 @@ const handleToggleHolidayPublish = async (item) => {
     return parts.join(" \u00b7 ");
   };
 
-  const tabCategory = {
-    events: "Events",
-    academic: "Academic",
-    holidays: "Holiday",
-  }[activeTab];
-
   const visibleNotices = useMemo(() => notices.filter((notice) => {
-    const category = String(notice.category ?? "").toUpperCase();
     if (activeTab === "notices") {
       return true;
     }
-    if (activeTab === "holidays") {
-      return ["HOLIDAY", "HOLIDAYS"].includes(category);
+    if (activeTab.startsWith("category:")) {
+      return notice.category_uuid === activeTab.slice("category:".length);
     }
-    return category === String(tabCategory ?? "").toUpperCase();
-  }), [notices, activeTab, tabCategory]);
+    return true;
+  }), [notices, activeTab]);
 
   const sectionLabel = {
     notices: "Notice",
     events: "Event",
     academic: "Academic Calendar",
     holidays: "Holiday Calendar",
-  }[activeTab];
+  }[activeTab] ?? "Notice";
 
   const isAcademicTab = activeTab === "academic";
 const isEventsTab = activeTab === "events";
 const isHolidaysTab = activeTab === "holidays";
+// True for "notices" and any "category:xxx" tab — i.e. the tabs backed by
+// the /communications router shown in the schema/router you shared.
+const isNotesTab = !isAcademicTab && !isEventsTab && !isHolidaysTab;
 const displayList = useMemo(
   () => isAcademicTab ? academicItems : isEventsTab ? events : isHolidaysTab ? holidays : visibleNotices,
   [academicItems, events, holidays, isAcademicTab, isEventsTab, isHolidaysTab, visibleNotices],
@@ -1293,7 +1454,9 @@ const getItemCategory = isAcademicTab
   ? getCalendarCategory
   : isHolidaysTab
   ? getHolidayCategory
-  : (item) => item.category;
+  : isEventsTab
+  ? (item) => item.category
+  : getNoticeCategory;
 const getItemBody = isAcademicTab ? getCalendarDescription : isEventsTab ? getEventBody : isHolidaysTab ? getHolidayBody : getNoticeBody;
 const getItemStatus = isAcademicTab ? getCalendarStatus : isEventsTab ? getEventStatus : isHolidaysTab ? getHolidayStatus : getNoticeStatus;
 const getItemAttachments = isAcademicTab ? getCalendarAttachments : isEventsTab ? getEventAttachments : isHolidaysTab ? getHolidayAttachments : getNoticeAttachments;
@@ -1319,6 +1482,7 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
                 setEditingCalendarUUID(null);
                 setEditingNoticeUUID(null);
                 setEditingEventUUID(null);
+                setEditingHolidayUUID(null);
                 setFormErrors({});
               }
             }}
@@ -1327,13 +1491,39 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
               <Button
                 size="sm"
                 className="gradient-primary border-0"
+                disabled={isNotesTab && noticeCategories.length === 0}
+                title={
+                  isNotesTab && noticeCategories.length === 0
+                    ? "Create a category first using the + button on the tabs"
+                    : undefined
+                }
                 onClick={() => {
+                  resetForm();
                   setEditingCalendarUUID(null);
                   setEditingNoticeUUID(null);
                   setEditingEventUUID(null);
-                  if (tabCategory) {
-                    setForm((current) => ({ ...current, category: tabCategory }));
-                  }
+                  setEditingHolidayUUID(null);
+
+                  // Fixed: previously this always fell back to the literal
+                  // string "Academic" for the Notices/category tabs, even
+                  // though the backend's NoteCreateRequest.category_uuid
+                  // needs an actual category UUID from noticeCategories, not
+                  // an enum label. Compute the right default per tab.
+                  const defaultCategory = isAcademicTab
+                    ? "Academic"
+                    : isEventsTab
+                    ? "Events"
+                    : isHolidaysTab
+                    ? "Holiday"
+                    : activeTab.startsWith("category:")
+                    ? activeTab.slice("category:".length)
+                    : noticeCategories[0]?.categories_uuid ?? "";
+
+                  setForm((current) => ({
+                    ...current,
+                    category: defaultCategory,
+                    audience: "All",
+                  }));
                 }}
               >
                 <Plus className="h-4 w-4" />
@@ -1437,21 +1627,42 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
                     <Label>Category</Label>
                     <Select
                       value={form.category}
-                      onValueChange={(v) =>
-                        setForm((f) => ({ ...f, category: v }))
-                      }
+                      onValueChange={(v) => {
+                        setForm((f) => ({ ...f, category: v }));
+                        setFormErrors((er) => ({ ...er, category: undefined }));
+                      }}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
+                      <SelectTrigger className={formErrors.category ? "border-destructive" : ""}>
+                        <SelectValue placeholder={isNotesTab && noticeCategories.length === 0 ? "No categories yet" : undefined} />
                       </SelectTrigger>
                       <SelectContent>
-                        {cats.map((c) => (
-                          <SelectItem key={c} value={c}>
-                            {c}
-                          </SelectItem>
-                        ))}
+                        {isNotesTab
+                          ? noticeCategories.map((category) => (
+                              <SelectItem
+                                key={category.categories_uuid}
+                                value={category.categories_uuid}
+                              >
+                                {category.name}
+                              </SelectItem>
+                            ))
+                          : cats.map((c) => (
+                              <SelectItem key={c} value={c}>
+                                {c}
+                              </SelectItem>
+                            ))}
                       </SelectContent>
                     </Select>
+                    {formErrors.category && (
+                      <div className="flex items-center gap-1 text-xs text-destructive">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        {formErrors.category}
+                      </div>
+                    )}
+                    {isNotesTab && noticeCategories.length === 0 && !formErrors.category && (
+                      <div className="text-xs text-muted-foreground">
+                        No categories yet — add one from the "+" button on the tabs above.
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label>Audience</Label>
@@ -1465,7 +1676,11 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {auds.map((a) => (
+                        {/* The /communications schema (NoteCreateRequest) has no
+                            class_uuid/section_uuid fields, so "Class" audience
+                            is only offered where the backend can store it
+                            (Academic Calendar, Events, Holidays). */}
+                        {(isNotesTab ? NOTE_AUDIENCES : auds).map((a) => (
                           <SelectItem key={a} value={a}>
                             {a}
                           </SelectItem>
@@ -1474,7 +1689,7 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
                     </Select>
                   </div>
                 </div>
-                {form.audience === "Class" && (
+                {form.audience === "Class" && (isAcademicTab || isEventsTab || isHolidaysTab) && (
   <div className="grid grid-cols-2 gap-3">
     <div className="space-y-1.5">
       <Label>Class</Label>
@@ -1684,20 +1899,182 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
           </Dialog>
         }
       />
+      <Tabs value={workspaceTab} onValueChange={setWorkspaceTab} className="mb-4">
+        <TabsList>
+          <TabsTrigger value="categories">Categories</TabsTrigger>
+          <TabsTrigger value="communications">Communications</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {workspaceTab === "categories" && (
+        <Card>
+          <CardContent className="space-y-4 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">Communication Categories</h2>
+                <p className="text-sm text-muted-foreground">Add, rename, or remove notice categories.</p>
+              </div>
+              <Popover open={addingCategory} onOpenChange={setAddingCategory}>
+                <PopoverTrigger asChild>
+                  <Button type="button" size="sm"><Plus className="mr-1.5 h-4 w-4" />Add Category</Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-3" align="end">
+                  <div className="flex flex-col gap-2">
+                    <Label>Category name</Label>
+                    <Input value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="e.g. Academic" />
+                    <Button type="button" size="sm" onClick={handleCreateCategory} disabled={savingCategory || !newCategoryName.trim()}>
+                      {savingCategory ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+            {noticeCategories.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">No categories yet. Create one to start adding communications.</p>
+            ) : (
+              <div className="space-y-2">
+                {noticeCategories.map((category) => {
+                  const editing = editingCategory?.categories_uuid === category.categories_uuid;
+                  return (
+                    <div key={category.categories_uuid} className="flex items-center gap-2 rounded-md border p-2">
+                      <Input
+                        value={editing ? editingCategoryName : category.name}
+                        readOnly={!editing}
+                        onChange={(event) => setEditingCategoryName(event.target.value)}
+                        className="border-0 bg-transparent shadow-none focus-visible:ring-0"
+                      />
+                      {editing ? (
+                        <>
+                          <Button type="button" size="sm" onClick={handleUpdateCategory} disabled={savingCategory || !editingCategoryName.trim()}>Save</Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => { setEditingCategory(null); setEditingCategoryName(""); }}>Cancel</Button>
+                        </>
+                      ) : (
+                        <Button type="button" size="sm" variant="outline" onClick={() => { setEditingCategory(category); setEditingCategoryName(category.name); }}>Edit</Button>
+                      )}
+                      <Button type="button" size="icon" variant="ghost" className="text-destructive" disabled={savingCategory} onClick={() => handleDeleteCategory(category)} aria-label={`Delete ${category.name}`}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {workspaceTab === "communications" && (
+      <>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-4">
         <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="notices">
-            <Megaphone className="mr-1.5 h-4 w-4" /> Notices
+            <Megaphone className="mr-1.5 h-4 w-4" /> All Notices
           </TabsTrigger>
-          <TabsTrigger value="events">
-            <PartyPopper className="mr-1.5 h-4 w-4" /> Events
-          </TabsTrigger>
-          <TabsTrigger value="academic">
-            <CalendarDays className="mr-1.5 h-4 w-4" /> Academic Calendar
-          </TabsTrigger>
-          <TabsTrigger value="holidays">
-            <CalendarRange className="mr-1.5 h-4 w-4" /> Holiday Calendar
-          </TabsTrigger>
+          {noticeCategories.map((category) => (
+            <div key={category.categories_uuid} className="flex items-center rounded-md border">
+              <TabsTrigger value={`category:${category.categories_uuid}`}>
+                {category.name}
+              </TabsTrigger>
+              <Popover
+                open={editingCategory?.categories_uuid === category.categories_uuid}
+                onOpenChange={(open) => {
+                  setEditingCategory(open ? category : null);
+                  setEditingCategoryName(open ? category.name : "");
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    aria-label={`Manage ${category.name} category`}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-60 p-3" align="start">
+                  <div className="flex flex-col gap-2">
+                    <Label className="text-xs">Category name</Label>
+                    <Input
+                      value={editingCategoryName}
+                      onChange={(event) => setEditingCategoryName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          handleUpdateCategory();
+                        }
+                      }}
+                    />
+                    <div className="flex justify-between gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={savingCategory}
+                        onClick={() => handleDeleteCategory(category)}
+                      >
+                        Delete
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={savingCategory || !editingCategoryName.trim()}
+                        onClick={handleUpdateCategory}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          ))}
+
+          {/* Quick "add category" control — creates a category via the API and
+              switches straight to its tab so a notice can be added under it. */}
+          <Popover open={addingCategory} onOpenChange={setAddingCategory}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 ml-1 shrink-0"
+                aria-label="Add category"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2" align="start">
+              <div className="flex flex-col gap-2">
+                <Label className="text-xs">New category</Label>
+                <Input
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="Category name"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleCreateCategory();
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  type="button"
+                  onClick={handleCreateCategory}
+                  disabled={savingCategory || !newCategoryName.trim()}
+                >
+                  {savingCategory ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    "Add"
+                  )}
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         </TabsList>
       </Tabs>
 
@@ -1771,7 +2148,7 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
                               )}
                             </Button>
                           </PopoverTrigger>
-                        <PopoverContent align="end" className="w-36 p-1">
+                        <PopoverContent align="end" className="w-40 p-1">
                             <button
                               type="button"
                               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted/60 transition-colors"
@@ -1870,6 +2247,19 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
                           </button>
                           <button
                             type="button"
+                            disabled={togglingItemUUID === getItemUUID(n)}
+                            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted/60 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={() => handleToggleItemPublish(n)}
+                          >
+                            {getItemStatus(n) === "Published" ? (
+                              <EyeOff className="h-3.5 w-3.5" />
+                            ) : (
+                              <Send className="h-3.5 w-3.5" />
+                            )}
+                            {getItemStatus(n) === "Published" ? "Unpublish" : "Publish"}
+                          </button>
+                          <button
+                            type="button"
                             className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
                             onClick={() => handleDeleteItem(n)}
                           >
@@ -1879,10 +2269,6 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
                         </PopoverContent>
                       </Popover>
                     </div>
-                    {/* <div className="text-[11px] text-muted-foreground mt-0.5">
-                      {n.by} · {new Date(n.createdAt).toLocaleDateString("en-IN")}{" "}
-                      · {n.acknowledgement_count ?? 0} acknowledgements
-                    </div> */}
                     {(n.start_date ?? n.startDate) && (
                       <div className="text-[11px] text-muted-foreground mt-0.5">
                         {n.start_date ?? new Date(n.startDate).toISOString().slice(0, 10)}
@@ -1946,6 +2332,8 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
             <PaginationBar {...noticesPage} itemLabel={sectionLabel.toLowerCase() + "s"} showPageSize={false} />
           </CardContent>
         </Card>
+      )}
+      </>
       )}
     </PageContainer>
   );

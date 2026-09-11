@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import {
   Dialog,
@@ -19,6 +20,11 @@ import {
   SelectValue,
 } from "./ui/select";
 import { toast } from "sonner";
+
+function isEmpty(value) {
+  return value === undefined || value === null || String(value).trim() === "";
+}
+
 export function CrudDialog({
   open,
   onOpenChange,
@@ -36,14 +42,43 @@ export function CrudDialog({
     ]),
   );
   const [data, setData] = useState(initial ?? blank);
+  const [errors, setErrors] = useState({});
+
   useEffect(() => {
-    if (open) setData(initial ?? blank); /* eslint-disable-next-line */
+    if (open) {
+      setData(initial ?? blank);
+      setErrors({});
+    } /* eslint-disable-next-line */
   }, [open]);
+
+  const updateField = (name, value) => {
+    setData((p) => ({ ...p, [name]: value }));
+    // Clear that field's error as soon as the user fixes it
+    setErrors((p) => (p[name] ? { ...p, [name]: undefined } : p));
+  };
+
+  const validate = () => {
+    const nextErrors = {};
+    fields.forEach((f) => {
+      if (!f.required) return;
+      const value = data[f.name];
+      const empty =
+        f.type === "number" ? value === undefined || value === null || Number.isNaN(value) : isEmpty(value);
+      if (empty) {
+        nextErrors[f.name] = `${f.label} is required.`;
+      }
+    });
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
   const submit = () => {
+    if (!validate()) return;
     onSubmit?.(data);
     toast.success(submitLabel + " — saved");
     onOpenChange(false);
   };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
@@ -58,21 +93,23 @@ export function CrudDialog({
               key={f.name}
               className={`space-y-1.5 ${f.type === "textarea" ? "sm:col-span-2" : ""}`}
             >
-              <Label className="text-xs text-muted-foreground">{f.label}</Label>
+              <Label className="text-xs text-muted-foreground">
+                {f.label}
+                {f.required && <span className="text-destructive"> *</span>}
+              </Label>
               {f.type === "textarea" ? (
                 <Textarea
                   rows={3}
                   value={String(data[f.name] ?? "")}
-                  onChange={(e) =>
-                    setData({ ...data, [f.name]: e.target.value })
-                  }
+                  onChange={(e) => updateField(f.name, e.target.value)}
+                  className={errors[f.name] ? "border-destructive" : ""}
                 />
               ) : f.type === "select" ? (
                 <Select
                   value={String(data[f.name] ?? "")}
-                  onValueChange={(v) => setData({ ...data, [f.name]: v })}
+                  onValueChange={(v) => updateField(f.name, v)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className={errors[f.name] ? "border-destructive" : ""}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -88,15 +125,16 @@ export function CrudDialog({
                   type={f.type ?? "text"}
                   value={String(data[f.name] ?? "")}
                   onChange={(e) =>
-                    setData({
-                      ...data,
-                      [f.name]:
-                        f.type === "number"
-                          ? Number(e.target.value)
-                          : e.target.value,
-                    })
+                    updateField(
+                      f.name,
+                      f.type === "number" ? Number(e.target.value) : e.target.value,
+                    )
                   }
+                  className={errors[f.name] ? "border-destructive" : ""}
                 />
+              )}
+              {errors[f.name] && (
+                <p className="text-xs text-destructive">{errors[f.name]}</p>
               )}
             </div>
           ))}

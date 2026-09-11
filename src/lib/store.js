@@ -2531,7 +2531,156 @@ export const noticesApi = {
     noticeStore.set((a) => a.filter((x) => x.id !== id));
     activityApi.log("notice", id, "Deleted");
   },
-};// ============ Classes (stream / annual fee / status) ============
+};
+
+// ============================================================
+// ============ Stored Results (Marks Entry → Portal) ==========
+// ============================================================
+// Bucketed by `${class}:${section}:${category}` (category = exam/term
+// name, e.g. "Term 2"). Each bucket holds a map of studentId -> entry.
+// An entry only becomes visible to the student/parent portal once it
+// is individually published via `publishStudent`, OR the whole bucket
+// is published via `publish` (used by "Share to Parents" style bulk
+// actions). This means a single "Share to Student" click never leaks
+// another student's still-unpublished marks in the same class.
+const initStoredResults = {};
+const storedResultsStore = createStore(initStoredResults);
+export const useStoredResults = () => useStore(storedResultsStore);
+
+function resultsKey(klass, section, category) {
+  return `${klass}:${section}:${category}`;
+}
+
+export const storedResultsApi = {
+  key: resultsKey,
+
+  // Save/update one or more student entries in a batch. Does NOT
+  // publish anything by itself — call publish() or publishStudent()
+  // to make an entry visible on the portal.
+  saveBatch: (klass, section, category, entries) => {
+    const key = resultsKey(klass, section, category);
+    storedResultsStore.set((m) => {
+      const bucket = m[key] || { published: false, entries: {} };
+      const nextEntries = { ...bucket.entries };
+      entries.forEach((e) => {
+        nextEntries[e.studentId] = {
+          ...nextEntries[e.studentId],
+          ...e,
+          savedAt: new Date().toISOString(),
+        };
+      });
+      return { ...m, [key]: { ...bucket, entries: nextEntries } };
+    });
+    activityApi.log(
+      "results",
+      key,
+      `Saved ${entries.length} entr${entries.length === 1 ? "y" : "ies"}`,
+    );
+  },
+
+  // Publish the ENTIRE batch (class + section + category) — every
+  // saved entry becomes visible on the portal. Use for bulk actions
+  // like "Share to Parents" / "Lock & Publish All".
+  publish: (klass, section, category) => {
+    const key = resultsKey(klass, section, category);
+    storedResultsStore.set((m) => {
+      const bucket = m[key];
+      if (!bucket) return m;
+      const now = new Date().toISOString();
+      const entries = Object.fromEntries(
+        Object.entries(bucket.entries).map(([sid, e]) => [
+          sid,
+          { ...e, published: true, publishedAt: e.publishedAt || now },
+        ]),
+      );
+      return { ...m, [key]: { ...bucket, published: true, publishedAt: now, entries } };
+    });
+    activityApi.log("results", key, "Published (whole batch) to portal");
+  },
+
+  // Publish just ONE student's entry within a batch — other students'
+  // saved-but-unpublished entries in the same bucket stay hidden.
+  publishStudent: (klass, section, category, studentId) => {
+    const key = resultsKey(klass, section, category);
+    let didPublish = false;
+    storedResultsStore.set((m) => {
+      const bucket = m[key];
+      if (!bucket || !bucket.entries[studentId]) return m;
+      didPublish = true;
+      const now = new Date().toISOString();
+      return {
+        ...m,
+        [key]: {
+          ...bucket,
+          entries: {
+            ...bucket.entries,
+            [studentId]: {
+              ...bucket.entries[studentId],
+              published: true,
+              publishedAt: now,
+            },
+          },
+        },
+      };
+    });
+    if (didPublish)
+      activityApi.log("results", key, `Published for student ${studentId}`);
+    return didPublish;
+  },
+
+  unpublishStudent: (klass, section, category, studentId) => {
+    const key = resultsKey(klass, section, category);
+    storedResultsStore.set((m) => {
+      const bucket = m[key];
+      if (!bucket || !bucket.entries[studentId]) return m;
+      return {
+        ...m,
+        [key]: {
+          ...bucket,
+          entries: {
+            ...bucket.entries,
+            [studentId]: {
+              ...bucket.entries[studentId],
+              published: false,
+              publishedAt: undefined,
+            },
+          },
+        },
+      };
+    });
+    activityApi.log("results", key, `Unpublished for student ${studentId}`);
+  },
+
+  // All saved entries for a class/section/category (published or not)
+  // — useful for the admin-side Results grid.
+  forClassSection: (klass, section, category) => {
+    const key = resultsKey(klass, section, category);
+    const bucket = storedResultsStore.get()[key];
+    return bucket ? Object.values(bucket.entries) : [];
+  },
+
+  // Everything PUBLISHED for a given student, across all classes /
+  // sections / categories — this is what the student/parent portal
+  // should read.
+  forStudent: (studentId) => {
+    const out = [];
+    Object.entries(storedResultsStore.get()).forEach(([key, bucket]) => {
+      const e = bucket.entries[studentId];
+      if (e && e.published) {
+        const [klass, section, category] = key.split(":");
+        out.push({ klass, section, category, ...e });
+      }
+    });
+    return out;
+  },
+
+  isPublished: (klass, section, category, studentId) => {
+    const key = resultsKey(klass, section, category);
+    return !!storedResultsStore.get()[key]?.entries[studentId]?.published;
+  },
+};
+
+// ============ Classes (stream / annual fee / status) ============
 // Mirrors the sections/subjects pattern above. Each row is a single
 // Class + Stream combination (e.g. "XI" + "Science"), matching the
 // Classes tab on the Classes, Sections & Subjects page.

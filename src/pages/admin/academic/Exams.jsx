@@ -1,3 +1,6 @@
+/* eslint-disable react-hooks/immutability */
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable no-unused-vars */
 /* eslint-disable no-undef */
 import { useNavigate } from "react-router-dom";
 import { PageContainer, PageHeader } from "../../../components/page-shell";
@@ -44,6 +47,7 @@ import {
   Trophy,
   AlertTriangle,
   FileText,
+  // eslint-disable-next-line no-unused-vars
   Brain,
   MoreHorizontal,
   Eye,
@@ -51,6 +55,7 @@ import {
   Trash2,
   Upload,
   FileCheck2,
+  Send,
   X,
 } from "lucide-react";
 import { examPerformance } from "../../../lib/mock";
@@ -68,7 +73,10 @@ import {
   PolarRadiusAxis,
   Radar,
 } from "recharts";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
+import { getExamCategories, createExamCategory, updateExamCategory, deleteExamCategory, getExams, createExam,updateExam,deleteExam,getClassSubjects,getRooms, createExamPapersBulk, getExamPapers, getExamPaperById, updateExamPaper, deleteExamPaper, importExamPapers, importExamMarks , getExamMarks, updateExamMarks, publishExamMarks, } from "../../../api/exam";
+import {getQuestionBank,getQuestionBankById,createQuestion,createQuestionsBulk,updateQuestionBank,deleteQuestionBank,importQuestionBank,} from "../../../api/question";
+import { getClasses } from "../../../api/Class";
 import { toast } from "sonner";
 import { CrudDialog } from "../../../components/crud-dialog";
 import { ExcelUpload } from "../../../components/excel-upload";
@@ -87,58 +95,56 @@ import {
   SelectValue,
 } from "../../../components/ui/select";
 import { Label } from "../../../components/ui/label";
+import { useStudents,useStoredResults,storedResultsApi,} from "../../../lib/store";
+// data table in the app paginates and displays "Rows per page" the same way.
 import {
-  useExams,
-  useQuestions,
-  useStudents,
-  examsApi,
-  questionsApi,
-  // useStoredResults,
-  // storedResultsApi,
-} from "../../../lib/store";
+  PaginationBar,
+  RowsPerPageSelect,
+} from "../../../components/pagination-controls";
+import { usePagination } from "../../../lib/use-pagination";
 
-const marks = Array.from({ length: 14 }).map((_, i) => ({
-  roll: i + 1,
-  name:
-    [
-      "Aarav",
-      "Diya",
-      "Vihaan",
-      "Ananya",
-      "Kiara",
-      "Ishaan",
-      "Pari",
-      "Arjun",
-      "Saanvi",
-      "Reyansh",
-      "Anika",
-      "Aadhya",
-      "Krishna",
-      "Tara",
-    ][i] +
-    " " +
-    [
-      "Sharma",
-      "Verma",
-      "Patel",
-      "Iyer",
-      "Mehta",
-      "Nair",
-      "Bose",
-      "Das",
-      "Joshi",
-      "Khanna",
-      "Singh",
-      "Reddy",
-      "Kumar",
-      "Menon",
-    ][i],
-  math: 60 + ((i * 7) % 40),
-  sci: 55 + ((i * 11) % 45),
-  eng: 65 + ((i * 13) % 35),
-  soc: 50 + ((i * 17) % 48),
-  hin: 60 + ((i * 19) % 40),
-}));
+// const marks = Array.from({ length: 14 }).map((_, i) => ({
+//   roll: i + 1,
+//   name:
+//     [
+//       "Aarav",
+//       "Diya",
+//       "Vihaan",
+//       "Ananya",
+//       "Kiara",
+//       "Ishaan",
+//       "Pari",
+//       "Arjun",
+//       "Saanvi",
+//       "Reyansh",
+//       "Anika",
+//       "Aadhya",
+//       "Krishna",
+//       "Tara",
+//     ][i] +
+//     " " +
+//     [
+//       "Sharma",
+//       "Verma",
+//       "Patel",
+//       "Iyer",
+//       "Mehta",
+//       "Nair",
+//       "Bose",
+//       "Das",
+//       "Joshi",
+//       "Khanna",
+//       "Singh",
+//       "Reddy",
+//       "Kumar",
+//       "Menon",
+//     ][i],
+//   math: 60 + ((i * 7) % 40),
+//   sci: 55 + ((i * 11) % 45),
+//   eng: 65 + ((i * 13) % 35),
+//   soc: 50 + ((i * 17) % 48),
+//   hin: 60 + ((i * 19) % 40),
+// }));
 
 function grade(t) {
   if (t >= 91) return { g: "A1", c: "bg-success/15 text-success" };
@@ -204,6 +210,33 @@ function openQuestionPdf(q) {
   else toast.info("Legacy seed question — edit and save it once to generate its PDF.");
 }
 
+// ---- Question Bank import template download (blank .xlsx headers) ----
+async function downloadQuestionTemplate() {
+  try {
+    const XLSX = await import("xlsx");
+    const headers = ["subject", "chapter", "question", "answer", "diff", "marks"];
+    const ws = XLSX.utils.aoa_to_sheet([headers]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Questions");
+    XLSX.writeFile(wb, "questions-template.xlsx");
+  } catch (err) {
+    toast.error("Could not generate template file");
+  }
+}
+
+async function downloadExcelTemplate({ filename, sheetName, headers }) {
+  try {
+    const XLSX = await import("xlsx");
+    const worksheet = XLSX.utils.aoa_to_sheet([headers]);
+    worksheet["!cols"] = headers.map((header) => ({ wch: Math.max(14, String(header).length + 2) }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    XLSX.writeFile(workbook, filename);
+  } catch {
+    toast.error("Could not generate template file");
+  }
+}
+
 const DASH_SUBJECTS = ["Mathematics", "Science", "English", "Social Science", "Hindi"];
 
 function buildDashRows(students) {
@@ -234,8 +267,8 @@ export default function Exams() {
   const [tab, setTab] = useState("categories");
   const [reportOpen, setReportOpen] = useState(false);
   const [reportStudent, setReportStudent] = useState(null);
-  const exams = useExams();
-  const questions = useQuestions();
+   const [questions, setQuestions] = useState([]);
+  const [questionsLoading, setQuestionsLoading] = useState(true);
   const students = useStudents();
   const navigate = useNavigate();
   const [examOpen, setExamOpen] = useState(false);
@@ -244,10 +277,296 @@ export default function Exams() {
   const [qEdit, setQEdit] = useState(null);
   const [multiAddOpen, setMultiAddOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
-  const [search, setSearch] = useState("");
+   const [search, setSearch] = useState("");
+
+  // ---- Classes (from API) ----
+  const [classesData, setClassesData] = useState([]);
+  const [classesLoading, setClassesLoading] = useState(true);
+
+  const [roomsData, setRoomsData] = useState([]);
+const [roomsLoading, setRoomsLoading] = useState(true);
+
+const loadRooms = async () => {
+  try {
+    setRoomsLoading(true);
+    const data = await getRooms();
+    const list = (data ?? []).map((r) => ({
+      uuid: r.room_uuid,
+      name: r.room_name,
+      number: r.room_number,
+      capacity: r.capacity,
+    }));
+    setRoomsData(list);
+  } catch (err) {
+    toast.error("Could not load rooms");
+  } finally {
+    setRoomsLoading(false);
+  }
+};
+
+  const loadClasses = async () => {
+    try {
+      setClassesLoading(true);
+      const res = await getClasses();
+      const list = (res?.data ?? []).map((c) => ({
+        id: c.class_uuid,
+        name: c.class_name,
+        stream: c.stream,
+      }));
+      setClassesData(list);
+    } catch (err) {
+      toast.error("Could not load classes");
+    } finally {
+      setClassesLoading(false);
+    }
+  };
+
+  const [classSubjectsMap, setClassSubjectsMap] = useState({});
+
+useEffect(() => {
+  if (!classesData.length) return;
+  let cancelled = false;
+  (async () => {
+    const entries = await Promise.all(
+      classesData.map(async (c) => {
+        try {
+          const data = await getClassSubjects(c.id);
+          const list = (data ?? []).map((s) => s.subject_name);
+          return [c.name, Array.from(new Set(list))];
+        } catch {
+          return [c.name, []];
+        }
+      }),
+    );
+    if (!cancelled) setClassSubjectsMap(Object.fromEntries(entries));
+  })();
+  return () => { cancelled = true; };
+}, [classesData]);
+
+const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
+  const resolveSubjectUuid = async (className, subjectName) => {
+    const matchedClass = classesData.find((c) => c.name === className);
+    if (!matchedClass) return null;
+    const data = await getClassSubjects(matchedClass.id);
+    const match = (data ?? []).find((s) => s.subject_name === subjectName);
+    return match?.subject_uuid ?? null;
+  };
   const [qfClass, setQfClass] = useState("all");
   const [qfSubject, setQfSubject] = useState("all");
   const [qfExam, setQfExam] = useState("all");
+  const [qfSubjectOptions, setQfSubjectOptions] = useState([]);
+  const [qfSubjectsLoading, setQfSubjectsLoading] = useState(false);
+
+  useEffect(() => {
+    if (qfClass === "all") {
+      setQfSubjectOptions([]);
+      setQfSubject("all");
+      return;
+    }
+    const matchedClass = classesData.find((c) => c.name === qfClass);
+    if (!matchedClass) {
+      setQfSubjectOptions([]);
+      return;
+    }
+    (async () => {
+      try {
+        setQfSubjectsLoading(true);
+        const data = await getClassSubjects(matchedClass.id);
+        const list = (data ?? []).map((s) => ({
+          uuid: s.subject_uuid,
+          name: s.subject_name,
+        }));
+        // dedupe by subject_uuid (API returns one row per faculty assigned)
+        const unique = Array.from(new Map(list.map((s) => [s.uuid, s])).values());
+        setQfSubjectOptions(unique);
+        setQfSubject("all");
+      } catch (err) {
+        toast.error("Could not load subjects for this class");
+        setQfSubjectOptions([]);
+      } finally {
+        setQfSubjectsLoading(false);
+      }
+    })();
+  }, [qfClass, classesData]);
+
+
+  // shared to when "Share to Student" is clicked.
+          const [meClass, setMeClass] = useState("");
+  const [meSection, setMeSection] = useState("");
+  const [meYear, setMeYear] = useState("2025-26");
+  const [meExam, setMeExam] = useState("");
+  const [sharedStudents, setSharedStudents] = useState({}); // { [studentUuid]: true } — tracks which rows were shared
+
+  // ---- Exam Marks (from API) ----
+   // ---- Exams (from API) ----
+  const [exams, setExams] = useState([]);
+  const [examsLoading, setExamsLoading] = useState(true);
+
+  const mapExam = (e) => ({
+    id: e.exam_uuid,
+    categoryUuid: e.category_uuid,
+    // The results endpoint returns `exam_name` (for example, "Test-5").
+    // Older exam-list responses only expose `category_name`, so retain it as
+    // a fallback for those installations.
+    name: e.exam_name ?? e.category_name,
+    classUuid: e.class_uuid,
+    class: e.class_name,
+    from: e.from_date,
+    to: e.to_date,
+    subjects: e.no_of_subjects,
+    status: e.status,
+  });
+
+  const loadExams = async () => {
+    try {
+      setExamsLoading(true);
+      const data = await getExams();
+      const list = (data?.items ?? data ?? []).map(mapExam);
+      setExams(list);
+    } catch (err) {
+      toast.error("Could not load exams");
+    } finally {
+      setExamsLoading(false);
+    }
+  };
+
+  // ---- Exam Marks (from API) ----
+  const [examMarks, setExamMarks] = useState([]);
+  const [examMarksLoading, setExamMarksLoading] = useState(false);
+
+   const mapMarksRow = (r) => {
+    const matchedStudent = students.find(
+      (s) => s.id === r.student_uuid || s.uuid === r.student_uuid || s.student_uuid === r.student_uuid,
+    );
+    return {
+      resultUuid: r.result_uuid,
+      studentUuid: r.student_uuid,
+      sectionUuid: r.section_uuid,
+      name: r.student_name,
+      roll: matchedStudent?.rollNo ?? "—",
+      admissionNo: matchedStudent?.admissionNo,
+      section: r.section_name,
+      subjects: (r.subject_marks ?? []).map((sm) => ({
+        uuid: sm.subject_uuid,
+        name: sm.subject_name,
+        marks: sm.marks,
+        max: sm.max_marks,
+        isAbsent: sm.is_absent,
+      })),
+      total: r.total_obtained ?? r.total_marks ?? 0,
+      totalMax: r.total_maximum ?? r.total_max_marks ?? 0,
+      percentage: r.percentage,
+      gradeLabel: r.grade,
+      status: r.status,
+    };
+  };
+
+  const loadExamMarks = async () => {
+    const matchedClass = classesData.find((c) => c.name === meClass);
+    const matchedExam = exams.find((e) => e.name === meExam && e.class === meClass);
+
+    try {
+      setExamMarksLoading(true);
+      // Fetch immediately when the Mark Entry tab opens.  The API accepts
+      // these filters as optional, so the initial request is `/exam-marks`
+      // and subsequent filter changes narrow the result set.
+      const data = await getExamMarks({
+        examUuid: matchedExam?.id,
+        classUuid: matchedClass?.id,
+      });
+      // Support the direct array shown in the API response as well as the
+      // paginated `items`, `results`, and `data` response shapes.
+      const rows = Array.isArray(data)
+        ? data
+        : data?.items ?? data?.results ?? data?.data ?? [];
+      const list = (Array.isArray(rows) ? rows : [])
+        .filter((r) => !meSection || r.section_name === meSection)
+        .map(mapMarksRow);
+      setExamMarks(list);
+    } catch (err) {
+      toast.error("Could not load marks");
+      setExamMarks([]);
+    } finally {
+      setExamMarksLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab !== "marks") return;
+    loadExamMarks();
+  }, [meClass, meSection, meExam, classesData, exams]);
+
+  const handleTabChange = (nextTab) => {
+    setTab(nextTab);
+    if (nextTab === "marks") loadExamMarks();
+  };
+
+    // ---- Marks Entry -> editable per-subject marks, saved via PUT /exam-marks/{result_uuid} ----
+  const [editedMarks, setEditedMarks] = useState({}); 
+  const [savingMarks, setSavingMarks] = useState({}); 
+  const [publishingAll, setPublishingAll] = useState(false);
+  const [publishingRow, setPublishingRow] = useState({}); 
+
+  const getSubjectMarkValue = (m, subjUuid) => {
+    const edited = editedMarks[m.resultUuid]?.[subjUuid];
+    if (edited !== undefined) return edited;
+    const subj = m.subjects.find((s) => s.uuid === subjUuid);
+    return subj?.marks ?? "";
+  };
+
+  const setSubjectMarkValue = (resultUuid, subjUuid, value) => {
+    setEditedMarks((p) => ({
+      ...p,
+      [resultUuid]: { ...(p[resultUuid] ?? {}), [subjUuid]: value },
+    }));
+  };
+
+  const saveMarksRow = async (m) => {
+    const edited = editedMarks[m.resultUuid] ?? {};
+    let totalMarks = 0;
+    let totalMax = 0;
+    m.subjects.forEach((s) => {
+      const raw = edited[s.uuid];
+      const val = raw !== undefined && raw !== "" ? Number(raw) : Number(s.marks ?? 0);
+      totalMarks += Number.isNaN(val) ? 0 : val;
+      totalMax += Number(s.max) || 0;
+    });
+    const percentage = totalMax ? Math.round((totalMarks / totalMax) * 10000) / 100 : 0;
+    const g = grade(percentage);
+    const status = percentage >= 33 ? "PASS" : "FAIL";
+
+    try {
+      setSavingMarks((p) => ({ ...p, [m.resultUuid]: true }));
+      await updateExamMarks(m.resultUuid, {
+        total_marks: totalMarks,
+        total_max_marks: totalMax,
+        percentage,
+        grade: g.g,
+        status,
+      });
+      toast.success(`Marks updated for ${m.name}`);
+      setEditedMarks((p) => {
+        const next = { ...p };
+        delete next[m.resultUuid];
+        return next;
+      });
+      await loadExamMarks();
+    } catch (err) {
+      toast.error("Could not update marks");
+    } finally {
+      setSavingMarks((p) => ({ ...p, [m.resultUuid]: false }));
+    }
+  };
+
+  const marksSubjectColumns = useMemo(() => {
+    const seen = new Map();
+    examMarks.forEach((m) =>
+      m.subjects.forEach((s) => {
+        if (!seen.has(s.uuid)) seen.set(s.uuid, { name: s.name, max: s.max });
+      }),
+    );
+    return Array.from(seen.entries()).map(([uuid, subject]) => ({ uuid, ...subject }));
+  }, [examMarks]);
 
   // ---- Dashboard filters + nested detail ----
   const [dashClass, setDashClass] = useState("X");
@@ -255,37 +574,216 @@ export default function Exams() {
   const [dashApplied, setDashApplied] = useState(false);
   const [dashDetail, setDashDetail] = useState(null);
 
-  // ---- Exam Categories (UI-only local state) ----
-  const [categories, setCategories] = useState([
-    { id: "c1", name: "Term 1", description: "First Term · Periodic + Final", weight: 50 },
-    { id: "c2", name: "Term 2", description: "Second Term · Periodic + Final", weight: 50 },
-    { id: "c3", name: "Half-Yearly", description: "Mid-session assessment", weight: 30 },
-    { id: "c4", name: "Pre-Board", description: "Mock board examination", weight: 100 },
-  ]);
+   // ---- Exam Categories (UI-only local state) ----
+const [categories, setCategories] = useState([]);
+const [categoriesLoading, setCategoriesLoading] = useState(true);
+const loadCategories = async () => {
+  try {
+    setCategoriesLoading(true);
+    const data = await getExamCategories();
+   const list = (data?.items ?? data ?? []).map((c) => ({
+  id: c.category_uuid,
+  name: c.category_name,
+  description: c.description ?? "",
+}));
+    setCategories(list);
+  } catch (err) {
+    toast.error("Could not load exam categories");
+  } finally {
+    setCategoriesLoading(false);
+  }
+};
+
+// ---- Classes (from API) ----
+useEffect(() => {
+  loadCategories();
+  loadClasses();
+  loadExams();
+  loadRooms();
+  loadPapers();
+  loadQuestions();
+}, []);
+
   const [catOpen, setCatOpen] = useState(false);
+  const [catEdit, setCatEdit] = useState(null);
 
   // ---- Subjects, Papers and Schedule ----
-  const [papers, setPapers] = useState([
-    { id: "p1", category: "Term 1", className: "X", subject: "Mathematics", paper: "Paper 1", date: "2025-09-12", time: "09:30", duration: 180, maxMarks: 80, room: "Hall A" },
-    { id: "p2", category: "Term 1", className: "X", subject: "Science", paper: "Paper 1", date: "2025-09-14", time: "09:30", duration: 180, maxMarks: 80, room: "Hall A" },
-    { id: "p3", category: "Term 1", className: "X", subject: "English", paper: "Paper 1", date: "2025-09-16", time: "09:30", duration: 180, maxMarks: 80, room: "Hall B" },
-  ]);
+  const [papers, setPapers] = useState([]);
+  const [papersLoading, setPapersLoading] = useState(true);
   const [paperOpen, setPaperOpen] = useState(false);
-  // eslint-disable-next-line no-unused-vars
   const [paperEdit, setPaperEdit] = useState(null);
   const [multiPaperOpen, setMultiPaperOpen] = useState(false);
+
+  const mapPaper = (p) => ({
+    id: p.paper_uuid,
+    category: p.category_name,
+    className: p.class_name,
+    subject: p.subject_name,
+    paper: p.paper_name,
+    date: p.paper_date,
+    time: p.paper_time,
+    duration: p.duration_minutes,
+    maxMarks: p.max_marks,
+    room: p.room_name ? `${p.room_name} (${p.room_number})` : "",
+  });
+
+    const mapQuestion = (q) => ({
+    id: q.question_uuid,
+    classUuid: q.class_uuid,
+    className: q.class_name,
+    subjectUuid: q.subject_uuid,
+    subject: q.subject_name,
+    categoryUuid: q.category_uuid,
+    examType: q.category_name,
+    chapter: q.chapter_topic,
+    diff: q.difficulty,
+    marks: q.marks,
+    question: q.question,
+    answer: q.answer_key,
+  });
+
+  const loadQuestions = async () => {
+    try {
+      setQuestionsLoading(true);
+      const data = await getQuestionBank();
+      setQuestions((data?.items ?? data ?? []).map(mapQuestion));
+    } catch (err) {
+      toast.error("Could not load question bank");
+    } finally {
+      setQuestionsLoading(false);
+    }
+  };
+
+  const loadPapers = async () => {
+    try {
+      setPapersLoading(true);
+      const data = await getExamPapers();
+      const list = (data?.items ?? data ?? []).map(mapPaper);
+      setPapers(list);
+    } catch (err) {
+      toast.error("Could not load exam papers");
+    } finally {
+      setPapersLoading(false);
+    }
+  };
+
+
+  // paper's class. [{ uuid, name }]
+const [editSubjects, setEditSubjects] = useState([]);
+const [editSubjectsLoading, setEditSubjectsLoading] = useState(false);
+const [papersImporting, setPapersImporting] = useState(false);
+const papersImportRef = useRef(null);
+const [marksImporting, setMarksImporting] = useState(false);
+const [marksImportOpen, setMarksImportOpen] = useState(false);
+const [marksImportExam, setMarksImportExam] = useState("");
+const [marksImportClass, setMarksImportClass] = useState("");
+const [marksImportFile, setMarksImportFile] = useState(null);
+const [marksImportFileLabel, setMarksImportFileLabel] = useState("");
+
+const resetMarksImportDialog = () => {
+  setMarksImportExam("");
+  setMarksImportClass("");
+  setMarksImportFile(null);
+  setMarksImportFileLabel("");
+};
+
+  const downloadMarksTemplate = async () => {
+    const selectedClass = classesData.find((item) => item.name === marksImportClass);
+    if (!selectedClass) {
+      toast.error("Select a class before downloading the marks template");
+      return;
+    }
+
+    try {
+      const response = await getClassSubjects(selectedClass.id);
+      const subjects = Array.from(
+        new Map(
+          (response ?? []).map((subject) => [subject.subject_uuid, subject.subject_name]),
+        ).values(),
+      );
+
+      await downloadExcelTemplate({
+        filename: `marks-template-${marksImportClass}-${marksImportExam || "exam"}.xlsx`,
+        sheetName: "Student Marks",
+        headers: [
+          "Admission No",
+          "Student No",
+          "Student Name",
+          ...subjects,
+          "Total",
+          "Percentage",
+          "Grade",
+          "Status",
+        ],
+      });
+    } catch {
+      toast.error("Could not load subjects for the marks template");
+    }
+  };
+
+  const downloadPapersTemplate = () =>
+    downloadExcelTemplate({
+      filename: "exam-papers-template.xlsx",
+      sheetName: "Subjects and Papers",
+      headers: [
+        "Exam Name",
+        "Class Name",
+        "Subject Name",
+        "Paper Name",
+        "Paper Date",
+        "Paper Time",
+        "Duration Minutes",
+        "Max Marks",
+        "Room Name",
+      ],
+    });
 
   // ---- Solutions ----
   const [solutions, setSolutions] = useState([]);
   const solnRef = useRef(null);
   const [solnDraft, setSolnDraft] = useState({ category: "Term 1", className: "X" });
+  const [solnSubjectOptions, setSolnSubjectOptions] = useState([]);
 
+  useEffect(() => {
+    if (!solnDraft.className) {
+      setSolnSubjectOptions([]);
+      return;
+    }
+    const matchedClass = classesData.find((c) => c.name === solnDraft.className);
+    if (!matchedClass) {
+      setSolnSubjectOptions([]);
+      return;
+    }
+    (async () => {
+      try {
+        const data = await getClassSubjects(matchedClass.id);
+        const list = (data ?? []).map((s) => ({ uuid: s.subject_uuid, name: s.subject_name }));
+        setSolnSubjectOptions(Array.from(new Map(list.map((s) => [s.uuid, s])).values()));
+      } catch (err) {
+        toast.error("Could not load subjects for this class");
+        setSolnSubjectOptions([]);
+      }
+    })();
+  }, [solnDraft.className, classesData]);
   // ---- Results mapping ----
   const [resCourse, setResCourse] = useState("CBSE");
   const [resClass, setResClass] = useState("X");
   const [resSection, setResSection] = useState("A");
   const [resCategory, setResCategory] = useState("Term 1");
   const [resultRows, setResultRows] = useState({});
+
+    // ---- Question Bank import (class + file chosen together, then submit) ----
+  const [importClassOpen, setImportClassOpen] = useState(false);
+  const [importClass, setImportClass] = useState("");
+  const [importFile, setImportFile] = useState(null);
+  const [importFileLabel, setImportFileLabel] = useState("");
+  const [importSubmitting, setImportSubmitting] = useState(false);
+
+  const resetImportDialog = () => {
+    setImportClass("");
+    setImportFile(null);
+    setImportFileLabel("");
+  };
 
   const resSubjects = useMemo(
     () =>
@@ -307,72 +805,112 @@ export default function Exams() {
     }));
   };
 
-  const submitExam = (d) => {
+     const submitExam = async (d) => {
+    if (!Number(d.subjects) || Number(d.subjects) < 1) {
+      toast.error("No. of Subjects must be at least 1");
+      return;
+    }
+    const matchedCategory = categories.find((c) => c.name === d.name);
+    const matchedClass = classesData.find((c) => c.name === d.class);
+
+    if (!matchedCategory) {
+      toast.error("Please select a valid exam name");
+      return;
+    }
+    if (!matchedClass) {
+      toast.error("Please select a valid class");
+      return;
+    }
+
     const payload = {
-      name: String(d.name),
-      class: String(d.class),
-      from: String(d.from),
-      to: String(d.to),
-      subjects: Number(d.subjects) || 1,
-      status: d.status || "Draft",
+      category_uuid: matchedCategory.id,
+      class_uuid: matchedClass.id,
+      from_date: String(d.from),
+      to_date: String(d.to),
+      no_of_subjects: Number(d.subjects) || 1,
+      status: d.status || "Scheduled",
     };
-    if (examEdit) examsApi.update(examEdit.id, payload);
-    else examsApi.add(payload);
-    toast.success(examEdit ? "Exam updated" : "Exam created");
+
+    try {
+      if (examEdit) {
+        const updated = await updateExam(examEdit.id, payload);
+        setExams((p) => p.map((x) => (x.id === examEdit.id ? mapExam(updated) : x)));
+        toast.success("Exam updated");
+      } else {
+        const created = await createExam(payload);
+        setExams((p) => [...p, mapExam(created)]);
+        toast.success("Exam created");
+      }
+    } catch (err) {
+      toast.error(examEdit ? "Could not update exam" : "Could not create exam");
+    }
   };
-  const submitQ = (d) => {
+  const submitQ = async (d) => {
     const question = String(d.question || "").trim();
     if (!question) return toast.error("Question text is required");
-    const pdf = createQuestionPdf({
-      subject: String(d.subject),
-      chapter: String(d.chapter),
-      question,
-      answer: String(d.answer || ""),
-      marks: Number(d.marks) || 1,
-    });
+
+    const matchedClass = classesData.find((c) => c.name === d.className);
+    const matchedCategory = categories.find((c) => c.name === d.examType);
+    const subjectUuid = await resolveSubjectUuid(d.className, d.subject);
+
+    if (!matchedClass || !matchedCategory || !subjectUuid) {
+      toast.error("Please pick a valid class, subject and examination type");
+      return;
+    }
+
     const payload = {
-      subject: String(d.subject),
-      chapter: String(d.chapter),
-      question,
-      answer: String(d.answer || ""),
-      diff: d.diff || "Medium",
+      class_uuid: matchedClass.id,
+      subject_uuid: subjectUuid,
+      category_uuid: matchedCategory.id,
+      chapter_topic: String(d.chapter || ""),
+      difficulty: d.diff || "Medium",
       marks: Number(d.marks) || 1,
-      className: String(d.className || ""),
-      examType: String(d.examType || ""),
-      pdfName: pdf.name,
-      pdfUrl: pdf.url,
+      question,
+      answer_key: String(d.answer || ""),
     };
-    if (qEdit) questionsApi.update(qEdit.id, payload);
-    else questionsApi.add(payload);
-    toast.success(
-      qEdit ? "Question updated and PDF regenerated" : "Question added and stored as PDF",
-    );
+
+       try {
+      if (qEdit) {
+        await updateQuestionBank(qEdit.id, payload);
+        await loadQuestions();
+        toast.success("Question updated");
+      } else {
+        await createQuestion(payload);
+        await loadQuestions();
+        toast.success("Question added");
+      }
+    } catch (err) {
+      toast.error(qEdit ? "Could not update question" : "Could not add question");
+    }
   };
-  const submitMultiQ = (meta, items) => {
-    items.forEach((it) => {
-      const questionText = stripHtml(it.question);
-      const answerText = stripHtml(it.answer);
-      const pdf = createQuestionPdf({
-        subject: meta.subject,
-        chapter: it.chapter,
-        question: questionText,
-        answer: answerText,
-        marks: it.marks || 1,
-      });
-      questionsApi.add({
-        subject: meta.subject,
-        chapter: it.chapter,
-        question: questionText,
-        answer: answerText,
-        diff: it.diff,
-        marks: it.marks || 1,
-        className: meta.className,
-        examType: meta.examType,
-        pdfName: pdf.name,
-        pdfUrl: pdf.url,
-      });
-    });
-    toast.success(`${items.length} question${items.length > 1 ? "s" : ""} added to ${meta.className} · ${meta.subject} · ${meta.examType}`);
+    const submitMultiQ = async (meta, items) => {
+    const matchedClass = classesData.find((c) => c.name === meta.className);
+    const matchedCategory = categories.find((c) => c.name === meta.examType);
+    const subjectUuid = await resolveSubjectUuid(meta.className, meta.subject);
+
+    if (!matchedClass || !matchedCategory || !subjectUuid) {
+      toast.error("Please pick a valid class, subject and examination type");
+      return;
+    }
+
+    const payloads = items.map((it) => ({
+      class_uuid: matchedClass.id,
+      subject_uuid: subjectUuid,
+      category_uuid: matchedCategory.id,
+      chapter_topic: it.chapter || "",
+      difficulty: it.diff || "Medium",
+      marks: Number(it.marks) || 1,
+      question: stripHtml(it.question),
+      answer_key: stripHtml(it.answer),
+    }));
+    try {
+      const res = await createQuestionsBulk(payloads);
+      const count = res?.total_created ?? payloads.length;
+      await loadQuestions();
+      toast.success(`${count} question${count > 1 ? "s" : ""} added`);
+    } catch (err) {
+      toast.error("Could not add questions");
+    }
   };
   const generatePaper = (d) => {
     const target = Number(d.marks) || 50;
@@ -388,11 +926,112 @@ export default function Exams() {
     toast.success(`Paper generated: ${picked.length} questions · ${total} marks`);
   };
 
-  const classOptions = ["VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+    // ---- Marks Entry -> Publish single student's report to their portal ----
+  const shareReportToStudent = async (m) => {
+    const stu = students.find((s) => s.id === m.studentUuid);
+    if (!stu) {
+      toast.error(`No matching student record found for ${m.name}. Check Students module.`);
+      return;
+    }
+
+    const matchedClass = classesData.find((c) => c.name === meClass);
+    const matchedExam = exams.find((e) => e.name === meExam && e.class === meClass);
+
+    try {
+      setPublishingRow((p) => ({ ...p, [m.resultUuid]: true }));
+      await publishExamMarks({
+        examUuid: matchedExam?.id,
+        classUuid: matchedClass?.id,
+        sectionUuid: m.sectionUuid,
+        resultUuids: [m.resultUuid],
+        studentUuids: [m.studentUuid],
+      });
+
+      const entry = {
+        studentId: stu.id,
+        studentName: stu.name,
+        admissionNo: stu.admissionNo,
+        marks: Object.fromEntries(m.subjects.map((s) => [s.name, s.marks])),
+      };
+      storedResultsApi.saveBatch(meClass, meSection, meExam, [entry]);
+      storedResultsApi.publish(meClass, meSection, meExam);
+
+      setSharedStudents((p) => ({ ...p, [m.studentUuid]: true }));
+      toast.success(`Report published to ${stu.name}'s student portal`);
+    } catch (err) {
+      toast.error(`Could not publish report for ${stu.name}`);
+    } finally {
+      setPublishingRow((p) => ({ ...p, [m.resultUuid]: false }));
+    }
+  };
+  // ---- Marks Entry -> Export the current class/section/exam marks as CSV ----
+    // ---- Marks Entry -> Import marks from Excel ----
+  const handleMarksImportResult = (res) => {
+    const saved = res?.saved ?? 0;
+    const errors = res?.errors ?? 0;
+    const warnings = res?.warnings ?? 0;
+    const corrected = res?.corrected_calculation ?? 0;
+
+    const extra = [
+      corrected ? `${corrected} auto-corrected` : null,
+      warnings ? `${warnings} warning(s)` : null,
+      errors ? `${errors} error(s)` : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    if (saved > 0) {
+      toast.success(
+        res?.message
+          ? `${res.message}${extra ? ` (${extra})` : ""}`
+          : `${saved} row(s) imported${extra ? ` — ${extra}` : ""}`,
+      );
+    } else {
+      toast.error(extra || "No rows were imported");
+    }
+
+    if (res?.errors_detail?.length) {
+      const first = res.errors_detail[0];
+      toast.error(`Row ${first.row} (${first.admission_no}): ${first.errors?.[0]}`);
+    }
+  };
+
+  // ---- Marks Entry -> Export the current class/section/exam marks as CSV ----
+  const exportMarksCsv = () => {
+    if (!examMarks.length) {
+      toast.error("No marks to export");
+      return;
+    }
+    const subjectNames = marksSubjectColumns.map((c) => c.name);
+    const rows = [["Roll", "Name", ...subjectNames, "Total", "%", "Grade", "Status"]];
+    examMarks.forEach((m) => {
+      const subjMap = Object.fromEntries(m.subjects.map((s) => [s.uuid, s.marks]));
+      rows.push([
+        m.roll,
+        m.name,
+        ...marksSubjectColumns.map((c) => subjMap[c.uuid] ?? ""),
+        m.total,
+        m.percentage,
+        m.gradeLabel ?? grade(m.percentage ?? 0).g,
+        m.status ?? "",
+      ]);
+    });
+    const blob = new Blob([rows.map((r) => r.join(",")).join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `marks-${meClass}-${meSection}-${meExam}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Marks exported");
+  };
+
+    const classOptions = classesData.length
+    ? classesData.map((c) => c.name)
+    : ["VI", "VII", "VIII", "IX", "X", "XI", "XII"];
   const subjectOptions = ["Math", "Science", "English", "Social", "Hindi", "CS", "Biology", "Economics"];
-  const examTypeOptions = Array.from(
-    new Set(["Unit Test", "Term 1", "Term 2", "Half-Yearly", "Pre-Board", ...categories.map((c) => c.name)]),
-  );
+  const examTypeOptions = categories.map((c) => c.name);
+  const examNameOptions = Array.from(new Set(exams.map((e) => e.name))).filter(Boolean);
 
   const filteredQ = questions.filter((q) => {
     if (search && !(q.subject + q.chapter + q.id + q.question).toLowerCase().includes(search.toLowerCase())) return false;
@@ -401,6 +1040,14 @@ export default function Exams() {
     if (qfExam !== "all" && q.examType !== qfExam) return false;
     return true;
   });
+
+  // ---- Pagination — same usePagination + PaginationBar/RowsPerPageSelect
+  // pattern as the Timetable Engine page, applied to every data table here.
+  const categoriesPage = usePagination(categories, 10);
+  const examsPage = usePagination(exams, 10);
+  const papersPage = usePagination(papers, 10);
+  const questionsPage = usePagination(filteredQ, 10);
+  const marksPage = usePagination(examMarks, 10);
 
   const dashStudents = useMemo(
     () => students.filter((s) => s.class === dashClass && s.section === dashSection),
@@ -418,10 +1065,6 @@ export default function Exams() {
         title="Examination Engine"
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => toast.success("Marks CSV exported")}>
-              <Download className="h-4 w-4" />
-              Export Marks
-            </Button>
             {/* <Button
               size="sm"
               className="gradient-primary border-0"
@@ -466,7 +1109,7 @@ export default function Exams() {
         />
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto">
           {/* <TabsTrigger value="dash">Dashboard</TabsTrigger> */}
           <TabsTrigger value="categories">Categories</TabsTrigger>
@@ -477,7 +1120,7 @@ export default function Exams() {
           {/* <TabsTrigger value="templates">Templates</TabsTrigger> */}
           {/* <TabsTrigger value="solutions">Solutions</TabsTrigger> */}
           <TabsTrigger value="marks">Marks Entry</TabsTrigger>
-          <TabsTrigger value="results">Results</TabsTrigger>
+          <TabsTrigger value="results">Top Performers</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dash" className="mt-4 space-y-4">
@@ -624,9 +1267,19 @@ export default function Exams() {
               <div>
                 <CardTitle className="text-base">Exam Categories</CardTitle>
               </div>
-              <Button size="sm" className="gradient-primary border-0" onClick={() => setCatOpen(true)}>
-                <Plus className="h-4 w-4" /> New Category
-              </Button>
+              <div className="flex items-center gap-3">
+                <RowsPerPageSelect {...categoriesPage} />
+                <Button
+                  size="sm"
+                  className="gradient-primary border-0"
+                  onClick={() => {
+                    setCatEdit(null);
+                    setCatOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" /> New Category
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -638,28 +1291,70 @@ export default function Exams() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {categories.map((c) => (
+                  {categoriesPage.pageItems.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell className="text-muted-foreground">{c.description}</TableCell>
                       {/* <TableCell>{c.weight}%</TableCell> */}
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => {
-                            setCategories((p) => p.filter((x) => x.id !== c.id));
-                            toast.success("Category removed");
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {/* <DropdownMenuItem onClick={() => toast.info(`${c.name} · ${c.description}`)}>
+                              <Eye className="h-4 w-4" />
+                              View
+                            </DropdownMenuItem> */}
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setCatEdit(c);
+                                setCatOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                             onClick={async () => {
+  try {
+    await deleteExamCategory(c.id);
+    setCategories((p) => p.filter((x) => x.id !== c.id));
+    toast.success("Category removed");
+  } catch (err) {
+    toast.error("Could not delete category");
+  }
+}}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))}
+{categoriesLoading && (
+  <TableRow>
+    <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-8">
+      Loading categories…
+    </TableCell>
+  </TableRow>
+)}
+{!categoriesLoading && !categoriesPage.pageItems.length && (
+  <TableRow>
+    <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-8">
+      No categories yet.
+    </TableCell>
+  </TableRow>
+)}
                 </TableBody>
               </Table>
+              <PaginationBar {...categoriesPage} itemLabel="categories" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -670,16 +1365,19 @@ export default function Exams() {
               <div>
                 <CardTitle className="text-base">Exam Schedule</CardTitle>
               </div>
-              <Button
-                size="sm"
-                className="gradient-primary border-0"
-                onClick={() => {
-                  setExamEdit(null);
-                  setExamOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4" /> New Exam
-              </Button>
+              <div className="flex items-center gap-3">
+                <RowsPerPageSelect {...examsPage} />
+                <Button
+                  size="sm"
+                  className="gradient-primary border-0"
+                  onClick={() => {
+                    setExamEdit(null);
+                    setExamOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" /> New Exam
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -695,7 +1393,7 @@ export default function Exams() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {exams.map((u) => (
+                  {examsPage.pageItems.map((u) => (
                     <TableRow
                       key={u.id}
                       className="cursor-pointer hover:bg-muted/40"
@@ -750,12 +1448,17 @@ export default function Exams() {
     Edit
   </DropdownMenuItem>
   <DropdownMenuSeparator />
-  <DropdownMenuItem
+   <DropdownMenuItem
     className="text-destructive focus:text-destructive"
-    onClick={(e) => {
+    onClick={async (e) => {
       e.stopPropagation();
-      examsApi.remove(u.id);
-      toast.success("Exam deleted");
+      try {
+        await deleteExam(u.id);
+        setExams((p) => p.filter((x) => x.id !== u.id));
+        toast.success("Exam deleted");
+      } catch (err) {
+        toast.error("Could not delete exam");
+      }
     }}
   >
     <Trash2 className="h-4 w-4" />
@@ -766,8 +1469,23 @@ export default function Exams() {
                       </TableCell>
                     </TableRow>
                   ))}
+                                   {examsLoading && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
+                        Loading exams…
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!examsLoading && !examsPage.pageItems.length && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
+                        No exams scheduled yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+              <PaginationBar {...examsPage} itemLabel="exams" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -778,31 +1496,52 @@ export default function Exams() {
               <div>
                 <CardTitle className="text-base">Subjects & Papers</CardTitle>
               </div>
-              <div className="flex gap-2">
-                <ExcelUpload
-                  label="Import Papers"
-                  templateHeaders={["category", "className", "subject", "paper", "date", "time", "duration", "maxMarks", "room"]}
-                  templateName="exam-papers-template.xlsx"
-                  onRows={(rows) => {
-                    const fresh = rows.filter((r) => r.subject).map((r, i) => ({
-                      id: `xp-${Date.now()}-${i}`,
-                      category: r.category || "Term 1",
-                      className: r.className || "X",
-                      subject: r.subject,
-                      paper: r.paper || "Paper 1",
-                      date: r.date || "",
-                      time: r.time || "09:30",
-                      duration: Number(r.duration) || 180,
-                      maxMarks: Number(r.maxMarks) || 80,
-                      room: r.room || "Hall A",
-                    }));
-                    setPapers((p) => [...p, ...fresh]);
+              <div className="flex gap-2 items-center">
+                <RowsPerPageSelect {...papersPage} />
+                <Button size="sm" variant="outline" onClick={downloadPapersTemplate}>
+                  <Download className="h-4 w-4" />
+                  Template
+                </Button>
+                                <input
+                  ref={papersImportRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  hidden
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    try {
+                      setPapersImporting(true);
+                      const res = await importExamPapers(file);
+                      await loadPapers();
+                      toast.success(
+                        res?.message ||
+                          `${res?.created_papers ?? 0} paper(s) imported`,
+                      );
+                    } catch (err) {
+                      toast.error("Could not import papers");
+                    } finally {
+                      setPapersImporting(false);
+                    }
                   }}
                 />
                 <Button
                   size="sm"
+                  variant="outline"
+                  disabled={papersImporting}
+                  onClick={() => papersImportRef.current?.click()}
+                >
+                  <Upload className="h-4 w-4" />
+                  {papersImporting ? "Importing…" : "Import Papers"}
+                </Button>
+                <Button
+                  size="sm"
                   className="gradient-primary border-0"
-                  onClick={() => setMultiPaperOpen(true)}
+                  onClick={() => {
+                    setPaperEdit(null);
+                    setMultiPaperOpen(true);
+                  }}
                 >
                   <Plus className="h-4 w-4" /> Add Subject / Paper
                 </Button>
@@ -825,7 +1564,7 @@ export default function Exams() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {papers.map((p) => (
+                  {papersPage.pageItems.map((p) => (
                     <TableRow key={p.id}>
                       <TableCell><Badge variant="secondary">{p.category}</Badge></TableCell>
                       <TableCell>{p.className}</TableCell>
@@ -837,18 +1576,105 @@ export default function Exams() {
                       <TableCell>{p.maxMarks}</TableCell>
                       <TableCell>{p.room}</TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => setPapers((x) => x.filter((y) => y.id !== p.id))}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {/* <DropdownMenuItem
+                              onClick={() =>
+                                toast.info(`${p.subject} · ${p.paper} · ${p.date} ${p.time} · ${p.room}`)
+                              }
+                            >
+                              <Eye className="h-4 w-4" />
+                              View
+                            </DropdownMenuItem> */}
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                try {
+                                  const full = await getExamPaperById(p.id);
+                                  const matchedClass = classesData.find(
+                                    (c) => c.id === full.class_uuid,
+                                  );
+                                  setEditSubjects([]);
+                                  if (matchedClass) {
+                                    try {
+                                      setEditSubjectsLoading(true);
+                                      const subjData = await getClassSubjects(matchedClass.id);
+                                      const unique = Array.from(
+                                        new Map(
+                                          (subjData ?? []).map((s) => [
+                                            s.subject_uuid,
+                                            { uuid: s.subject_uuid, name: s.subject_name },
+                                          ]),
+                                        ).values(),
+                                      );
+                                      setEditSubjects(unique);
+                                    } catch {
+                                      toast.error("Could not load subjects for this class");
+                                    } finally {
+                                      setEditSubjectsLoading(false);
+                                    }
+                                  }
+                                  setPaperEdit({
+                                    id: full.paper_uuid,
+                                    examUuid: full.exam_uuid,
+                                    categoryUuid: full.category_uuid,
+                                    category: full.category_name,
+                                    classUuid: full.class_uuid,
+                                    className: full.class_name,
+                                    subjectUuid: full.subject_uuid,
+                                    subject: full.subject_name,
+                                    roomUuid: full.room_uuid,
+                                    room: full.room_name
+                                      ? `${full.room_name} (${full.room_number})`
+                                      : "",
+                                    paper: full.paper_name,
+                                    date: full.paper_date,
+                                    time: (full.paper_time || "09:30:00").slice(0, 5),
+                                    duration: full.duration_minutes,
+                                    maxMarks: full.max_marks,
+                                  });
+                                  setPaperOpen(true);
+                                } catch (err) {
+                                  toast.error("Could not load paper details");
+                                }
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={async () => {
+                                try {
+                                  await deleteExamPaper(p.id);
+                                  setPapers((x) => x.filter((y) => y.id !== p.id));
+                                  toast.success("Paper deleted");
+                                } catch (err) {
+                                  toast.error("Could not delete paper");
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))}
-                  {!papers.length && (
+                  {papersLoading && (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
+                        Loading papers…
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!papersLoading && !papers.length && (
                     <TableRow>
                       <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
                         No papers yet.
@@ -857,6 +1683,7 @@ export default function Exams() {
                   )}
                 </TableBody>
               </Table>
+              <PaginationBar {...papersPage} itemLabel="papers" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -868,7 +1695,7 @@ export default function Exams() {
                 <CardTitle className="text-base">Question Bank</CardTitle>
                 {/* <CardDescription>{questions.length} questions · Bloom's tagged</CardDescription> */}
               </div>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2 flex-wrap items-center">
                 <Input
                   placeholder="Search…"
                   className="h-8 w-48"
@@ -882,11 +1709,18 @@ export default function Exams() {
                     {classOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Select value={qfSubject} onValueChange={setQfSubject}>
-                  <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Subject" /></SelectTrigger>
+                             <Select value={qfSubject} onValueChange={setQfSubject} disabled={qfClass === "all"}>
+                  <SelectTrigger className="h-8 w-32">
+                    <SelectValue placeholder={qfClass === "all" ? "Pick class first" : "Subject"} />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Subjects</SelectItem>
-                    {subjectOptions.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    {qfSubjectsLoading && (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>
+                    )}
+                    {qfSubjectOptions.map((s) => (
+                      <SelectItem key={s.uuid} value={s.name}>{s.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Select value={qfExam} onValueChange={setQfExam}>
@@ -912,40 +1746,25 @@ export default function Exams() {
                     toast.info("Open the form — sample extracted values shown below");
                   }}
                 /> */}
-                <ExcelUpload
-                  label="Import Questions"
-                  templateHeaders={["subject", "chapter", "question", "answer", "diff", "marks"]}
-                  templateName="questions-template.xlsx"
-                  onRows={(rows) => {
-                    let n = 0;
-                    rows.forEach((r) => {
-                      if (!r.question) return;
-                      const pdf = createQuestionPdf({
-                        subject: r.subject || "Math",
-                        chapter: r.chapter || "",
-                        question: r.question,
-                        answer: r.answer || "",
-                        marks: Number(r.marks) || 1,
-                      });
-                      questionsApi.add({
-                        subject: r.subject || "Math",
-                        chapter: r.chapter || "",
-                        question: r.question,
-                        answer: r.answer || "",
-                        diff: r.diff || "Medium",
-                        marks: Number(r.marks) || 1,
-                        pdfName: pdf.name,
-                        pdfUrl: pdf.url,
-                      });
-                      n++;
-                    });
-                    if (n) toast.success(`${n} questions added to bank`);
+                <Button size="sm" variant="outline" onClick={downloadQuestionTemplate}>
+                  <Download className="h-4 w-4" />
+                  Template
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    resetImportDialog();
+                    setImportClassOpen(true);
                   }}
-                />
-                <Button size="sm" variant="outline" onClick={() => setGenOpen(true)}>
+                >
+                  <Upload className="h-4 w-4" />
+                  Import Questions
+                </Button>
+                {/* <Button size="sm" variant="outline" onClick={() => setGenOpen(true)}>
                   <Brain className="h-4 w-4" />
                   Generate Paper
-                </Button>
+                </Button> */}
                 <Button
                   size="sm"
                   className="gradient-primary border-0"
@@ -956,13 +1775,14 @@ export default function Exams() {
                   <Plus className="h-4 w-4" />
                   Add Question
                 </Button>
+                <RowsPerPageSelect {...questionsPage} />
               </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>ID</TableHead>
+                    {/* <TableHead>ID</TableHead> */}
                     <TableHead>Question</TableHead>
                     <TableHead>Class</TableHead>
                     <TableHead>Subject</TableHead>
@@ -975,9 +1795,9 @@ export default function Exams() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredQ.map((q) => (
+                  {questionsPage.pageItems.map((q) => (
                     <TableRow key={q.id}>
-                      <TableCell className="font-mono text-xs">{q.id}</TableCell>
+                      {/* <TableCell className="font-mono text-xs">{q.id}</TableCell> */}
                       <TableCell className="max-w-sm">
                         <div className="text-sm font-medium line-clamp-2">{q.question}</div>
                         <div className="text-[11px] text-muted-foreground line-clamp-1">
@@ -1008,8 +1828,22 @@ export default function Exams() {
                         </Badge>
                       </TableCell>
                       <TableCell className="tabular-nums">{q.marks}</TableCell>
-                      <TableCell>
-                        <Button variant="outline" size="sm" className="h-7" onClick={() => openQuestionPdf(q)}>
+                                           <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7"
+                          onClick={() => {
+                            const pdf = createQuestionPdf({
+                              subject: q.subject,
+                              chapter: q.chapter,
+                              question: q.question,
+                              answer: q.answer,
+                              marks: q.marks,
+                            });
+                            window.open(pdf.url, "_blank", "noopener,noreferrer");
+                          }}
+                        >
                           <FileText className="h-3.5 w-3.5" />
                           Open
                         </Button>
@@ -1031,11 +1865,16 @@ export default function Exams() {
                               <Pencil className="h-4 w-4" />
                               Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem
+                                                      <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
-                              onClick={() => {
-                                questionsApi.remove(q.id);
-                                toast.success("Question deleted");
+                              onClick={async () => {
+                                try {
+                                  await deleteQuestionBank(q.id);
+                                  setQuestions((p) => p.filter((x) => x.id !== q.id));
+                                  toast.success("Question deleted");
+                                } catch (err) {
+                                  toast.error("Could not delete question");
+                                }
                               }}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1046,8 +1885,23 @@ export default function Exams() {
                       </TableCell>
                     </TableRow>
                   ))}
+                                    {questionsLoading && (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
+                        Loading questions…
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!questionsLoading && !questionsPage.pageItems.length && (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
+                        No questions match the current filters.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+              <PaginationBar {...questionsPage} itemLabel="questions" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -1077,14 +1931,25 @@ export default function Exams() {
                 </div>
                 <div>
                   <Label className="text-xs">Class</Label>
-                  <Select value={solnDraft.className} onValueChange={(v) => setSolnDraft((p) => ({ ...p, className: v }))}>
+                                   <Select value={solnDraft.className} onValueChange={(v) => setSolnDraft((p) => ({ ...p, className: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{["VI", "VII", "VIII", "IX", "X", "XI", "XII"].map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                    <SelectContent>{classOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-                <div>
+                                <div>
                   <Label className="text-xs">Subject</Label>
-                  <Input value={solnDraft.subject ?? ""} onChange={(e) => setSolnDraft((p) => ({ ...p, subject: e.target.value }))} placeholder="Mathematics" />
+                  <Select
+                    value={solnDraft.subject ?? ""}
+                    onValueChange={(v) => setSolnDraft((p) => ({ ...p, subject: v }))}
+                    disabled={!solnDraft.className}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
+                    <SelectContent>
+                      {solnSubjectOptions.map((s) => (
+                        <SelectItem key={s.uuid} value={s.name}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label className="text-xs">Paper</Label>
@@ -1174,21 +2039,21 @@ export default function Exams() {
           <Card className="border-border/60">
             <CardContent className="p-3 flex flex-wrap gap-2 items-center">
               <span className="text-[10px] uppercase text-muted-foreground mr-1">Filters</span>
-              <Select defaultValue="X">
+                           <Select value={meClass} onValueChange={setMeClass}>
                 <SelectTrigger className="h-8 w-28"><SelectValue placeholder="Class" /></SelectTrigger>
-                <SelectContent>{["VI", "VII", "VIII", "IX", "X", "XI", "XII"].map((c) => <SelectItem key={c} value={c}>Class {c}</SelectItem>)}</SelectContent>
+                <SelectContent>{classOptions.map((c) => <SelectItem key={c} value={c}>Class {c}</SelectItem>)}</SelectContent>
               </Select>
-              <Select defaultValue="B">
+              <Select value={meSection} onValueChange={setMeSection}>
                 <SelectTrigger className="h-8 w-28"><SelectValue placeholder="Section" /></SelectTrigger>
                 <SelectContent>{["A", "B", "C", "D"].map((s) => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}</SelectContent>
               </Select>
-              <Select defaultValue="2025-26">
+              {/* <Select value={meYear} onValueChange={setMeYear}>
                 <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Academic Year" /></SelectTrigger>
                 <SelectContent>{["2024-25", "2025-26", "2026-27"].map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent>
-              </Select>
-              <Select defaultValue="Term 2">
+              </Select> */}
+                <Select value={meExam} onValueChange={setMeExam}>
                 <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Exam" /></SelectTrigger>
-                <SelectContent>{["Term 1", "Term 2", "Final"].map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                <SelectContent>{examNameOptions.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
               </Select>
               {/* <span className="text-xs text-muted-foreground ml-2">Subjects & students refresh based on selected class</span> */}
             </CardContent>
@@ -1196,81 +2061,206 @@ export default function Exams() {
           <Card className="border-border/60">
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
-                <CardTitle className="text-base">Marks Entry · Class X-B · Term 2 · AY 2025-26</CardTitle>
+                <CardTitle className="text-base">
+                  Marks Entry · Class {meClass}-{meSection} · {meExam} · AY {meYear}
+                </CardTitle>
               </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setReportOpen(true)}>Preview Report Card</Button>
-                <Button
+                          <div className="flex gap-2 items-center">
+                <RowsPerPageSelect {...marksPage} />
+                               <Button
                   size="sm"
+                  variant="outline"
+                  disabled={marksImporting}
                   onClick={() => {
-                    toast.success("Marks locked & class report generated for admin");
-                    setReportOpen(true);
+                    resetMarksImportDialog();
+                    setMarksImportOpen(true);
                   }}
                 >
-                  Lock & Publish
+                  <Upload className="h-4 w-4" />
+                  {marksImporting ? "Importing…" : "Import Marks"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={exportMarksCsv}>
+                  <Download className="h-4 w-4" />
+                  Export Marks
+                </Button>
+                              <Button
+                  size="sm"
+                  disabled={publishingAll || !examMarks.length}
+                  onClick={async () => {
+                    const matchedClass = classesData.find((c) => c.name === meClass);
+                    const matchedExam = exams.find((e) => e.name === meExam && e.class === meClass);
+
+                    try {
+                      setPublishingAll(true);
+                      await publishExamMarks({
+                        examUuid: matchedExam?.id,
+                        classUuid: matchedClass?.id,
+                        sectionUuid: examMarks[0]?.sectionUuid,
+                        resultUuids: examMarks.map((m) => m.resultUuid),
+                        studentUuids: examMarks.map((m) => m.studentUuid),
+                      });
+
+                      examMarks.forEach((m) => {
+                        const stu = students.find((s) => s.id === m.studentUuid);
+                        if (stu) {
+                          storedResultsApi.saveBatch(meClass, meSection, meExam, [
+                            {
+                              studentId: stu.id,
+                              studentName: stu.name,
+                              admissionNo: stu.admissionNo,
+                              marks: Object.fromEntries(m.subjects.map((s) => [s.name, s.marks])),
+                            },
+                          ]);
+                        }
+                      });
+                      storedResultsApi.publish(meClass, meSection, meExam);
+                      setSharedStudents((p) => ({
+                        ...p,
+                        ...Object.fromEntries(examMarks.map((m) => [m.studentUuid, true])),
+                      }));
+
+                      toast.success(`Marks locked & reports published to ${examMarks.length} student(s)`);
+                      setReportOpen(true);
+                    } catch (err) {
+                      toast.error("Could not publish results");
+                    } finally {
+                      setPublishingAll(false);
+                    }
+                  }}
+                >
+                  <Send className="h-4 w-4" />
+                  {publishingAll ? "Publishing…" : "Lock & Publish All"}
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="p-0 overflow-auto">
+                       <CardContent className="p-0 overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Roll</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>Math /100</TableHead>
-                    <TableHead>Sci /100</TableHead>
-                    <TableHead>Eng /100</TableHead>
-                    <TableHead>Soc /100</TableHead>
-                    <TableHead>Hindi /100</TableHead>
+                    {marksSubjectColumns.map((c) => (
+                      <TableHead key={c.name}>{c.name} /{c.max}</TableHead>
+                    ))}
                     <TableHead>Total</TableHead>
                     <TableHead>%</TableHead>
                     <TableHead>Grade</TableHead>
-                    <TableHead className="w-10"></TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-16"></TableHead>
+                    <TableHead className="w-36">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {marks.map((m) => {
-                    const total = m.math + m.sci + m.eng + m.soc + m.hin;
-                    const pct = Math.round(total / 5);
-                    const g = grade(pct);
+                  {marksPage.pageItems.map((m) => {
+                    const g = grade(m.percentage ?? 0);
+                    const isShared = !!sharedStudents[m.studentUuid];
                     return (
-                      <TableRow key={m.roll}>
+                      <TableRow key={m.studentUuid}>
                         <TableCell>{m.roll}</TableCell>
                         <TableCell className="font-medium">{m.name}</TableCell>
-                        {[m.math, m.sci, m.eng, m.soc, m.hin].map((v, i) => (
-                          <TableCell key={i}>
-                            <Input defaultValue={v} className="h-7 w-14 text-xs" />
-                          </TableCell>
-                        ))}
-                        <TableCell className="tabular-nums font-semibold">{total}</TableCell>
-                        <TableCell className="tabular-nums">{pct}%</TableCell>
+                                               {marksSubjectColumns.map((c) => {
+                          const subj = m.subjects.find((s) => s.uuid === c.uuid);
+                          return (
+                            <TableCell key={c.uuid}>
+                              {subj?.isAbsent ? (
+                                <Badge variant="outline">Absent</Badge>
+                              ) : (
+                                <Input
+                                  type="number"
+                                  value={getSubjectMarkValue(m, c.uuid)}
+                                  onChange={(e) => setSubjectMarkValue(m.resultUuid, c.uuid, e.target.value)}
+                                  className="h-7 w-14 text-xs"
+                                />
+                              )}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className="tabular-nums font-semibold">{m.total}</TableCell>
+                        <TableCell className="tabular-nums">{m.percentage}%</TableCell>
                         <TableCell>
-                          <Badge className={g.c}>{g.g}</Badge>
+                          <Badge className={g.c}>{m.gradeLabel ?? g.g}</Badge>
                         </TableCell>
                         <TableCell>
+                          <Badge variant={m.status === "PASS" ? "secondary" : "destructive"}>
+                            {m.status ?? "—"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs gradient-primary border-0"
+                              disabled={!!savingMarks[m.resultUuid]}
+                              onClick={() => saveMarksRow(m)}
+                            >
+                              {savingMarks[m.resultUuid] ? "Saving…" : "Save"}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                setReportStudent({
+                                  name: m.name,
+                                  roll: String(m.roll),
+                                  subjects: m.subjects.map((s) => ({ subject: s.name, max: s.max, marks: s.marks })),
+                                });
+                                setReportOpen(true);
+                              }}
+                            >
+                              Report
+                            </Button>
+                          </div>
+                        </TableCell>
+                                                <TableCell>
                           <Button
-                            variant="ghost"
                             size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => {
-                              setReportStudent({ name: m.name, roll: String(m.roll), math: m.math, sci: m.sci, eng: m.eng, soc: m.soc, hin: m.hin });
-                              setReportOpen(true);
-                            }}
+                            variant={isShared ? "outline" : "default"}
+                            className={`h-7 text-xs ${isShared ? "" : "gradient-primary border-0"}`}
+                            disabled={!!publishingRow[m.resultUuid]}
+                            onClick={() => shareReportToStudent(m)}
                           >
-                            Report
+                            {publishingRow[m.resultUuid] ? (
+                              "Publishing…"
+                            ) : isShared ? (
+                              <>
+                                <FileCheck2 className="h-3.5 w-3.5" />
+                                Shared
+                              </>
+                            ) : (
+                              <>
+                                <Send className="h-3.5 w-3.5" />
+                                Share to Student
+                              </>
+                            )}
                           </Button>
                         </TableCell>
                       </TableRow>
                     );
                   })}
+                  {examMarksLoading && (
+                    <TableRow>
+                      <TableCell colSpan={7 + marksSubjectColumns.length} className="text-center text-sm text-muted-foreground py-8">
+                        Loading marks…
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!examMarksLoading && !marksPage.pageItems.length && (
+                    <TableRow>
+                      <TableCell colSpan={7 + marksSubjectColumns.length} className="text-center text-sm text-muted-foreground py-8">
+                        No marks entered yet for Class {meClass}-{meSection} · {meExam}.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+              <PaginationBar {...marksPage} itemLabel="students" showPageSize={false} />
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="results" className="mt-4 space-y-4">
-          <Card className="border-border/60">
+          {/* <Card className="border-border/60">
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
                 <CardTitle className="text-base">Class-wise Result Mapping</CardTitle>
@@ -1436,30 +2426,30 @@ export default function Exams() {
                 </Table>
               </div>
             </CardContent>
-          </Card>
+          </Card> */}
 
           <div className="grid md:grid-cols-2 gap-4">
-            <Card className="border-border/60">
+                        <Card className="border-border/60">
               <CardHeader><CardTitle className="text-base">Top Performers</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                {marks
+                {[...examMarks]
+                  .sort((a, b) => b.total - a.total)
                   .slice(0, 5)
-                  .sort((a, b) => (b.math + b.sci + b.eng + b.soc + b.hin) - (a.math + a.sci + a.eng + a.soc + a.hin))
-                  .map((m, i) => {
-                    const total = m.math + m.sci + m.eng + m.soc + m.hin;
-                    return (
-                      <div key={m.roll} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/40">
-                        <div className="h-8 w-8 rounded-full gradient-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
-                          #{i + 1}
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-sm font-medium">{m.name}</div>
-                          <div className="text-xs text-muted-foreground">Roll {m.roll}</div>
-                        </div>
-                        <div className="text-sm font-semibold tabular-nums">{total}/500</div>
+                  .map((m, i) => (
+                    <div key={m.studentUuid} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/40">
+                      <div className="h-8 w-8 rounded-full gradient-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
+                        #{i + 1}
                       </div>
-                    );
-                  })}
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">{m.name}</div>
+                        <div className="text-xs text-muted-foreground">Roll {m.roll}</div>
+                      </div>
+                      <div className="text-sm font-semibold tabular-nums">{m.total}/{m.totalMax}</div>
+                    </div>
+                  ))}
+                {!examMarks.length && (
+                  <div className="text-sm text-muted-foreground text-center py-6">No marks data yet.</div>
+                )}
               </CardContent>
             </Card>
             <Card className="border-border/60">
@@ -1485,11 +2475,11 @@ export default function Exams() {
         </TabsContent>
       </Tabs>
 
-      <CrudDialog
+      {/* ================= Create/Edit Exam Dialog ================= */}
+           <CrudDialog
         open={examOpen}
         onOpenChange={setExamOpen}
         title={examEdit ? "Edit Exam" : "Create New Exam"}
-        description="Schedule a new examination cycle."
         initial={
           examEdit
             ? {
@@ -1502,22 +2492,26 @@ export default function Exams() {
               }
             : undefined
         }
-        fields={[
-          { name: "name", label: "Exam Name" },
+               fields={[
+          { name: "name", label: "Exam Name", type: "select", options: examTypeOptions, required: true },
           {
             name: "class",
             label: "Class",
             type: "select",
-            options: ["VI", "VII", "VIII", "IX", "X", "XI", "XII"],
+            options: classOptions,
+            required: true,
           },
-          { name: "from", label: "From Date" },
-          { name: "to", label: "To Date" },
-          { name: "subjects", label: "No. of Subjects", type: "number" },
+          { name: "from", label: "From Date", type: "date", required: true },
+          { name: "to", label: "To Date", type: "date", required: true },
+          { name: "subjects", label: "No. of Subjects", type: "number", required: true },
           {
             name: "status",
             label: "Status",
             type: "select",
-            options: ["Draft", "Scheduled", "In Progress", "Completed"],
+            options: examEdit
+              ? ["Scheduled", "In Progress", "Completed"]
+              : ["Scheduled"],
+            required: true,
           },
         ]}
         submitLabel={examEdit ? "Save Exam" : "Create Exam"}
@@ -1528,7 +2522,6 @@ export default function Exams() {
         open={qOpen}
         onOpenChange={setQOpen}
         title={qEdit ? "Edit Question" : "Add Question to Bank"}
-        description="Manually enter the full question, answer key and marks. Saving stores a PDF copy for the question record."
         initial={
           qEdit
             ? {
@@ -1547,11 +2540,16 @@ export default function Exams() {
           { name: "className", label: "Class", type: "select", options: classOptions },
           { name: "examType", label: "Examination Type", type: "select", options: examTypeOptions },
           {
-            name: "subject",
-            label: "Subject",
-            type: "select",
-            options: ["Math", "Science", "English", "Social", "Hindi", "CS", "Biology", "Economics"],
-          },
+  name: "subject",
+  label: "Subject",
+  type: "select",
+  options: Array.from(
+    new Set([
+      ...(qEdit ? subjectsForClass(qEdit.className) : []),
+      ...(qEdit?.subject ? [qEdit.subject] : []),
+    ]),
+  ),
+},
           { name: "chapter", label: "Chapter" },
           { name: "question", label: "Question Text", type: "textarea" },
           { name: "answer", label: "Answer Key / Evaluation Notes", type: "textarea" },
@@ -1567,14 +2565,208 @@ export default function Exams() {
         onSubmit={submitQ}
       />
 
-      <MultiQuestionDialog
+           <MultiQuestionDialog
         open={multiAddOpen}
         onOpenChange={setMultiAddOpen}
         classes={classOptions}
-        subjects={subjectOptions}
+        subjectsForClass={subjectsForClass}
         examTypes={examTypeOptions}
         onSubmit={submitMultiQ}
       />
+
+            {/* ================= Import Questions Dialog (Class + File chosen together) ================= */}
+     <Dialog
+  open={importClassOpen}
+  onOpenChange={(v) => {
+    setImportClassOpen(v);
+    if (!v) resetImportDialog();
+  }}
+>
+  <DialogContent className="max-w-sm">
+    <DialogHeader>
+      <DialogTitle>Import Questions</DialogTitle>
+    </DialogHeader>
+
+    <div className="space-y-2 pt-2">
+      <Label className="text-xs">File</Label>
+      <div className="flex items-center gap-3">
+        <label className="inline-flex items-center px-3 py-1.5 rounded-md border border-input bg-muted/50 text-sm font-medium cursor-pointer hover:bg-muted transition-colors">
+          Choose File
+          <input
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              setImportFile(file);
+              setImportFileLabel(file.name);
+            }}
+          />
+        </label>
+        <span className="text-sm text-muted-foreground truncate">
+          {importFileLabel || "No file chosen"}
+        </span>
+      </div>
+    </div>
+
+    <DialogFooter className="pt-2">
+      <Button variant="outline" size="sm" onClick={() => setImportClassOpen(false)}>
+        Cancel
+      </Button>
+      <Button
+        size="sm"
+        className="gradient-primary border-0"
+        disabled={!importFile || importSubmitting}
+       onClick={async () => {
+  try {
+    setImportSubmitting(true);
+    const matchedClass = classesData.find((c) => c.name === importClass);
+    const res = await importQuestionBank(importFile, matchedClass?.id);
+            await loadQuestions();
+
+            const created = res?.total_created ?? 0;
+            const skipped = res?.total_skipped ?? 0;
+            const errors = res?.total_errors ?? 0;
+            const extra = [
+              skipped ? `${skipped} skipped` : null,
+              errors ? `${errors} error(s)` : null,
+            ].filter(Boolean).join(", ");
+
+            toast.success(
+              res?.message
+                ? `${res.message}${extra ? ` (${extra})` : ""}`
+                : `${created} question${created === 1 ? "" : "s"} imported${extra ? ` — ${extra}` : ""}`,
+            );
+
+            setImportClassOpen(false);
+            resetImportDialog();
+          } catch (err) {
+            toast.error("Could not import questions");
+          } finally {
+            setImportSubmitting(false);
+          }
+        }}
+      >
+                {importSubmitting ? "Importing…" : "Submit"}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+      {/* ================= Import Marks Dialog (Exam + Class chosen first, then File) ================= */}
+      <Dialog
+        open={marksImportOpen}
+        onOpenChange={(v) => {
+          setMarksImportOpen(v);
+          if (!v) resetMarksImportDialog();
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Import Marks</DialogTitle>
+            <DialogDescription>
+              Pick the exam and class this file belongs to, then choose the file.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 pt-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Exam</Label>
+              <Select value={marksImportExam} onValueChange={setMarksImportExam}>
+                <SelectTrigger><SelectValue placeholder="Select exam" /></SelectTrigger>
+                <SelectContent>
+                  {examNameOptions.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Class</Label>
+              <Select value={marksImportClass} onValueChange={setMarksImportClass}>
+                <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
+                <SelectContent>
+                  {classOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">File</Label>
+              <div className="flex items-center gap-3">
+                <label className="inline-flex items-center px-3 py-1.5 rounded-md border border-input bg-muted/50 text-sm font-medium cursor-pointer hover:bg-muted transition-colors">
+                  Choose File
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    hidden
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      setMarksImportFile(file);
+                      setMarksImportFileLabel(file.name);
+                    }}
+                  />
+                </label>
+                <span className="text-sm text-muted-foreground truncate">
+                  {marksImportFileLabel || "No file chosen"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!marksImportClass}
+              onClick={downloadMarksTemplate}
+            >
+              <Download className="h-4 w-4" />
+              Template
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setMarksImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="gradient-primary border-0"
+              disabled={!marksImportExam || !marksImportClass || !marksImportFile || marksImporting}
+              onClick={async () => {
+                const matchedClass = classesData.find((c) => c.name === marksImportClass);
+                const matchedExam = exams.find(
+                  (ex) => ex.name === marksImportExam && ex.class === marksImportClass,
+                );
+
+                if (!matchedClass || !matchedExam) {
+                  toast.error("Please pick a valid exam and class combination");
+                  return;
+                }
+
+                try {
+                  setMarksImporting(true);
+                  const res = await importExamMarks(marksImportFile, {
+                    examUuid: matchedExam.id,
+                    classUuid: matchedClass.id,
+                  });
+                  handleMarksImportResult(res);
+                  setMeClass(marksImportClass);
+                  setMeExam(marksImportExam);
+                  await loadExamMarks();
+                  setMarksImportOpen(false);
+                  resetMarksImportDialog();
+                } catch (err) {
+                  toast.error("Could not import marks");
+                } finally {
+                  setMarksImporting(false);
+                }
+              }}
+            >
+              {marksImporting ? "Importing…" : "Submit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CrudDialog
         open={genOpen}
@@ -1601,71 +2793,198 @@ export default function Exams() {
         onSubmit={generatePaper}
       />
 
-      <CrudDialog
-        open={catOpen}
-        onOpenChange={setCatOpen}
-        title="New Exam Category"
-        fields={[
-          { name: "name", label: "Category Name" },
-          { name: "description", label: "Description", type: "textarea" },
-        ]}
-        submitLabel="Create Category"
-        onSubmit={(d) => {
-          setCategories((p) => [
-            ...p,
-            { id: `c-${Date.now()}`, name: String(d.name), description: String(d.description || ""), weight: Number(d.weight) || 100 },
-          ]);
-          toast.success("Category added");
-        }}
-      />
+<CrudDialog
+  open={catOpen}
+  onOpenChange={(v) => {
+    setCatOpen(v);
+    if (!v) setCatEdit(null);
+  }}
+  title={catEdit ? "Edit Exam Category" : "New Exam Category"}
+  initial={catEdit ? { name: catEdit.name, description: catEdit.description } : undefined}
+  fields={[
+    { name: "name", label: "Category Name", required: true },
+    { name: "description", label: "Description", type: "textarea" },
+  ]}
+  submitLabel={catEdit ? "Save Category" : "Create Category"}
+  onSubmit={async (d) => {
+    const name = String(d.name || "").trim();
+    if (!name) {
+      toast.error("Category name is required");
+      return;
+    }
+    const payload = { category_name: name, description: String(d.description || "") };
+    try {
+      if (catEdit) {
+        const updated = await updateExamCategory(catEdit.id, payload);
+        setCategories((p) =>
+          p.map((x) =>
+            x.id === catEdit.id
+              ? { id: catEdit.id, name: updated?.category_name ?? payload.category_name, description: updated?.description ?? payload.description }
+              : x,
+          ),
+        );
+        toast.success("Category updated");
+      } else {
+        const created = await createExamCategory(payload);
+        setCategories((p) => [
+          ...p,
+          { id: created.category_uuid, name: created.category_name, description: created.description ?? "" },
+        ]);
+        toast.success("Category added");
+      }
+    } catch (err) {
+      toast.error(catEdit ? "Could not update category" : "Could not create category");
+    }
+  }}
+/>
 
       <CrudDialog
         open={paperOpen}
-        onOpenChange={setPaperOpen}
+        onOpenChange={(v) => {
+          setPaperOpen(v);
+          if (!v) {
+            setPaperEdit(null);
+            setEditSubjects([]);
+          }
+        }}
         title={paperEdit ? "Edit Paper" : "Add Subject / Paper"}
-        description="Schedule a subject paper with date, time, room and max marks."
         initial={paperEdit ? { ...paperEdit } : undefined}
         fields={[
-          { name: "category", label: "Category", type: "select", options: categories.map((c) => c.name) },
-          { name: "className", label: "Class", type: "select", options: ["VI", "VII", "VIII", "IX", "X", "XI", "XII"] },
-          { name: "subject", label: "Subject" },
+          { name: "category", label: "Category", type: "select", options: examNameOptions },
+          { name: "className", label: "Class", type: "select", options: classOptions },
+          {
+            name: "subject",
+            label: "Subject",
+            type: "select",
+            options: editSubjects.length
+              ? editSubjects.map((s) => s.name)
+              : paperEdit?.subject
+                ? [paperEdit.subject]
+                : [],
+          },
           { name: "paper", label: "Paper (e.g. Paper 1)" },
           { name: "date", label: "Date", type: "date" },
           { name: "time", label: "Time (HH:MM)" },
           { name: "duration", label: "Duration (mins)", type: "number" },
           { name: "maxMarks", label: "Max Marks", type: "number" },
-          { name: "room", label: "Room / Hall" },
+          {
+            name: "room",
+            label: "Room / Hall",
+            type: "select",
+            options: roomsData.map((r) => `${r.name} (${r.number})`),
+          },
         ]}
         submitLabel={paperEdit ? "Save Paper" : "Add Paper"}
-        onSubmit={(d) => {
-          const payload = {
-            id: paperEdit?.id ?? `xp-${Date.now()}`,
-            category: String(d.category),
-            className: String(d.className),
-            subject: String(d.subject),
-            paper: String(d.paper || "Paper 1"),
-            date: String(d.date),
-            time: String(d.time || "09:30"),
-            duration: Number(d.duration) || 180,
-            maxMarks: Number(d.maxMarks) || 80,
-            room: String(d.room || "Hall A"),
+        onSubmit={async (d) => {
+          const matchedClass = classesData.find((c) => c.name === d.className);
+          const matchedExam = exams.find(
+            (e) => e.name === d.category && e.class === d.className,
+          );
+          const subjMatch = editSubjects.find((s) => s.name === d.subject);
+          const roomMatch = roomsData.find(
+            (r) => `${r.name} (${r.number})` === d.room,
+          );
+
+          const subjectUuid = subjMatch?.uuid || paperEdit?.subjectUuid;
+          const roomUuid = roomMatch?.uuid || paperEdit?.roomUuid;
+
+          if (!matchedClass || !matchedExam || !subjectUuid) {
+            toast.error("Please pick a valid category, class and subject");
+            return;
+          }
+
+          const paperPayload = {
+            class_uuid: matchedClass.id,
+            subject_uuid: subjectUuid,
+            room_uuid: roomUuid || null,
+            paper_name: String(d.paper || "Paper 1"),
+            paper_date: String(d.date),
+            paper_time: d.time ? `${d.time}:00` : "09:30:00",
+            duration_minutes: Number(d.duration) || 180,
+            max_marks: Number(d.maxMarks) || 80,
           };
-          setPapers((p) => (paperEdit ? p.map((x) => (x.id === paperEdit.id ? payload : x)) : [...p, payload]));
-          toast.success(paperEdit ? "Paper updated" : "Paper added");
+
+          try {
+            if (paperEdit) {
+              await updateExamPaper(paperEdit.id, paperPayload);
+              toast.success("Paper updated");
+            } else {
+              await createExamPapersBulk(matchedExam.id, [paperPayload]);
+              toast.success("Paper added");
+            }
+            await loadPapers();
+          } catch (err) {
+            toast.error(paperEdit ? "Could not update paper" : "Could not add paper");
+          }
         }}
       />
 
-      <MultiPaperDialog
-        open={multiPaperOpen}
-        onOpenChange={setMultiPaperOpen}
-        categories={categories.map((c) => c.name)}
-        classOptions={["VI", "VII", "VIII", "IX", "X", "XI", "XII"]}
-        onSubmit={(newPapers) => {
-          setPapers((p) => [...p, ...newPapers]);
-          toast.success(`${newPapers.length} paper(s) added`);
-        }}
-      />
+   <MultiPaperDialog
+  open={multiPaperOpen}
+  onOpenChange={setMultiPaperOpen}
+  categories={examNameOptions}
+  classOptions={classOptions}
+  classesData={classesData}
+  rooms={roomsData}
+  roomsLoading={roomsLoading}
+   onSubmit={async (newPapers) => {
+    const skipped = [];
 
+    // Group by exam_uuid since the API takes ONE exam_uuid per call,
+    // with a "papers" array of per-paper fields only.
+    const groups = new Map(); // exam_uuid -> [{ class_uuid, subject_uuid, ... }]
+
+    for (const p of newPapers) {
+      const matchedClass = classesData.find((c) => c.name === p.className);
+      const matchedExam = exams.find(
+        (e) => e.name === p.category && e.class === p.className,
+      );
+
+      if (!matchedClass || !matchedExam || !p.subjectUuid) {
+        skipped.push(`${p.category} · ${p.className} · ${p.subject || "—"}`);
+        continue;
+      }
+
+      const examUuid = matchedExam.id;
+      if (!groups.has(examUuid)) groups.set(examUuid, []);
+      groups.get(examUuid).push({
+        class_uuid: matchedClass.id,
+        subject_uuid: p.subjectUuid,
+        room_uuid: p.roomUuid || null,
+        paper_name: p.paper || "Paper 1",
+        paper_date: p.date || null,
+        paper_time: p.time ? `${p.time}:00` : null,
+        duration_minutes: Number(p.duration) || 180,
+        max_marks: Number(p.maxMarks) || 80,
+      });
+    }
+
+    if (skipped.length) {
+      toast.error(`Skipped ${skipped.length} row(s) — no matching exam/class/subject found: ${skipped.join(", ")}`);
+    }
+    if (!groups.size) return;
+
+       let createdCount = 0;
+    let anyFailed = false;
+
+    for (const [examUuid, papersForExam] of groups) {
+      try {
+        const res = await createExamPapersBulk(examUuid, papersForExam);
+        createdCount += res?.items?.length ?? papersForExam.length;
+      } catch (err) {
+        anyFailed = true;
+      }
+    }
+
+    if (createdCount) {
+      await loadPapers(); 
+      toast.success(`${createdCount} paper(s) added`);
+    }
+    if (anyFailed) {
+      toast.error("Some papers could not be created");
+    }
+  }}
+/>
       <ReportCardDialog
         open={reportOpen}
         onOpenChange={(v) => {
@@ -1683,15 +3002,9 @@ export default function Exams() {
         }}
         academicYear="2025-26"
         term="Term 2"
-        rows={
-          reportStudent
-            ? [
-                { subject: "Mathematics", max: 100, marks: reportStudent.math },
-                { subject: "Science", max: 100, marks: reportStudent.sci },
-                { subject: "English", max: 100, marks: reportStudent.eng },
-                { subject: "Social Studies", max: 100, marks: reportStudent.soc },
-                { subject: "Hindi", max: 100, marks: reportStudent.hin },
-              ]
+               rows={
+          reportStudent?.subjects
+            ? reportStudent.subjects
             : [
                 { subject: "Mathematics", max: 100, marks: 88 },
                 { subject: "Science", max: 100, marks: 82 },
@@ -1752,14 +3065,10 @@ export default function Exams() {
                   size="sm"
                   className="gradient-primary border-0"
                   onClick={() => {
-                    setReportStudent({
+                                        setReportStudent({
                       name: dashDetail.name,
                       roll: String(dashDetail.roll),
-                      math: dashDetail.subjects[0]?.obtained ?? 0,
-                      sci: dashDetail.subjects[1]?.obtained ?? 0,
-                      eng: dashDetail.subjects[2]?.obtained ?? 0,
-                      soc: dashDetail.subjects[3]?.obtained ?? 0,
-                      hin: dashDetail.subjects[4]?.obtained ?? 0,
+                      subjects: dashDetail.subjects.map((s) => ({ subject: s.subject, max: s.max, marks: s.obtained })),
                     });
                     setDashDetail(null);
                     setReportOpen(true);

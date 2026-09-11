@@ -23,6 +23,7 @@ import Attendance from "./pages/students/Attendance";
 import Fees from "./pages/students/Fees";
 import Library from "./pages/students/Library";
 import StudyMaterials from "./pages/students/Studymaterials";
+import Gallery from "./pages/students/Gallery";
 import Notices from "./pages/students/Notices";
 import Results from "./pages/students/Results";
 import TeacherAttendance from "./pages/teacher/TeacherAttendance";
@@ -86,6 +87,8 @@ import TeacherExams from "./pages/teacher/TeacherExams";
 import TeacherTimetable from "./pages/teacher/Teachertimetable";
 import TeacherNotices from "./pages/teacher/TeacherNotices";
 import TeacherDocuments from "./pages/teacher/TeacherDocuments";
+import AdminGallery from "./pages/admin/AdminGallery";
+
 const router = createBrowserRouter([
   {
     element: <AppLayout />,
@@ -132,6 +135,7 @@ const router = createBrowserRouter([
       { path: "/student/results", element: <Results /> },
       { path: "/student/calendar", element: <Calendar /> },
       { path: "/student/materials", element: <StudyMaterials /> },
+      { path: "/student/gallery", element: <Gallery /> },
       { path: "/student/notices", element: <Notices /> },
       { path: "/student/fees", element: <Fees /> },
       { path: "/student/library", element: <Library /> },
@@ -178,7 +182,7 @@ const router = createBrowserRouter([
       { path: "/subjects/:id", element: <SubjectDetail /> },
       { path: "/classes/:sectionUUID", element: <SectionDetail /> },
       { path: "/sudents/archive", element: <StudentArchive /> },
-
+      { path: "/gallery", element: <AdminGallery /> },
       
 
       

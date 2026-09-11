@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import { useState } from "react";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -21,28 +22,77 @@ const blankDraft = () => ({
 });
 
 export function MultiQuestionDialog({
-  open, onOpenChange, classes, subjects, examTypes, onSubmit,
+  open, onOpenChange, classes, subjectsForClass, examTypes, onSubmit,
 }) {
   const [meta, setMeta] = useState({
     className: classes[0] ?? "X",
-    subject: subjects[0] ?? "Math",
+    subject: "",
     examType: examTypes[0] ?? "Term 1",
   });
+
+  const subjects = subjectsForClass ? subjectsForClass(meta.className) : [];
   const [drafts, setDrafts] = useState([blankDraft()]);
+
+  // ---- Validation state ----
+  const [metaErrors, setMetaErrors] = useState({});
+  const [draftErrors, setDraftErrors] = useState({});
 
   const reset = () => {
     setMeta({ className: classes[0] ?? "X", subject: subjects[0] ?? "Math", examType: examTypes[0] ?? "Term 1" });
     setDrafts([blankDraft()]);
+    setMetaErrors({});
+    setDraftErrors({});
   };
 
   const update = (key, patch) =>
     setDrafts((p) => p.map((d) => (d.key === key ? { ...d, ...patch } : d)));
 
+  const setMetaField = (field, value) => {
+    setMeta((p) => ({ ...p, [field]: value }));
+    if (metaErrors[field]) setMetaErrors((p) => ({ ...p, [field]: undefined }));
+  };
+
+  const updateAndClearError = (key, patch) => {
+    update(key, patch);
+    if (patch.question !== undefined && draftErrors[key]) {
+      setDraftErrors((p) => ({ ...p, [key]: undefined }));
+    }
+  };
+
   const totalMarks = drafts.reduce((s, d) => s + (Number(d.marks) || 0), 0);
 
+  const validate = () => {
+    const nextMetaErrors = {};
+    if (!meta.className) nextMetaErrors.className = "Class is required.";
+    if (!meta.subject) nextMetaErrors.subject = "Subject is required.";
+    if (!meta.examType) nextMetaErrors.examType = "Examination Type is required.";
+
+    const nextDraftErrors = {};
+    drafts.forEach((d) => {
+      const text = d.question.replace(/<[^>]*>/g, "").trim();
+      if (!text) nextDraftErrors[d.key] = "Question text is required.";
+      if (!d.marks || Number(d.marks) < 1) {
+        nextDraftErrors[d.key + "-marks"] = "Marks is required.";
+      }
+      if (!d.chapter || !d.chapter.trim()) {
+        nextDraftErrors[d.key + "-chapter"] = "Chapter / Topic is required.";
+      }
+    });
+
+    setMetaErrors(nextMetaErrors);
+    setDraftErrors(nextDraftErrors);
+
+    return Object.keys(nextMetaErrors).length === 0 && Object.keys(nextDraftErrors).length === 0;
+  };
+
   const save = () => {
+    const isValid = validate();
+    if (!isValid) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
     const valid = drafts.filter((d) => d.question.replace(/<[^>]*>/g, "").trim().length > 0);
-    if (valid.length === 0) return toast.error("Add at least one question with text");
     onSubmit(meta, valid);
     reset();
     onOpenChange(false);
@@ -55,33 +105,63 @@ export function MultiQuestionDialog({
           <DialogTitle className="font-display flex items-center gap-2">
             <ListChecks className="h-5 w-5" /> Add Questions to Bank
           </DialogTitle>
-          <DialogDescription>
+          {/* <DialogDescription>
             Choose the class, subject and examination type, then add one or more questions in a single form.
-          </DialogDescription>
+          </DialogDescription> */}
         </DialogHeader>
 
         {/* Batch context */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-lg border border-border/60 bg-muted/30 p-3">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Class</Label>
-            <Select value={meta.className} onValueChange={(v) => setMeta({ ...meta, className: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+            <Label className="text-xs text-muted-foreground">
+              Class <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={meta.className}
+              onValueChange={(v) => setMetaField("className", v)}
+            >
+              <SelectTrigger className={metaErrors.className ? "border-destructive" : ""}>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>{classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
             </Select>
+            {metaErrors.className && (
+              <p className="text-xs text-destructive">{metaErrors.className}</p>
+            )}
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Subject</Label>
-            <Select value={meta.subject} onValueChange={(v) => setMeta({ ...meta, subject: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+            <Label className="text-xs text-muted-foreground">
+              Subject <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={meta.subject}
+              onValueChange={(v) => setMetaField("subject", v)}
+            >
+              <SelectTrigger className={metaErrors.subject ? "border-destructive" : ""}>
+                <SelectValue placeholder="Select subject" />
+              </SelectTrigger>
               <SelectContent>{subjects.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
             </Select>
+            {metaErrors.subject && (
+              <p className="text-xs text-destructive">{metaErrors.subject}</p>
+            )}
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Examination Type</Label>
-            <Select value={meta.examType} onValueChange={(v) => setMeta({ ...meta, examType: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+            <Label className="text-xs text-muted-foreground">
+              Examination Type <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={meta.examType}
+              onValueChange={(v) => setMetaField("examType", v)}
+            >
+              <SelectTrigger className={metaErrors.examType ? "border-destructive" : ""}>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>{examTypes.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
             </Select>
+            {metaErrors.examType && (
+              <p className="text-xs text-destructive">{metaErrors.examType}</p>
+            )}
           </div>
         </div>
 
@@ -94,7 +174,16 @@ export function MultiQuestionDialog({
                 {drafts.length > 1 && (
                   <button
                     type="button"
-                    onClick={() => setDrafts((p) => p.filter((x) => x.key !== d.key))}
+                    onClick={() => {
+                      setDrafts((p) => p.filter((x) => x.key !== d.key));
+                      setDraftErrors((p) => {
+                        const next = { ...p };
+                        delete next[d.key];
+                        delete next[d.key + "-marks"];
+                        delete next[d.key + "-chapter"];
+                        return next;
+                      });
+                    }}
                     className="inline-flex items-center gap-1 text-xs text-destructive hover:underline"
                   >
                     <Trash2 className="h-3.5 w-3.5" /> Remove
@@ -104,8 +193,23 @@ export function MultiQuestionDialog({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5 sm:col-span-1">
-                  <Label className="text-xs text-muted-foreground">Chapter / Topic</Label>
-                  <Input value={d.chapter} onChange={(e) => update(d.key, { chapter: e.target.value })} placeholder="e.g. Trigonometry" />
+                  <Label className="text-xs text-muted-foreground">
+                    Chapter / Topic <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    value={d.chapter}
+                    className={draftErrors[d.key + "-chapter"] ? "border-destructive" : ""}
+                    onChange={(e) => {
+                      update(d.key, { chapter: e.target.value });
+                      if (draftErrors[d.key + "-chapter"]) {
+                        setDraftErrors((p) => ({ ...p, [d.key + "-chapter"]: undefined }));
+                      }
+                    }}
+                    placeholder="e.g. Trigonometry"
+                  />
+                  {draftErrors[d.key + "-chapter"] && (
+                    <p className="text-xs text-destructive">{draftErrors[d.key + "-chapter"]}</p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Difficulty</Label>
@@ -115,18 +219,40 @@ export function MultiQuestionDialog({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Marks</Label>
-                  <Input type="number" min={1} value={d.marks} onChange={(e) => update(d.key, { marks: Number(e.target.value) })} />
+                  <Label className="text-xs text-muted-foreground">
+                    Marks <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={d.marks}
+                    className={draftErrors[d.key + "-marks"] ? "border-destructive" : ""}
+                    onChange={(e) => {
+                      update(d.key, { marks: Number(e.target.value) });
+                      if (draftErrors[d.key + "-marks"]) {
+                        setDraftErrors((p) => ({ ...p, [d.key + "-marks"]: undefined }));
+                      }
+                    }}
+                  />
+                  {draftErrors[d.key + "-marks"] && (
+                    <p className="text-xs text-destructive">{draftErrors[d.key + "-marks"]}</p>
+                  )}
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Question</Label>
+                <Label className="text-xs text-muted-foreground">
+                  Question <span className="text-destructive">*</span>
+                </Label>
                 <RichTextEditor
                   value={d.question}
-                  onChange={(html) => update(d.key, { question: html })}
+                  onChange={(html) => updateAndClearError(d.key, { question: html })}
                   placeholder="Type the full question. Use the toolbar for bold, lists, super/subscript…"
+                  className={draftErrors[d.key] ? "border-destructive" : ""}
                 />
+                {draftErrors[d.key] && (
+                  <p className="text-xs text-destructive">{draftErrors[d.key]}</p>
+                )}
               </div>
 
               <div className="space-y-1.5">

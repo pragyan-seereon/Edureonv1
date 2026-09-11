@@ -1,146 +1,119 @@
-/* eslint-disable react-hooks/static-components */
-import { PageContainer, PageHeader } from "../../components/page-shell";
-import { Card, CardContent } from "../../components/ui/card";
-import { Button } from "../../components/ui/button";
-import { Badge } from "../../components/ui/badge";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import { Textarea } from "../../components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogDescription } from "../../components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
-import { Plus, Megaphone, Send, Archive, EyeOff, CheckCircle2, CalendarDays } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Megaphone, Search, FileText, Image as ImageIcon, Video, Download, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth } from "../../lib/auth";
-import { useNotices, useSections, useAcademicCalendar, noticesApi } from "../../lib/store";
+import { getTeacherPortalNotices } from "../../api/notice";
+import { PageContainer, PageHeader } from "../../components/page-shell";
+import { Badge } from "../../components/ui/badge";
+import { Card, CardContent } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Button } from "../../components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../components/ui/dialog";
 
-const cats = ["Academic", "Events", "Fees", "Holiday", "Exam", "General"];
-const auds = ["All", "Teachers", "Students", "Parents", "Staff", "Class"];
+const errorMessage = (error) => error?.response?.data?.detail?.message || error?.response?.data?.detail || error?.response?.data?.message || error?.message || "Unable to load notices.";
+const formatDate = (date) => {
+  if (!date) return "—";
+  const parsed = new Date(date);
+  return Number.isNaN(parsed.getTime()) ? date : new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(parsed);
+};
+
+// Normalizes a notice's attachments to {name, type, url}, matching the shape
+// the /communications API returns (original_file_name / mime_type / file_url).
+const getNoticeAttachments = (notice) =>
+  (Array.isArray(notice.attachments) ? notice.attachments : []).map((attachment) => ({
+    name: attachment.original_file_name ?? attachment.name,
+    type: attachment.mime_type ?? attachment.type,
+    url: attachment.file_url ?? attachment.url,
+  }));
+
+// Classifies an attachment as image / video / pdf / other, using the mime
+// type when available and falling back to the file extension.
+const getFileKind = (att) => {
+  const type = att?.type || "";
+  const name = (att?.name || att?.url || "").toLowerCase();
+  if (type.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg|bmp)$/.test(name)) return "image";
+  if (type.startsWith("video/") || /\.(mp4|webm|mov|mkv|avi)$/.test(name)) return "video";
+  if (type === "application/pdf" || /\.pdf$/.test(name)) return "pdf";
+  return "other";
+};
+
+const attachmentIcon = (att) => {
+  const kind = getFileKind(att);
+  if (kind === "image") return <ImageIcon className="h-3 w-3" />;
+  if (kind === "video") return <Video className="h-3 w-3" />;
+  return <FileText className="h-3 w-3" />;
+};
 
 export default function TeacherNotices() {
-  const { user } = useAuth();
-  const notices = useNotices();
-  const sections = useSections();
-  const calendar = useAcademicCalendar();
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ title: "", body: "", category: "Academic", audience: "All", targetClass: "", attachments: [] });
+  const [notices, setNotices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("all");
+  const [previewAttachment, setPreviewAttachment] = useState(null);
 
-  // Teachers read notices; only admins/principals publish them.
-  const canPublish = user?.role === "admin" || user?.role === "super_admin";
+  useEffect(() => {
+    getTeacherPortalNotices()
+      .then((response) => setNotices(response?.data ?? []))
+      .catch((error) => toast.error(errorMessage(error)))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const visible = canPublish
-    ? notices
-    : notices.filter((n) => n.status === "Published" && (n.audience === "All" || n.audience === "Teachers" || n.audience === "Staff" || n.audience === "Class"));
+  const categories = useMemo(() => [...new Set(notices.map((notice) => notice.category?.name).filter(Boolean))], [notices]);
+  const visibleNotices = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return notices.filter((notice) =>
+      (category === "all" || notice.category?.name === category)
+      && (!query || [notice.title, notice.description, notice.category?.name].some((field) => field?.toLowerCase().includes(query)))
+    );
+  }, [notices, search, category]);
 
-  const circulars = visible.filter((n) => n.category === "General" || n.category === "Academic");
-  const events = calendar.filter((e) => !e.archived);
-
-  const submit = (publish) => {
-    if (!form.title || !form.body) { toast.error("Title and body required"); return; }
-    noticesApi.add({ ...form, by: "Principal", status: publish ? "Published" : "Draft" });
-    toast.success(publish ? "Published" : "Saved as draft");
-    setOpen(false);
-    setForm({ ...form, title: "", body: "" });
-  };
-
-  const NoticeList = ({ items }) => (
-    <Card><CardContent className="p-0 divide-y">
-      {items.map((n) => (
-        <div key={n.id} className="p-3 hover:bg-muted/30">
-          <div className="flex items-start gap-3">
-            <div className="h-9 w-9 rounded-md flex items-center justify-center bg-info/10 text-info shrink-0"><Megaphone className="h-4 w-4" /></div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium">{n.title}</span>
-                <Badge variant="outline" className="text-[10px]">{n.category}</Badge>
-                <Badge variant="secondary" className="text-[10px]">{n.audience}{n.targetClass ? ` · ${n.targetClass}` : ""}</Badge>
-                <Badge variant={n.status === "Published" ? "default" : "outline"} className="text-[10px] ml-auto">{n.status}</Badge>
-              </div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">{n.by} · {new Date(n.createdAt).toLocaleDateString("en-IN")} · {n.acks.length} acknowledgements</div>
-              <div className="text-xs mt-1 whitespace-pre-wrap">{n.body}</div>
-              <div className="flex gap-2 mt-2">
-                {canPublish && n.status === "Draft" && <Button size="sm" variant="outline" onClick={() => { noticesApi.publish(n.id); toast.success("Published"); }}><Send className="h-3.5 w-3.5" />Publish</Button>}
-                {canPublish && n.status === "Published" && <Button size="sm" variant="outline" onClick={() => { noticesApi.unpublish(n.id); toast.success("Unpublished"); }}><EyeOff className="h-3.5 w-3.5" />Unpublish</Button>}
-                {canPublish && n.status !== "Archived" && <Button size="sm" variant="outline" onClick={() => { noticesApi.archive(n.id); toast.success("Archived"); }}><Archive className="h-3.5 w-3.5" />Archive</Button>}
-                <Button size="sm" variant="ghost" onClick={() => { noticesApi.acknowledge(n.id, user?.name ?? "You"); toast.success("Acknowledged"); }}><CheckCircle2 className="h-3.5 w-3.5" />Acknowledge</Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ))}
-      {items.length === 0 && <div className="p-8 text-center text-sm text-muted-foreground">Nothing here yet.</div>}
+  return <PageContainer>
+    <PageHeader eyebrow="Teacher Portal" title="Communications" description="Communication notes shared with teachers."
+      actions={<div className="flex gap-2"><div className="relative"><Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" /><Input className="h-9 w-52 pl-8" placeholder="Search notices…" value={search} onChange={(event) => setSearch(event.target.value)} /></div><Select value={category} onValueChange={setCategory}><SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All categories</SelectItem>{categories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>} />
+    <Card className="border-border/60"><CardContent className="p-0 divide-y">
+      {loading && <div className="p-8 text-center text-sm text-muted-foreground"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading notices…</div>}
+      {!loading && visibleNotices.map((notice) => <div key={notice.notes_uuid} className="flex gap-3 p-4 hover:bg-muted/40"><div className="h-9 w-9 rounded-md flex items-center justify-center bg-info/10 text-info shrink-0"><Megaphone className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-medium">{notice.title}</span>{notice.category?.name && <Badge variant="outline" className="text-[10px]">{notice.category.name}</Badge>}</div><div className="mt-0.5 text-[11px] text-muted-foreground">{formatDate(notice.start_date || notice.published_at || notice.created_at)}</div>{notice.description && <div className="mt-1 text-xs whitespace-pre-wrap">{notice.description}</div>}
+        {getNoticeAttachments(notice).length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">
+          {getNoticeAttachments(notice).map((att, idx) => <div key={idx} className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] bg-muted/20">
+            {attachmentIcon(att)}
+            <span className="truncate max-w-[140px]">{att.name}</span>
+            {att.url ? <>
+              <button type="button" title={`View ${att.name}`} onClick={() => setPreviewAttachment(att)} className="ml-1 rounded p-0.5 hover:bg-muted">
+                <Eye className="h-3.5 w-3.5" />
+              </button>
+              <a href={att.url} download={att.name} title={`Download ${att.name}`} className="rounded p-0.5 hover:bg-muted">
+                <Download className="h-3.5 w-3.5" />
+              </a>
+            </> : <EyeOff className="ml-1 h-3.5 w-3.5 text-muted-foreground" />}
+          </div>)}
+        </div>}
+      </div></div>)}
+      {!loading && visibleNotices.length === 0 && <div className="p-8 text-center text-sm text-muted-foreground">No notices found.</div>}
     </CardContent></Card>
-  );
 
-  return (
-    <PageContainer>
-      <PageHeader  title={canPublish ? "Notices" : "Notices, Circulars & Events"}
-        actions={canPublish ? (
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button size="sm" className="gradient-primary border-0"><Plus className="h-4 w-4" />New Notice</Button></DialogTrigger>
-            <DialogContent className="max-w-xl">
-              <DialogHeader><DialogTitle>Create notice</DialogTitle><DialogDescription>Target a specific audience or class.</DialogDescription></DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5"><Label>Title</Label><Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} /></div>
-                <div className="space-y-1.5"><Label>Message</Label><Textarea rows={5} value={form.body} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))} /></div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5"><Label>Category</Label>
-                    <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>{cats.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5"><Label>Audience</Label>
-                    <Select value={form.audience} onValueChange={(v) => setForm((f) => ({ ...f, audience: v }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>{auds.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                {form.audience === "Class" && (
-                  <div className="space-y-1.5"><Label>Class</Label>
-                    <Select value={form.targetClass} onValueChange={(v) => setForm((f) => ({ ...f, targetClass: v }))}>
-                      <SelectTrigger><SelectValue placeholder="Choose…" /></SelectTrigger>
-                      <SelectContent>{sections.map((s) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-              <DialogFooter><Button variant="outline" onClick={() => submit(false)}>Save Draft</Button><Button className="gradient-primary border-0" onClick={() => submit(true)}><Send className="h-4 w-4" />Publish</Button></DialogFooter>
-            </DialogContent>
-          </Dialog>
-        ) : undefined}
-      />
-
-      <Tabs defaultValue="notices">
-        <TabsList>
-          <TabsTrigger value="notices">Notices</TabsTrigger>
-          <TabsTrigger value="circulars">Circulars</TabsTrigger>
-          <TabsTrigger value="events">Events</TabsTrigger>
-        </TabsList>
-        <TabsContent value="notices" className="mt-4"><NoticeList items={visible} /></TabsContent>
-        <TabsContent value="circulars" className="mt-4"><NoticeList items={circulars} /></TabsContent>
-        <TabsContent value="events" className="mt-4">
-          <Card><CardContent className="p-0 divide-y">
-            {events.map((e) => (
-              <div key={e.id} className="p-3 flex items-start gap-3">
-                <div className="h-9 w-9 rounded-md flex items-center justify-center bg-primary/10 text-primary shrink-0"><CalendarDays className="h-4 w-4" /></div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium">{e.event}</span>
-                    <Badge variant="outline" className="text-[10px]">{e.customType || e.type}</Badge>
-                    <Badge variant="secondary" className="text-[10px]">{e.audience}</Badge>
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{e.date}</div>
-                  {e.notes && <div className="text-xs mt-1 text-muted-foreground">{e.notes}</div>}
-                </div>
-              </div>
-            ))}
-            {events.length === 0 && <div className="p-8 text-center text-sm text-muted-foreground">No events scheduled.</div>}
-          </CardContent></Card>
-        </TabsContent>
-      </Tabs>
-    </PageContainer>
-  );
+    <Dialog open={!!previewAttachment} onOpenChange={(open) => !open && setPreviewAttachment(null)}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 pr-6">
+            {previewAttachment && attachmentIcon(previewAttachment)}
+            <span className="truncate">{previewAttachment?.name || "Attachment"}</span>
+          </DialogTitle>
+        </DialogHeader>
+        {previewAttachment && <div className="space-y-3">
+          <div className="rounded-md border bg-muted/20 flex items-center justify-center overflow-hidden min-h-[200px] max-h-[70vh]">
+            {getFileKind(previewAttachment) === "image" && <img src={previewAttachment.url} alt={previewAttachment.name} className="max-h-[70vh] w-auto object-contain" />}
+            {getFileKind(previewAttachment) === "video" && <video src={previewAttachment.url} controls className="max-h-[70vh] w-full" />}
+            {getFileKind(previewAttachment) === "pdf" && <iframe src={previewAttachment.url} title={previewAttachment.name} className="w-full h-[70vh]" />}
+            {getFileKind(previewAttachment) === "other" && <div className="flex flex-col items-center gap-2 p-8 text-sm text-muted-foreground"><FileText className="h-8 w-8" />No inline preview available for this file type.</div>}
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <Button variant="ghost" onClick={() => setPreviewAttachment(null)}>Close</Button>
+            <a href={previewAttachment.url} download={previewAttachment.name} target="_blank" rel="noreferrer">
+              <Button variant="outline" className="gap-1.5"><Download className="h-4 w-4" />Download</Button>
+            </a>
+          </DialogFooter>
+        </div>}
+      </DialogContent>
+    </Dialog>
+  </PageContainer>;
 }

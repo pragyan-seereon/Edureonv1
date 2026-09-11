@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Megaphone } from "lucide-react";
+import { Loader2, Megaphone, FileText, Image as ImageIcon, Video, Download, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import studentModel from "../../api/studentModel";
 import { PageContainer, PageHeader } from "../../components/page-shell";
@@ -7,6 +7,8 @@ import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { Button } from "../../components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../components/ui/dialog";
 
 const collection = (source, names) => names.reduce((found, name) => found.length ? found : (Array.isArray(source?.[name]) ? source[name] : []), []);
 const value = (item, names, fallback = "—") => names.map((name) => item?.[name]).find((itemValue) => itemValue !== undefined && itemValue !== null && itemValue !== "") ?? fallback;
@@ -17,10 +19,36 @@ const formatDate = (date) => {
 };
 const errorMessage = (error) => error?.response?.data?.detail?.message || error?.response?.data?.detail || error?.response?.data?.message || error?.message || "Unable to load portal content.";
 
+// Same normalization as the Teacher Notices view — handles both
+// original_file_name/mime_type/file_url and name/type/url shapes.
+const getNoticeAttachments = (notice) =>
+  (Array.isArray(notice.attachments) ? notice.attachments : []).map((attachment) => ({
+    name: attachment.original_file_name ?? attachment.name,
+    type: attachment.mime_type ?? attachment.type,
+    url: attachment.file_url ?? attachment.url,
+  }));
+
+const getFileKind = (att) => {
+  const type = att?.type || "";
+  const name = (att?.name || att?.url || "").toLowerCase();
+  if (type.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg|bmp)$/.test(name)) return "image";
+  if (type.startsWith("video/") || /\.(mp4|webm|mov|mkv|avi)$/.test(name)) return "video";
+  if (type === "application/pdf" || /\.pdf$/.test(name)) return "pdf";
+  return "other";
+};
+
+const attachmentIcon = (att) => {
+  const kind = getFileKind(att);
+  if (kind === "image") return <ImageIcon className="h-3 w-3" />;
+  if (kind === "video") return <Video className="h-3 w-3" />;
+  return <FileText className="h-3 w-3" />;
+};
+
 export default function Notices() {
   const [content, setContent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [previewAttachment, setPreviewAttachment] = useState(null);
 
   useEffect(() => {
     studentModel.getPortalContent()
@@ -67,10 +95,56 @@ export default function Notices() {
         {!loading && visibleRows.length === 0 && <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground p-6">No records for this filter.</TableCell></TableRow>}
       </TableBody></Table></CardContent></Card>}
       <div className="space-y-4">{holidays.length > 0 && <Card className="border-border/60"><CardHeader className="pb-2"><CardTitle className="font-display text-base">Holidays</CardTitle></CardHeader><CardContent className="space-y-2">{holidays.map((holiday, index) => <div key={value(holiday, ["holiday_uuid", "uuid", "id"], index)} className="border rounded-md p-3"><div className="text-sm font-medium">{value(holiday, ["title", "name", "holiday_name"])}</div><div className="text-[11px] text-muted-foreground mt-0.5">{formatDate(value(holiday, ["date", "holiday_date", "start_date"], null))}</div></div>)}</CardContent></Card>}
-        {!loading && visibleCategories.map(({ category, notes }) => <Card key={category} className="border-border/60"><CardHeader className="pb-2"><CardTitle className="font-display text-base flex items-center justify-between gap-2"><span>{category}</span><Badge variant="secondary" className="text-[10px]">{notes.length}</Badge></CardTitle></CardHeader><CardContent className="space-y-2">{notes.map((notice, index) => <div key={value(notice, ["notes_uuid", "notice_uuid", "uuid", "id"], index)} className="border rounded-md p-3"><div className="text-sm font-medium">{value(notice, ["title", "subject", "notice_title"])}</div><div className="text-[11px] text-muted-foreground mt-0.5">{value(notice, ["start_date", "published_at", "created_at", "date"], "") && formatDate(value(notice, ["start_date", "published_at", "created_at", "date"], null))}</div><div className="text-xs mt-1">{value(notice, ["body", "content", "description", "message"], "")}</div></div>)}</CardContent></Card>)}
+        {!loading && visibleCategories.map(({ category, notes }) => <Card key={category} className="border-border/60"><CardHeader className="pb-2"><CardTitle className="font-display text-base flex items-center justify-between gap-2"><span>{category}</span><Badge variant="secondary" className="text-[10px]">{notes.length}</Badge></CardTitle></CardHeader><CardContent className="space-y-2">{notes.map((notice, index) => {
+          const attachments = getNoticeAttachments(notice);
+          return <div key={value(notice, ["notes_uuid", "notice_uuid", "uuid", "id"], index)} className="border rounded-md p-3">
+            <div className="text-sm font-medium">{value(notice, ["title", "subject", "notice_title"])}</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">{value(notice, ["start_date", "published_at", "created_at", "date"], "") && formatDate(value(notice, ["start_date", "published_at", "created_at", "date"], null))}</div>
+            <div className="text-xs mt-1">{value(notice, ["body", "content", "description", "message"], "")}</div>
+            {attachments.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">
+              {attachments.map((att, idx) => <div key={idx} className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] bg-muted/20">
+                {attachmentIcon(att)}
+                <span className="truncate max-w-[140px]">{att.name}</span>
+                {att.url ? <>
+                  <button type="button" title={`View ${att.name}`} onClick={() => setPreviewAttachment(att)} className="ml-1 rounded p-0.5 hover:bg-muted">
+                    <Eye className="h-3.5 w-3.5" />
+                  </button>
+                  <a href={att.url} download={att.name} title={`Download ${att.name}`} className="rounded p-0.5 hover:bg-muted">
+                    <Download className="h-3.5 w-3.5" />
+                  </a>
+                </> : <EyeOff className="ml-1 h-3.5 w-3.5 text-muted-foreground" />}
+              </div>)}
+            </div>}
+          </div>;
+        })}</CardContent></Card>)}
         {!loading && noteCategories.length === 0 && <Card className="border-border/60"><CardHeader className="pb-2"><CardTitle className="font-display text-base">Communication Notes</CardTitle></CardHeader><CardContent><div className="text-sm text-muted-foreground text-center p-4">No communication notes.</div></CardContent></Card>}
       </div>
     </div>
+
+    <Dialog open={!!previewAttachment} onOpenChange={(open) => !open && setPreviewAttachment(null)}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 pr-6">
+            {previewAttachment && attachmentIcon(previewAttachment)}
+            <span className="truncate">{previewAttachment?.name || "Attachment"}</span>
+          </DialogTitle>
+        </DialogHeader>
+        {previewAttachment && <div className="space-y-3">
+          <div className="rounded-md border bg-muted/20 flex items-center justify-center overflow-hidden min-h-[200px] max-h-[70vh]">
+            {getFileKind(previewAttachment) === "image" && <img src={previewAttachment.url} alt={previewAttachment.name} className="max-h-[70vh] w-auto object-contain" />}
+            {getFileKind(previewAttachment) === "video" && <video src={previewAttachment.url} controls className="max-h-[70vh] w-full" />}
+            {getFileKind(previewAttachment) === "pdf" && <iframe src={previewAttachment.url} title={previewAttachment.name} className="w-full h-[70vh]" />}
+            {getFileKind(previewAttachment) === "other" && <div className="flex flex-col items-center gap-2 p-8 text-sm text-muted-foreground"><FileText className="h-8 w-8" />No inline preview available for this file type.</div>}
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <Button variant="ghost" onClick={() => setPreviewAttachment(null)}>Close</Button>
+            <a href={previewAttachment.url} download={previewAttachment.name} target="_blank" rel="noreferrer">
+              <Button variant="outline" className="gap-1.5"><Download className="h-4 w-4" />Download</Button>
+            </a>
+          </DialogFooter>
+        </div>}
+      </DialogContent>
+    </Dialog>
   </PageContainer>;
 }
 

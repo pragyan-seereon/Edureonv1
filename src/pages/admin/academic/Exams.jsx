@@ -74,7 +74,7 @@ import {
   Radar,
 } from "recharts";
 import { useMemo, useRef, useState, useEffect } from "react";
-import { getExamCategories, createExamCategory, updateExamCategory, deleteExamCategory, getExams, createExam,updateExam,deleteExam,getClassSubjects,getRooms, createExamPapersBulk, getExamPapers, getExamPaperById, updateExamPaper, deleteExamPaper, importExamPapers  } from "../../../api/exam";
+import { getExamCategories, createExamCategory, updateExamCategory, deleteExamCategory, getExams, createExam,updateExam,deleteExam,getClassSubjects,getRooms, createExamPapersBulk, getExamPapers, getExamPaperById, updateExamPaper, deleteExamPaper, importExamPapers, importExamMarks , getExamMarks, updateExamMarks, publishExamMarks, } from "../../../api/exam";
 import {getQuestionBank,getQuestionBankById,createQuestion,createQuestionsBulk,updateQuestionBank,deleteQuestionBank,importQuestionBank,} from "../../../api/question";
 import { getClasses } from "../../../api/Class";
 import { toast } from "sonner";
@@ -103,48 +103,48 @@ import {
 } from "../../../components/pagination-controls";
 import { usePagination } from "../../../lib/use-pagination";
 
-const marks = Array.from({ length: 14 }).map((_, i) => ({
-  roll: i + 1,
-  name:
-    [
-      "Aarav",
-      "Diya",
-      "Vihaan",
-      "Ananya",
-      "Kiara",
-      "Ishaan",
-      "Pari",
-      "Arjun",
-      "Saanvi",
-      "Reyansh",
-      "Anika",
-      "Aadhya",
-      "Krishna",
-      "Tara",
-    ][i] +
-    " " +
-    [
-      "Sharma",
-      "Verma",
-      "Patel",
-      "Iyer",
-      "Mehta",
-      "Nair",
-      "Bose",
-      "Das",
-      "Joshi",
-      "Khanna",
-      "Singh",
-      "Reddy",
-      "Kumar",
-      "Menon",
-    ][i],
-  math: 60 + ((i * 7) % 40),
-  sci: 55 + ((i * 11) % 45),
-  eng: 65 + ((i * 13) % 35),
-  soc: 50 + ((i * 17) % 48),
-  hin: 60 + ((i * 19) % 40),
-}));
+// const marks = Array.from({ length: 14 }).map((_, i) => ({
+//   roll: i + 1,
+//   name:
+//     [
+//       "Aarav",
+//       "Diya",
+//       "Vihaan",
+//       "Ananya",
+//       "Kiara",
+//       "Ishaan",
+//       "Pari",
+//       "Arjun",
+//       "Saanvi",
+//       "Reyansh",
+//       "Anika",
+//       "Aadhya",
+//       "Krishna",
+//       "Tara",
+//     ][i] +
+//     " " +
+//     [
+//       "Sharma",
+//       "Verma",
+//       "Patel",
+//       "Iyer",
+//       "Mehta",
+//       "Nair",
+//       "Bose",
+//       "Das",
+//       "Joshi",
+//       "Khanna",
+//       "Singh",
+//       "Reddy",
+//       "Kumar",
+//       "Menon",
+//     ][i],
+//   math: 60 + ((i * 7) % 40),
+//   sci: 55 + ((i * 11) % 45),
+//   eng: 65 + ((i * 13) % 35),
+//   soc: 50 + ((i * 17) % 48),
+//   hin: 60 + ((i * 19) % 40),
+// }));
 
 function grade(t) {
   if (t >= 91) return { g: "A1", c: "bg-success/15 text-success" };
@@ -220,6 +220,19 @@ async function downloadQuestionTemplate() {
     XLSX.utils.book_append_sheet(wb, ws, "Questions");
     XLSX.writeFile(wb, "questions-template.xlsx");
   } catch (err) {
+    toast.error("Could not generate template file");
+  }
+}
+
+async function downloadExcelTemplate({ filename, sheetName, headers }) {
+  try {
+    const XLSX = await import("xlsx");
+    const worksheet = XLSX.utils.aoa_to_sheet([headers]);
+    worksheet["!cols"] = headers.map((header) => ({ wch: Math.max(14, String(header).length + 2) }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    XLSX.writeFile(workbook, filename);
+  } catch {
     toast.error("Could not generate template file");
   }
 }
@@ -376,33 +389,26 @@ const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
     })();
   }, [qfClass, classesData]);
 
-  // ---- Marks Entry filters (Class / Section / Year / Exam) ----
-  // NOTE: the table below still renders the local mock `marks` array,
-  // but these drive which real student record + portal an entry is
+
   // shared to when "Share to Student" is clicked.
-  const [meClass, setMeClass] = useState("X");
-  const [meSection, setMeSection] = useState("B");
+          const [meClass, setMeClass] = useState("");
+  const [meSection, setMeSection] = useState("");
   const [meYear, setMeYear] = useState("2025-26");
-  const [meExam, setMeExam] = useState("Term 2");
-  const [sharedRolls, setSharedRolls] = useState({}); // { [roll]: true } — tracks which rows were shared
+  const [meExam, setMeExam] = useState("");
+  const [sharedStudents, setSharedStudents] = useState({}); // { [studentUuid]: true } — tracks which rows were shared
 
-  // ---- Dashboard filters + nested detail ----
-  const [dashClass, setDashClass] = useState("X");
-  const [dashSection, setDashSection] = useState("A");
-  const [dashApplied, setDashApplied] = useState(false);
-  const [dashDetail, setDashDetail] = useState(null);
-
-  // ---- Exam Categories (UI-only local state) ----
-const [categories, setCategories] = useState([]);
-const [categoriesLoading, setCategoriesLoading] = useState(true);
-  // ---- Exams (from API) ----
-const [exams, setExams] = useState([]);
-const [examsLoading, setExamsLoading] = useState(true);
+  // ---- Exam Marks (from API) ----
+   // ---- Exams (from API) ----
+  const [exams, setExams] = useState([]);
+  const [examsLoading, setExamsLoading] = useState(true);
 
   const mapExam = (e) => ({
     id: e.exam_uuid,
     categoryUuid: e.category_uuid,
-    name: e.category_name,
+    // The results endpoint returns `exam_name` (for example, "Test-5").
+    // Older exam-list responses only expose `category_name`, so retain it as
+    // a fallback for those installations.
+    name: e.exam_name ?? e.category_name,
     classUuid: e.class_uuid,
     class: e.class_name,
     from: e.from_date,
@@ -424,6 +430,153 @@ const [examsLoading, setExamsLoading] = useState(true);
     }
   };
 
+  // ---- Exam Marks (from API) ----
+  const [examMarks, setExamMarks] = useState([]);
+  const [examMarksLoading, setExamMarksLoading] = useState(false);
+
+   const mapMarksRow = (r) => {
+    const matchedStudent = students.find(
+      (s) => s.id === r.student_uuid || s.uuid === r.student_uuid || s.student_uuid === r.student_uuid,
+    );
+    return {
+      resultUuid: r.result_uuid,
+      studentUuid: r.student_uuid,
+      sectionUuid: r.section_uuid,
+      name: r.student_name,
+      roll: matchedStudent?.rollNo ?? "—",
+      admissionNo: matchedStudent?.admissionNo,
+      section: r.section_name,
+      subjects: (r.subject_marks ?? []).map((sm) => ({
+        uuid: sm.subject_uuid,
+        name: sm.subject_name,
+        marks: sm.marks,
+        max: sm.max_marks,
+        isAbsent: sm.is_absent,
+      })),
+      total: r.total_obtained ?? r.total_marks ?? 0,
+      totalMax: r.total_maximum ?? r.total_max_marks ?? 0,
+      percentage: r.percentage,
+      gradeLabel: r.grade,
+      status: r.status,
+    };
+  };
+
+  const loadExamMarks = async () => {
+    const matchedClass = classesData.find((c) => c.name === meClass);
+    const matchedExam = exams.find((e) => e.name === meExam && e.class === meClass);
+
+    try {
+      setExamMarksLoading(true);
+      // Fetch immediately when the Mark Entry tab opens.  The API accepts
+      // these filters as optional, so the initial request is `/exam-marks`
+      // and subsequent filter changes narrow the result set.
+      const data = await getExamMarks({
+        examUuid: matchedExam?.id,
+        classUuid: matchedClass?.id,
+      });
+      // Support the direct array shown in the API response as well as the
+      // paginated `items`, `results`, and `data` response shapes.
+      const rows = Array.isArray(data)
+        ? data
+        : data?.items ?? data?.results ?? data?.data ?? [];
+      const list = (Array.isArray(rows) ? rows : [])
+        .filter((r) => !meSection || r.section_name === meSection)
+        .map(mapMarksRow);
+      setExamMarks(list);
+    } catch (err) {
+      toast.error("Could not load marks");
+      setExamMarks([]);
+    } finally {
+      setExamMarksLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab !== "marks") return;
+    loadExamMarks();
+  }, [meClass, meSection, meExam, classesData, exams]);
+
+  const handleTabChange = (nextTab) => {
+    setTab(nextTab);
+    if (nextTab === "marks") loadExamMarks();
+  };
+
+    // ---- Marks Entry -> editable per-subject marks, saved via PUT /exam-marks/{result_uuid} ----
+  const [editedMarks, setEditedMarks] = useState({}); 
+  const [savingMarks, setSavingMarks] = useState({}); 
+  const [publishingAll, setPublishingAll] = useState(false);
+  const [publishingRow, setPublishingRow] = useState({}); 
+
+  const getSubjectMarkValue = (m, subjUuid) => {
+    const edited = editedMarks[m.resultUuid]?.[subjUuid];
+    if (edited !== undefined) return edited;
+    const subj = m.subjects.find((s) => s.uuid === subjUuid);
+    return subj?.marks ?? "";
+  };
+
+  const setSubjectMarkValue = (resultUuid, subjUuid, value) => {
+    setEditedMarks((p) => ({
+      ...p,
+      [resultUuid]: { ...(p[resultUuid] ?? {}), [subjUuid]: value },
+    }));
+  };
+
+  const saveMarksRow = async (m) => {
+    const edited = editedMarks[m.resultUuid] ?? {};
+    let totalMarks = 0;
+    let totalMax = 0;
+    m.subjects.forEach((s) => {
+      const raw = edited[s.uuid];
+      const val = raw !== undefined && raw !== "" ? Number(raw) : Number(s.marks ?? 0);
+      totalMarks += Number.isNaN(val) ? 0 : val;
+      totalMax += Number(s.max) || 0;
+    });
+    const percentage = totalMax ? Math.round((totalMarks / totalMax) * 10000) / 100 : 0;
+    const g = grade(percentage);
+    const status = percentage >= 33 ? "PASS" : "FAIL";
+
+    try {
+      setSavingMarks((p) => ({ ...p, [m.resultUuid]: true }));
+      await updateExamMarks(m.resultUuid, {
+        total_marks: totalMarks,
+        total_max_marks: totalMax,
+        percentage,
+        grade: g.g,
+        status,
+      });
+      toast.success(`Marks updated for ${m.name}`);
+      setEditedMarks((p) => {
+        const next = { ...p };
+        delete next[m.resultUuid];
+        return next;
+      });
+      await loadExamMarks();
+    } catch (err) {
+      toast.error("Could not update marks");
+    } finally {
+      setSavingMarks((p) => ({ ...p, [m.resultUuid]: false }));
+    }
+  };
+
+  const marksSubjectColumns = useMemo(() => {
+    const seen = new Map();
+    examMarks.forEach((m) =>
+      m.subjects.forEach((s) => {
+        if (!seen.has(s.uuid)) seen.set(s.uuid, { name: s.name, max: s.max });
+      }),
+    );
+    return Array.from(seen.entries()).map(([uuid, subject]) => ({ uuid, ...subject }));
+  }, [examMarks]);
+
+  // ---- Dashboard filters + nested detail ----
+  const [dashClass, setDashClass] = useState("X");
+  const [dashSection, setDashSection] = useState("A");
+  const [dashApplied, setDashApplied] = useState(false);
+  const [dashDetail, setDashDetail] = useState(null);
+
+   // ---- Exam Categories (UI-only local state) ----
+const [categories, setCategories] = useState([]);
+const [categoriesLoading, setCategoriesLoading] = useState(true);
 const loadCategories = async () => {
   try {
     setCategoriesLoading(true);
@@ -514,12 +667,77 @@ useEffect(() => {
     }
   };
 
-  // Subject options for the single Edit-Paper dialog, scoped to the
+
   // paper's class. [{ uuid, name }]
-   const [editSubjects, setEditSubjects] = useState([]);
-  const [editSubjectsLoading, setEditSubjectsLoading] = useState(false);
-  const [papersImporting, setPapersImporting] = useState(false);
-  const papersImportRef = useRef(null);
+const [editSubjects, setEditSubjects] = useState([]);
+const [editSubjectsLoading, setEditSubjectsLoading] = useState(false);
+const [papersImporting, setPapersImporting] = useState(false);
+const papersImportRef = useRef(null);
+const [marksImporting, setMarksImporting] = useState(false);
+const [marksImportOpen, setMarksImportOpen] = useState(false);
+const [marksImportExam, setMarksImportExam] = useState("");
+const [marksImportClass, setMarksImportClass] = useState("");
+const [marksImportFile, setMarksImportFile] = useState(null);
+const [marksImportFileLabel, setMarksImportFileLabel] = useState("");
+
+const resetMarksImportDialog = () => {
+  setMarksImportExam("");
+  setMarksImportClass("");
+  setMarksImportFile(null);
+  setMarksImportFileLabel("");
+};
+
+  const downloadMarksTemplate = async () => {
+    const selectedClass = classesData.find((item) => item.name === marksImportClass);
+    if (!selectedClass) {
+      toast.error("Select a class before downloading the marks template");
+      return;
+    }
+
+    try {
+      const response = await getClassSubjects(selectedClass.id);
+      const subjects = Array.from(
+        new Map(
+          (response ?? []).map((subject) => [subject.subject_uuid, subject.subject_name]),
+        ).values(),
+      );
+
+      await downloadExcelTemplate({
+        filename: `marks-template-${marksImportClass}-${marksImportExam || "exam"}.xlsx`,
+        sheetName: "Student Marks",
+        headers: [
+          "Admission No",
+          "Student No",
+          "Student Name",
+          ...subjects,
+          "Total",
+          "Percentage",
+          "Grade",
+          "Status",
+        ],
+      });
+    } catch {
+      toast.error("Could not load subjects for the marks template");
+    }
+  };
+
+  const downloadPapersTemplate = () =>
+    downloadExcelTemplate({
+      filename: "exam-papers-template.xlsx",
+      sheetName: "Subjects and Papers",
+      headers: [
+        "Exam Name",
+        "Class Name",
+        "Subject Name",
+        "Paper Name",
+        "Paper Date",
+        "Paper Time",
+        "Duration Minutes",
+        "Max Marks",
+        "Room Name",
+      ],
+    });
+
   // ---- Solutions ----
   const [solutions, setSolutions] = useState([]);
   const solnRef = useRef(null);
@@ -708,56 +926,95 @@ useEffect(() => {
     toast.success(`Paper generated: ${picked.length} questions · ${total} marks`);
   };
 
-  // ---- Marks Entry -> Share single student's report to their portal ----
-  const shareReportToStudent = (m) => {
-    // The Marks Entry grid above is seeded from the local `marks` mock
-    // array (keyed by roll number), so resolve it to the real student
-    // record for the class/section currently selected in the filters.
-    const stu = students.find(
-      (s) => s.rollNo === m.roll && s.class === meClass && s.section === meSection,
-    );
+    // ---- Marks Entry -> Publish single student's report to their portal ----
+  const shareReportToStudent = async (m) => {
+    const stu = students.find((s) => s.id === m.studentUuid);
     if (!stu) {
-      toast.error(
-        `No matching student record found for Roll ${m.roll} (Class ${meClass}-${meSection}). Check Students module.`,
-      );
+      toast.error(`No matching student record found for ${m.name}. Check Students module.`);
       return;
     }
 
-    const entry = {
-      studentId: stu.id,
-      studentName: stu.name,
-      admissionNo: stu.admissionNo,
-      marks: {
-        Mathematics: m.math,
-        Science: m.sci,
-        English: m.eng,
-        "Social Science": m.soc,
-        Hindi: m.hin,
-      },
-    };
+    const matchedClass = classesData.find((c) => c.name === meClass);
+    const matchedExam = exams.find((e) => e.name === meExam && e.class === meClass);
 
-    // Save just this student's entry into the batch, then publish so it
-    // becomes visible on the student/parent portal.
-    storedResultsApi.saveBatch(meClass, meSection, meExam, [entry]);
-    storedResultsApi.publish(meClass, meSection, meExam);
+    try {
+      setPublishingRow((p) => ({ ...p, [m.resultUuid]: true }));
+      await publishExamMarks({
+        examUuid: matchedExam?.id,
+        classUuid: matchedClass?.id,
+        sectionUuid: m.sectionUuid,
+        resultUuids: [m.resultUuid],
+        studentUuids: [m.studentUuid],
+      });
 
-    setSharedRolls((p) => ({ ...p, [m.roll]: true }));
-    toast.success(`Report shared to ${stu.name}'s student portal`);
+      const entry = {
+        studentId: stu.id,
+        studentName: stu.name,
+        admissionNo: stu.admissionNo,
+        marks: Object.fromEntries(m.subjects.map((s) => [s.name, s.marks])),
+      };
+      storedResultsApi.saveBatch(meClass, meSection, meExam, [entry]);
+      storedResultsApi.publish(meClass, meSection, meExam);
+
+      setSharedStudents((p) => ({ ...p, [m.studentUuid]: true }));
+      toast.success(`Report published to ${stu.name}'s student portal`);
+    } catch (err) {
+      toast.error(`Could not publish report for ${stu.name}`);
+    } finally {
+      setPublishingRow((p) => ({ ...p, [m.resultUuid]: false }));
+    }
+  };
+  // ---- Marks Entry -> Export the current class/section/exam marks as CSV ----
+    // ---- Marks Entry -> Import marks from Excel ----
+  const handleMarksImportResult = (res) => {
+    const saved = res?.saved ?? 0;
+    const errors = res?.errors ?? 0;
+    const warnings = res?.warnings ?? 0;
+    const corrected = res?.corrected_calculation ?? 0;
+
+    const extra = [
+      corrected ? `${corrected} auto-corrected` : null,
+      warnings ? `${warnings} warning(s)` : null,
+      errors ? `${errors} error(s)` : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    if (saved > 0) {
+      toast.success(
+        res?.message
+          ? `${res.message}${extra ? ` (${extra})` : ""}`
+          : `${saved} row(s) imported${extra ? ` — ${extra}` : ""}`,
+      );
+    } else {
+      toast.error(extra || "No rows were imported");
+    }
+
+    if (res?.errors_detail?.length) {
+      const first = res.errors_detail[0];
+      toast.error(`Row ${first.row} (${first.admission_no}): ${first.errors?.[0]}`);
+    }
   };
 
   // ---- Marks Entry -> Export the current class/section/exam marks as CSV ----
   const exportMarksCsv = () => {
-    if (!marks.length) {
+    if (!examMarks.length) {
       toast.error("No marks to export");
       return;
     }
-    const rows = [
-      ["Roll", "Name", "Math", "Science", "English", "Social Science", "Hindi", "Total", "%", "Grade"],
-    ];
-    marks.forEach((m) => {
-      const total = m.math + m.sci + m.eng + m.soc + m.hin;
-      const pct = Math.round(total / 5);
-      rows.push([m.roll, m.name, m.math, m.sci, m.eng, m.soc, m.hin, total, pct, grade(pct).g]);
+    const subjectNames = marksSubjectColumns.map((c) => c.name);
+    const rows = [["Roll", "Name", ...subjectNames, "Total", "%", "Grade", "Status"]];
+    examMarks.forEach((m) => {
+      const subjMap = Object.fromEntries(m.subjects.map((s) => [s.uuid, s.marks]));
+      rows.push([
+        m.roll,
+        m.name,
+        ...marksSubjectColumns.map((c) => subjMap[c.uuid] ?? ""),
+        m.total,
+        m.percentage,
+        m.gradeLabel ?? grade(m.percentage ?? 0).g,
+        m.status ?? "",
+      ]);
     });
     const blob = new Blob([rows.map((r) => r.join(",")).join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -790,7 +1047,7 @@ useEffect(() => {
   const examsPage = usePagination(exams, 10);
   const papersPage = usePagination(papers, 10);
   const questionsPage = usePagination(filteredQ, 10);
-  const marksPage = usePagination(marks, 10);
+  const marksPage = usePagination(examMarks, 10);
 
   const dashStudents = useMemo(
     () => students.filter((s) => s.class === dashClass && s.section === dashSection),
@@ -852,7 +1109,7 @@ useEffect(() => {
         />
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto">
           {/* <TabsTrigger value="dash">Dashboard</TabsTrigger> */}
           <TabsTrigger value="categories">Categories</TabsTrigger>
@@ -1241,6 +1498,10 @@ useEffect(() => {
               </div>
               <div className="flex gap-2 items-center">
                 <RowsPerPageSelect {...papersPage} />
+                <Button size="sm" variant="outline" onClick={downloadPapersTemplate}>
+                  <Download className="h-4 w-4" />
+                  Template
+                </Button>
                                 <input
                   ref={papersImportRef}
                   type="file"
@@ -1790,9 +2051,9 @@ useEffect(() => {
                 <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Academic Year" /></SelectTrigger>
                 <SelectContent>{["2024-25", "2025-26", "2026-27"].map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent>
               </Select> */}
-              <Select value={meExam} onValueChange={setMeExam}>
+                <Select value={meExam} onValueChange={setMeExam}>
                 <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Exam" /></SelectTrigger>
-                <SelectContent>{["Term 1", "Term 2", "Final"].map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                <SelectContent>{examNameOptions.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
               </Select>
               {/* <span className="text-xs text-muted-foreground ml-2">Subjects & students refresh based on selected class</span> */}
             </CardContent>
@@ -1804,85 +2065,164 @@ useEffect(() => {
                   Marks Entry · Class {meClass}-{meSection} · {meExam} · AY {meYear}
                 </CardTitle>
               </div>
-              <div className="flex gap-2 items-center">
+                          <div className="flex gap-2 items-center">
                 <RowsPerPageSelect {...marksPage} />
+                               <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={marksImporting}
+                  onClick={() => {
+                    resetMarksImportDialog();
+                    setMarksImportOpen(true);
+                  }}
+                >
+                  <Upload className="h-4 w-4" />
+                  {marksImporting ? "Importing…" : "Import Marks"}
+                </Button>
                 <Button size="sm" variant="outline" onClick={exportMarksCsv}>
                   <Download className="h-4 w-4" />
                   Export Marks
                 </Button>
-                {/* <Button size="sm" variant="outline" onClick={() => setReportOpen(true)}>Preview Report Card</Button> */}
-                <Button
+                              <Button
                   size="sm"
-                  onClick={() => {
-                    marks.forEach((m) => shareReportToStudent(m));
-                    toast.success("Marks locked & reports published to all students in this class");
-                    setReportOpen(true);
+                  disabled={publishingAll || !examMarks.length}
+                  onClick={async () => {
+                    const matchedClass = classesData.find((c) => c.name === meClass);
+                    const matchedExam = exams.find((e) => e.name === meExam && e.class === meClass);
+
+                    try {
+                      setPublishingAll(true);
+                      await publishExamMarks({
+                        examUuid: matchedExam?.id,
+                        classUuid: matchedClass?.id,
+                        sectionUuid: examMarks[0]?.sectionUuid,
+                        resultUuids: examMarks.map((m) => m.resultUuid),
+                        studentUuids: examMarks.map((m) => m.studentUuid),
+                      });
+
+                      examMarks.forEach((m) => {
+                        const stu = students.find((s) => s.id === m.studentUuid);
+                        if (stu) {
+                          storedResultsApi.saveBatch(meClass, meSection, meExam, [
+                            {
+                              studentId: stu.id,
+                              studentName: stu.name,
+                              admissionNo: stu.admissionNo,
+                              marks: Object.fromEntries(m.subjects.map((s) => [s.name, s.marks])),
+                            },
+                          ]);
+                        }
+                      });
+                      storedResultsApi.publish(meClass, meSection, meExam);
+                      setSharedStudents((p) => ({
+                        ...p,
+                        ...Object.fromEntries(examMarks.map((m) => [m.studentUuid, true])),
+                      }));
+
+                      toast.success(`Marks locked & reports published to ${examMarks.length} student(s)`);
+                      setReportOpen(true);
+                    } catch (err) {
+                      toast.error("Could not publish results");
+                    } finally {
+                      setPublishingAll(false);
+                    }
                   }}
                 >
                   <Send className="h-4 w-4" />
-                  Lock & Publish All
+                  {publishingAll ? "Publishing…" : "Lock & Publish All"}
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="p-0 overflow-auto">
+                       <CardContent className="p-0 overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Roll</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>Math /100</TableHead>
-                    <TableHead>Sci /100</TableHead>
-                    <TableHead>Eng /100</TableHead>
-                    <TableHead>Soc /100</TableHead>
-                    <TableHead>Hindi /100</TableHead>
+                    {marksSubjectColumns.map((c) => (
+                      <TableHead key={c.name}>{c.name} /{c.max}</TableHead>
+                    ))}
                     <TableHead>Total</TableHead>
                     <TableHead>%</TableHead>
                     <TableHead>Grade</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead className="w-16"></TableHead>
                     <TableHead className="w-36">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {marksPage.pageItems.map((m) => {
-                    const total = m.math + m.sci + m.eng + m.soc + m.hin;
-                    const pct = Math.round(total / 5);
-                    const g = grade(pct);
-                    const isShared = !!sharedRolls[m.roll];
+                    const g = grade(m.percentage ?? 0);
+                    const isShared = !!sharedStudents[m.studentUuid];
                     return (
-                      <TableRow key={m.roll}>
+                      <TableRow key={m.studentUuid}>
                         <TableCell>{m.roll}</TableCell>
                         <TableCell className="font-medium">{m.name}</TableCell>
-                        {[m.math, m.sci, m.eng, m.soc, m.hin].map((v, i) => (
-                          <TableCell key={i}>
-                            <Input defaultValue={v} className="h-7 w-14 text-xs" />
-                          </TableCell>
-                        ))}
-                        <TableCell className="tabular-nums font-semibold">{total}</TableCell>
-                        <TableCell className="tabular-nums">{pct}%</TableCell>
+                                               {marksSubjectColumns.map((c) => {
+                          const subj = m.subjects.find((s) => s.uuid === c.uuid);
+                          return (
+                            <TableCell key={c.uuid}>
+                              {subj?.isAbsent ? (
+                                <Badge variant="outline">Absent</Badge>
+                              ) : (
+                                <Input
+                                  type="number"
+                                  value={getSubjectMarkValue(m, c.uuid)}
+                                  onChange={(e) => setSubjectMarkValue(m.resultUuid, c.uuid, e.target.value)}
+                                  className="h-7 w-14 text-xs"
+                                />
+                              )}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className="tabular-nums font-semibold">{m.total}</TableCell>
+                        <TableCell className="tabular-nums">{m.percentage}%</TableCell>
                         <TableCell>
-                          <Badge className={g.c}>{g.g}</Badge>
+                          <Badge className={g.c}>{m.gradeLabel ?? g.g}</Badge>
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => {
-                              setReportStudent({ name: m.name, roll: String(m.roll), math: m.math, sci: m.sci, eng: m.eng, soc: m.soc, hin: m.hin });
-                              setReportOpen(true);
-                            }}
-                          >
-                            Report
-                          </Button>
+                          <Badge variant={m.status === "PASS" ? "secondary" : "destructive"}>
+                            {m.status ?? "—"}
+                          </Badge>
                         </TableCell>
                         <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs gradient-primary border-0"
+                              disabled={!!savingMarks[m.resultUuid]}
+                              onClick={() => saveMarksRow(m)}
+                            >
+                              {savingMarks[m.resultUuid] ? "Saving…" : "Save"}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                setReportStudent({
+                                  name: m.name,
+                                  roll: String(m.roll),
+                                  subjects: m.subjects.map((s) => ({ subject: s.name, max: s.max, marks: s.marks })),
+                                });
+                                setReportOpen(true);
+                              }}
+                            >
+                              Report
+                            </Button>
+                          </div>
+                        </TableCell>
+                                                <TableCell>
                           <Button
                             size="sm"
                             variant={isShared ? "outline" : "default"}
                             className={`h-7 text-xs ${isShared ? "" : "gradient-primary border-0"}`}
+                            disabled={!!publishingRow[m.resultUuid]}
                             onClick={() => shareReportToStudent(m)}
                           >
-                            {isShared ? (
+                            {publishingRow[m.resultUuid] ? (
+                              "Publishing…"
+                            ) : isShared ? (
                               <>
                                 <FileCheck2 className="h-3.5 w-3.5" />
                                 Shared
@@ -1898,6 +2238,20 @@ useEffect(() => {
                       </TableRow>
                     );
                   })}
+                  {examMarksLoading && (
+                    <TableRow>
+                      <TableCell colSpan={7 + marksSubjectColumns.length} className="text-center text-sm text-muted-foreground py-8">
+                        Loading marks…
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!examMarksLoading && !marksPage.pageItems.length && (
+                    <TableRow>
+                      <TableCell colSpan={7 + marksSubjectColumns.length} className="text-center text-sm text-muted-foreground py-8">
+                        No marks entered yet for Class {meClass}-{meSection} · {meExam}.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
               <PaginationBar {...marksPage} itemLabel="students" showPageSize={false} />
@@ -2075,27 +2429,27 @@ useEffect(() => {
           </Card> */}
 
           <div className="grid md:grid-cols-2 gap-4">
-            <Card className="border-border/60">
+                        <Card className="border-border/60">
               <CardHeader><CardTitle className="text-base">Top Performers</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                {marks
+                {[...examMarks]
+                  .sort((a, b) => b.total - a.total)
                   .slice(0, 5)
-                  .sort((a, b) => (b.math + b.sci + b.eng + b.soc + b.hin) - (a.math + a.sci + a.eng + a.soc + a.hin))
-                  .map((m, i) => {
-                    const total = m.math + m.sci + m.eng + m.soc + m.hin;
-                    return (
-                      <div key={m.roll} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/40">
-                        <div className="h-8 w-8 rounded-full gradient-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
-                          #{i + 1}
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-sm font-medium">{m.name}</div>
-                          <div className="text-xs text-muted-foreground">Roll {m.roll}</div>
-                        </div>
-                        <div className="text-sm font-semibold tabular-nums">{total}/500</div>
+                  .map((m, i) => (
+                    <div key={m.studentUuid} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/40">
+                      <div className="h-8 w-8 rounded-full gradient-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
+                        #{i + 1}
                       </div>
-                    );
-                  })}
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">{m.name}</div>
+                        <div className="text-xs text-muted-foreground">Roll {m.roll}</div>
+                      </div>
+                      <div className="text-sm font-semibold tabular-nums">{m.total}/{m.totalMax}</div>
+                    </div>
+                  ))}
+                {!examMarks.length && (
+                  <div className="text-sm text-muted-foreground text-center py-6">No marks data yet.</div>
+                )}
               </CardContent>
             </Card>
             <Card className="border-border/60">
@@ -2295,11 +2649,124 @@ useEffect(() => {
           }
         }}
       >
-        {importSubmitting ? "Importing…" : "Submit"}
+                {importSubmitting ? "Importing…" : "Submit"}
       </Button>
     </DialogFooter>
   </DialogContent>
 </Dialog>
+
+      {/* ================= Import Marks Dialog (Exam + Class chosen first, then File) ================= */}
+      <Dialog
+        open={marksImportOpen}
+        onOpenChange={(v) => {
+          setMarksImportOpen(v);
+          if (!v) resetMarksImportDialog();
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Import Marks</DialogTitle>
+            <DialogDescription>
+              Pick the exam and class this file belongs to, then choose the file.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 pt-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Exam</Label>
+              <Select value={marksImportExam} onValueChange={setMarksImportExam}>
+                <SelectTrigger><SelectValue placeholder="Select exam" /></SelectTrigger>
+                <SelectContent>
+                  {examNameOptions.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Class</Label>
+              <Select value={marksImportClass} onValueChange={setMarksImportClass}>
+                <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
+                <SelectContent>
+                  {classOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">File</Label>
+              <div className="flex items-center gap-3">
+                <label className="inline-flex items-center px-3 py-1.5 rounded-md border border-input bg-muted/50 text-sm font-medium cursor-pointer hover:bg-muted transition-colors">
+                  Choose File
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    hidden
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      setMarksImportFile(file);
+                      setMarksImportFileLabel(file.name);
+                    }}
+                  />
+                </label>
+                <span className="text-sm text-muted-foreground truncate">
+                  {marksImportFileLabel || "No file chosen"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!marksImportClass}
+              onClick={downloadMarksTemplate}
+            >
+              <Download className="h-4 w-4" />
+              Template
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setMarksImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="gradient-primary border-0"
+              disabled={!marksImportExam || !marksImportClass || !marksImportFile || marksImporting}
+              onClick={async () => {
+                const matchedClass = classesData.find((c) => c.name === marksImportClass);
+                const matchedExam = exams.find(
+                  (ex) => ex.name === marksImportExam && ex.class === marksImportClass,
+                );
+
+                if (!matchedClass || !matchedExam) {
+                  toast.error("Please pick a valid exam and class combination");
+                  return;
+                }
+
+                try {
+                  setMarksImporting(true);
+                  const res = await importExamMarks(marksImportFile, {
+                    examUuid: matchedExam.id,
+                    classUuid: matchedClass.id,
+                  });
+                  handleMarksImportResult(res);
+                  setMeClass(marksImportClass);
+                  setMeExam(marksImportExam);
+                  await loadExamMarks();
+                  setMarksImportOpen(false);
+                  resetMarksImportDialog();
+                } catch (err) {
+                  toast.error("Could not import marks");
+                } finally {
+                  setMarksImporting(false);
+                }
+              }}
+            >
+              {marksImporting ? "Importing…" : "Submit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CrudDialog
         open={genOpen}
@@ -2535,15 +3002,9 @@ useEffect(() => {
         }}
         academicYear="2025-26"
         term="Term 2"
-        rows={
-          reportStudent
-            ? [
-                { subject: "Mathematics", max: 100, marks: reportStudent.math },
-                { subject: "Science", max: 100, marks: reportStudent.sci },
-                { subject: "English", max: 100, marks: reportStudent.eng },
-                { subject: "Social Studies", max: 100, marks: reportStudent.soc },
-                { subject: "Hindi", max: 100, marks: reportStudent.hin },
-              ]
+               rows={
+          reportStudent?.subjects
+            ? reportStudent.subjects
             : [
                 { subject: "Mathematics", max: 100, marks: 88 },
                 { subject: "Science", max: 100, marks: 82 },
@@ -2604,14 +3065,10 @@ useEffect(() => {
                   size="sm"
                   className="gradient-primary border-0"
                   onClick={() => {
-                    setReportStudent({
+                                        setReportStudent({
                       name: dashDetail.name,
                       roll: String(dashDetail.roll),
-                      math: dashDetail.subjects[0]?.obtained ?? 0,
-                      sci: dashDetail.subjects[1]?.obtained ?? 0,
-                      eng: dashDetail.subjects[2]?.obtained ?? 0,
-                      soc: dashDetail.subjects[3]?.obtained ?? 0,
-                      hin: dashDetail.subjects[4]?.obtained ?? 0,
+                      subjects: dashDetail.subjects.map((s) => ({ subject: s.subject, max: s.max, marks: s.obtained })),
                     });
                     setDashDetail(null);
                     setReportOpen(true);

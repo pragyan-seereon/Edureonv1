@@ -580,28 +580,32 @@ const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
     }));
   };
 
-  const saveMarksRow = async (m) => {
+   const saveMarksRow = async (m) => {
     const edited = editedMarks[m.resultUuid] ?? {};
     let totalMarks = 0;
     let totalMax = 0;
-    m.subjects.forEach((s) => {
+
+    const subjectMarks = m.subjects.map((s) => {
       const raw = edited[s.uuid];
       const val = raw !== undefined && raw !== "" ? Number(raw) : Number(s.marks ?? 0);
-      totalMarks += Number.isNaN(val) ? 0 : val;
+      const marks = Number.isNaN(val) ? 0 : val;
+
+      if (!s.isAbsent) totalMarks += marks;
       totalMax += Number(s.max) || 0;
+
+      return {
+        subject_uuid: s.uuid,
+        marks,
+        is_absent: !!s.isAbsent,
+      };
     });
-    const percentage = totalMax ? Math.round((totalMarks / totalMax) * 10000) / 100 : 0;
-    const g = grade(percentage);
-    const status = percentage >= 33 ? "PASS" : "FAIL";
 
     try {
       setSavingMarks((p) => ({ ...p, [m.resultUuid]: true }));
       await updateExamMarks(m.resultUuid, {
         total_marks: totalMarks,
         total_max_marks: totalMax,
-        percentage,
-        grade: g.g,
-        status,
+        subject_marks: subjectMarks,
       });
       toast.success(`Marks updated for ${m.name}`);
       setEditedMarks((p) => {
@@ -1027,7 +1031,6 @@ const resetMarksImportDialog = () => {
       setPublishingRow((p) => ({ ...p, [m.resultUuid]: false }));
     }
   };
-  // ---- Marks Entry -> Export the current class/section/exam marks as CSV ----
     // ---- Marks Entry -> Import marks from Excel ----
   const handleMarksImportResult = (res) => {
     const saved = res?.saved ?? 0;

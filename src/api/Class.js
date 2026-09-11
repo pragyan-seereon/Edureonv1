@@ -53,3 +53,12 @@ export const deleteClass = async (classUUID) => {
 
   return data;
 };
+
+export const getSections = async (classUuid) => {
+  const { data } = await api.get("/sections", {
+    headers: getHeaders(),
+    params: classUuid ? { class_uuid: classUuid } : undefined,
+  });
+
+  return data;
+};

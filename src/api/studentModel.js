@@ -371,10 +371,21 @@ const studentModel = {
   },
 
   getPortalContent: async () => {
-    const response = await api.get("/portal/content", {
-      headers: getHeaders(),
-    });
-    return response.data;
+    const [dashboardResponse, notesResponse] = await Promise.all([
+      api.get("/student-portal/dashboard", {
+        params: { session_year: getSessionYear() },
+        headers: getHeaders(),
+      }),
+      api.get("/student-portal/notices", {
+        params: { page: 1, page_size: 100 },
+        headers: getHeaders(),
+      }),
+    ]);
+
+    return {
+      ...dashboardResponse.data,
+      communication_notes: notesResponse.data?.data ?? [],
+    };
   },
 
   getMyMaterials: async () => {

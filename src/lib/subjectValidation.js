@@ -463,7 +463,7 @@ export function validateNoticeForm(form, existingNotices = [], editUuid = null) 
 // ---- Duplicate check: same title + same (normalized) date range ----
 const others = existingNotices.filter(
   (n) =>
-    (n.notice_uuid ?? n.event_uuid ?? n.holiday_uuid ?? n.draft_uuid ?? n.uuid ?? n.id) !==
+    (n.notes_uuid ?? n.notice_uuid ?? n.event_uuid ?? n.holiday_uuid ?? n.draft_uuid ?? n.uuid ?? n.id) !==
     editUuid,
 );
 

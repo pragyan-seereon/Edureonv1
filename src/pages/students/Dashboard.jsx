@@ -66,6 +66,9 @@ const Empty = ({ text }) => (
   </div>
 );
 
+const getNoteCategory = (note) =>
+  note?.category?.name || note?.category || "Notice";
+
 
 // ============================================================
 // DASHBOARD
@@ -170,11 +173,32 @@ export default function Dashboard() {
   const studyMaterials =
     dashboard?.study_materials || [];
 
-  const calendar =
-    dashboard?.calendar || [];
+  // `communication_notes` is the current dashboard response field. Retain
+  // `notes` as a fallback while older backend deployments are upgraded.
+  const portalNotes = Array.isArray(dashboard?.communication_notes)
+    ? dashboard.communication_notes
+    : Array.isArray(dashboard?.notes)
+      ? dashboard.notes
+      : [];
 
-  const notices =
-    dashboard?.notices || [];
+  // Empty legacy arrays are returned alongside `notes`, so prefer them only
+  // when they actually contain records.
+  const calendar = Array.isArray(dashboard?.calendar) && dashboard.calendar.length
+    ? dashboard.calendar
+    : portalNotes.filter((note) =>
+        ["event", "events", "calendar", "holiday", "holidays", "academic"].includes(
+          getNoteCategory(note).toLowerCase()
+        )
+      );
+
+  const notices = Array.isArray(dashboard?.notices) && dashboard.notices.length
+    ? dashboard.notices
+    : portalNotes.filter(
+        (note) =>
+          !["event", "events", "calendar", "holiday", "holidays", "academic"].includes(
+            getNoteCategory(note).toLowerCase()
+          )
+      );
 
 
   // ==========================================================
@@ -941,7 +965,8 @@ export default function Dashboard() {
                     <div
                       key={
                         item.calendar_uuid ||
-                        item.holiday_uuid
+                        item.holiday_uuid ||
+                        item.notes_uuid
                       }
                       className="p-2 border rounded-md text-sm"
                     >
@@ -958,7 +983,7 @@ export default function Dashboard() {
 
                         {" · "}
 
-                        {item.category}
+                        {getNoteCategory(item)}
 
                       </div>
 
@@ -1025,7 +1050,7 @@ export default function Dashboard() {
                 (item) => (
 
                   <div
-                    key={item.notice_uuid}
+                    key={item.notice_uuid || item.notes_uuid}
                     className="flex items-center gap-3 p-2.5 border rounded-md"
                   >
 
@@ -1033,7 +1058,7 @@ export default function Dashboard() {
                       variant="outline"
                       className="text-[10px]"
                     >
-                      {item.category}
+                      {getNoteCategory(item)}
                     </Badge>
 
 

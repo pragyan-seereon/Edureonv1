@@ -114,3 +114,130 @@ export const deleteExam = async (uuid) => {
 
   return data;
 };
+
+// ---------------- Class-Subject Mappings ----------------
+
+// Get subjects mapped to a class
+export const getClassSubjects = async (classUuid) => {
+  const { data } = await api.get(
+    `/class-subject-mappings/class/${classUuid}/subjects`,
+    { headers: getHeaders() },
+  );
+
+  return data;
+};
+
+export const getRooms = async () => {
+  const { data } = await api.get("/infrastructure/rooms", {
+    headers: getHeaders(),
+  });
+  return data?.data ?? data ?? [];
+};
+
+// ---------------- Exam Papers ----------------
+
+export const getExamPapers = async ({ skip = 0, limit = 100 } = {}) => {
+  const { data } = await api.get("/exam-papers", {
+    headers: getHeaders(),
+    params: { skip, limit },
+  });
+  return data;
+};
+
+export const createExamPapersBulk = async (examUuid, papers) => {
+  const { data } = await api.post(
+    "/exam-papers/bulk",
+    { exam_uuid: examUuid, papers },
+    { headers: getHeaders() },
+  );
+  return data;
+};
+
+export const getExamPaperById = async (uuid) => {
+  const { data } = await api.get(`/exam-papers/${uuid}`, {
+    headers: getHeaders(),
+  });
+  return data;
+};
+
+export const updateExamPaper = async (uuid, payload) => {
+  const { data } = await api.put(`/exam-papers/${uuid}`, payload, {
+    headers: getHeaders(),
+  });
+  return data;
+};
+
+export const deleteExamPaper = async (uuid) => {
+  const { data } = await api.delete(`/exam-papers/${uuid}`, {
+    headers: getHeaders(),
+  });
+  return data;
+};
+
+export const importExamPapers = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await api.post("/exam-papers/import", formData, {
+    headers: {
+      ...getHeaders(),
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+};
+
+// ---------------- Exam Marks ----------------
+
+export const importExamMarks = async (file, { examUuid, classUuid, sectionUuid } = {}) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (examUuid) formData.append("exam_uuid", examUuid);
+  if (classUuid) formData.append("class_uuid", classUuid);
+  if (sectionUuid) formData.append("section_uuid", sectionUuid);
+
+  const { data } = await api.post("/exam-marks/import", formData, {
+    headers: {
+      ...getHeaders(),
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+};
+
+// Get exam marks (filtered by exam + class)
+export const getExamMarks = async ({ examUuid, classUuid, skip = 0, limit = 200 } = {}) => {
+  const { data } = await api.get("/exam-marks", {
+    headers: getHeaders(),
+    params: { exam_uuid: examUuid, class_uuid: classUuid, skip, limit },
+  });
+  return data;
+};
+
+// Update a single student's exam result (totals/grade/status)
+export const updateExamMarks = async (resultUuid, payload) => {
+  const { data } = await api.put(`/exam-marks/${resultUuid}`, payload, {
+    headers: getHeaders(),
+  });
+  return data;
+};
+
+
+export const publishExamMarks = async ({
+  examUuid,
+  classUuid,
+  sectionUuid,
+  resultUuids,
+  studentUuids,
+} = {}) => {
+  const payload = {
+    exam_uuid: examUuid,
+    class_uuid: classUuid,
+    section_uuid: sectionUuid,
+    result_uuids: resultUuids,
+    student_uuids: studentUuids,
+  };
+  const { data } = await api.post("/exam-marks/publish", payload, {
+    headers: getHeaders(),
+  });
+  return data;
+};

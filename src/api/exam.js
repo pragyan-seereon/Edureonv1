@@ -241,3 +241,14 @@ export const publishExamMarks = async ({
   });
   return data;
 };
+
+export const getExamResultAnalytics = async ({ topLimit = 5, examUuid } = {}) => {
+  const { data } = await api.get("/exam-marks/result-analytics", {
+    headers: getHeaders(),
+    params: {
+      top_limit: topLimit,
+      exam_uuid: examUuid,
+    },
+  });
+  return data;
+};

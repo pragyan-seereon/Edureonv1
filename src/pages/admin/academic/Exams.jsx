@@ -74,7 +74,7 @@ import {
   Radar,
 } from "recharts";
 import { useMemo, useRef, useState, useEffect } from "react";
-import { getExamCategories, createExamCategory, updateExamCategory, deleteExamCategory, getExams, createExam,updateExam,deleteExam,getClassSubjects,getRooms, createExamPapersBulk, getExamPapers, getExamPaperById, updateExamPaper, deleteExamPaper, importExamPapers, importExamMarks , getExamMarks, updateExamMarks, publishExamMarks, } from "../../../api/exam";
+import { getExamCategories, createExamCategory, updateExamCategory, deleteExamCategory, getExams, createExam,updateExam,deleteExam,getClassSubjects,getRooms, createExamPapersBulk, getExamPapers, getExamPaperById, updateExamPaper, deleteExamPaper, importExamPapers, importExamMarks , getExamMarks, updateExamMarks, publishExamMarks,getExamResultAnalytics, } from "../../../api/exam";
 import {getQuestionBank,getQuestionBankById,createQuestion,createQuestionsBulk,updateQuestionBank,deleteQuestionBank,importQuestionBank,} from "../../../api/question";
 import { getClasses,getSections } from "../../../api/Class";
 import { toast } from "sonner";
@@ -525,6 +525,28 @@ const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
     };
   };
 
+    // ---- Result Analytics (Top Performers + Publishing Progress) ----
+  const [resultAnalytics, setResultAnalytics] = useState({
+    top_performers: [],
+    publishing_progress: [],
+  });
+  const [resultAnalyticsLoading, setResultAnalyticsLoading] = useState(true);
+
+  const loadResultAnalytics = async (examUuid) => {
+    try {
+      setResultAnalyticsLoading(true);
+      const data = await getExamResultAnalytics({ topLimit: 5, examUuid });
+      setResultAnalytics({
+        top_performers: data?.top_performers ?? [],
+        publishing_progress: data?.publishing_progress ?? [],
+      });
+    } catch (err) {
+      toast.error("Could not load result analytics");
+    } finally {
+      setResultAnalyticsLoading(false);
+    }
+  };
+
   const loadExamMarks = async () => {
     const matchedClass = classesData.find((c) => c.name === meClass);
     const matchedExam = exams.find((e) => e.name === meExam && e.class === meClass);
@@ -671,6 +693,7 @@ useEffect(() => {
   loadRooms();
   loadPapers();
   loadQuestions();
+  loadResultAnalytics();
 }, []);
 
   const [catOpen, setCatOpen] = useState(false);
@@ -2533,47 +2556,55 @@ const resetMarksImportDialog = () => {
             </CardContent>
           </Card> */}
 
-          <div className="grid md:grid-cols-2 gap-4">
-                        <Card className="border-border/60">
+                    <div className="grid md:grid-cols-2 gap-4">
+            <Card className="border-border/60">
               <CardHeader><CardTitle className="text-base">Top Performers</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                {[...examMarks]
-                  .sort((a, b) => b.total - a.total)
-                  .slice(0, 5)
-                  .map((m, i) => (
-                    <div key={m.studentUuid} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/40">
+                {resultAnalyticsLoading ? (
+                  <div className="text-sm text-muted-foreground text-center py-6">Loading top performers…</div>
+                ) : resultAnalytics.top_performers.length ? (
+                  resultAnalytics.top_performers.map((m) => (
+                    <div key={m.result_uuid} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/40">
                       <div className="h-8 w-8 rounded-full gradient-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
-                        #{i + 1}
+                        #{m.rank}
                       </div>
                       <div className="flex-1">
-                        <div className="text-sm font-medium">{m.name}</div>
-                        <div className="text-xs text-muted-foreground">Roll {m.roll}</div>
+                        <div className="text-sm font-medium">{m.student_name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          Roll {m.roll_no} · {m.category_name}
+                        </div>
                       </div>
-                      <div className="text-sm font-semibold tabular-nums">{m.total}/{m.totalMax}</div>
+                      <div className="text-sm font-semibold tabular-nums">
+                        {m.total_marks}/{m.total_max_marks}
+                      </div>
                     </div>
-                  ))}
-                {!examMarks.length && (
+                  ))
+                ) : (
                   <div className="text-sm text-muted-foreground text-center py-6">No marks data yet.</div>
                 )}
               </CardContent>
             </Card>
             <Card className="border-border/60">
-              <CardHeader><CardTitle className="text-base">Publishing Progress</CardTitle><CardDescription>Per-class status</CardDescription></CardHeader>
+              <CardHeader>
+                <CardTitle className="text-base">Publishing Progress</CardTitle>
+                <CardDescription>Per-class status</CardDescription>
+              </CardHeader>
               <CardContent className="space-y-3">
-                {[
-                  { c: "VI", v: 100 },
-                  { c: "VII", v: 100 },
-                  { c: "VIII", v: 92 },
-                  { c: "IX", v: 78 },
-                  { c: "X", v: 65 },
-                  { c: "XI", v: 40 },
-                  { c: "XII", v: 12 },
-                ].map((r) => (
-                  <div key={r.c} className="space-y-1">
-                    <div className="flex justify-between text-xs"><span>Class {r.c}</span><span>{r.v}%</span></div>
-                    <Progress value={r.v} className="h-1.5" />
-                  </div>
-                ))}
+                {resultAnalyticsLoading ? (
+                  <div className="text-sm text-muted-foreground text-center py-6">Loading…</div>
+                ) : resultAnalytics.publishing_progress.length ? (
+                  resultAnalytics.publishing_progress.map((r) => (
+                    <div key={r.class_uuid} className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span>Class {r.class_name}</span>
+                        <span>{r.percentage}%</span>
+                      </div>
+                      <Progress value={r.percentage} className="h-1.5" />
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-muted-foreground text-center py-6">No data yet.</div>
+                )}
               </CardContent>
             </Card>
           </div>

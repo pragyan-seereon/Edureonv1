@@ -73,6 +73,7 @@ import {
 } from "../../api/lessonplan";
 import {
   getStudyMaterials,
+  getStudyMaterial,
   createStudyMaterial,
   downloadStudyMaterial,
   updateStudyMaterial,
@@ -98,7 +99,6 @@ import {
 } from "../../components/pagination-controls";
 
 import useSessionStore from "../../store/sessionStore";
-import { useTeacherCtx } from "../../lib/teacher-ctx";
 
 // Maps a raw submission row from GET /assignments/:uuid/submissions
 const mapSubmission = (s) => ({
@@ -152,6 +152,13 @@ const TYPE_REVERSE_MAP = ASSIGNMENT_TYPES.reduce((acc, t) => {
 const ASSIGN_TO_REVERSE_MAP = Object.fromEntries(
   Object.entries(ASSIGN_TO_MAP).map(([k, v]) => [v, k]),
 );
+
+const TEACHER_ASSIGNMENTS_TAB_KEY = "teacher-assignments-active-tab";
+const ASSIGNMENTS_WORKSPACE_TABS = new Set([
+  "assignments",
+  "materials",
+  "plans",
+]);
 
 const mapAssignment = (a) => ({
   id: a.assignment_uuid,
@@ -231,8 +238,6 @@ const mapLessonPlan = (p) => ({
 });
 
 export default function TeacherAssignmentsPage() {
-  const { teacherName } = useTeacherCtx();
-
   const [materials, setMaterials] = useState([]);
   const [materialsLoading, setMaterialsLoading] = useState(false);
 
@@ -359,7 +364,19 @@ export default function TeacherAssignmentsPage() {
   const [activeId, setActiveId] = useState(null);
   const [activeSub, setActiveSub] = useState(null);
   const [classF, setClassF] = useState("All");
-  const [mainTab, setMainTab] = useState("assignments");
+  // This page can remount after a mutation. Keep the selected workspace tab
+  // outside component state so a material/plan save never falls back to
+  // Assignments.
+  const [mainTab, setMainTab] = useState(() => {
+    const savedTab = sessionStorage.getItem(TEACHER_ASSIGNMENTS_TAB_KEY);
+    return ASSIGNMENTS_WORKSPACE_TABS.has(savedTab)
+      ? savedTab
+      : "assignments";
+  });
+  const handleMainTabChange = (tab) => {
+    sessionStorage.setItem(TEACHER_ASSIGNMENTS_TAB_KEY, tab);
+    setMainTab(tab);
+  };
   const mine = allAssignments;
 
   const classOptions = useMemo(() => {
@@ -791,35 +808,37 @@ export default function TeacherAssignmentsPage() {
   // ---------------------------------------------------------------------
   // Study materials
   // ---------------------------------------------------------------------
-  const emptyM = {
-    title: "",
-    pdfFile: null,
-    externalUrl: "",
-    subject: "",
-    classNum: "",
-    section: "",
-    description: "",
-  };
+const emptyM = {
+  title: "",
+  pdfFile: null,
+  externalUrl: "",
+  subject: "",
+  classNum: "",
+  section: "",
+  description: "",
+  existingFileName: "",
+};
   const [formM, setFormM] = useState(emptyM);
   const [formErrorsM, setFormErrorsM] = useState({});
   const [sharingMaterial, setSharingMaterial] = useState(false);
 
   const [editingMaterialUuid, setEditingMaterialUuid] = useState(null);
 
-  const handleEditMaterial = (m) => {
-    setFormM({
-      title: m.title || "",
-      pdfFile: null,
-      externalUrl: m.type === "LINK" ? m.url || "" : "",
-      subject: m.subjectUuid || "",
-      classNum: m.classUuid || "",
-      section: m.sectionUuid || "",
-      description: m.description || "",
-    });
-    setFormErrorsM({});
-    setEditingMaterialUuid(m.id);
-    setOpenM(true);
-  };
+ const handleEditMaterial = (m) => {
+  setFormM({
+    title: m.title || "",
+    pdfFile: null,
+    externalUrl: m.type === "LINK" ? m.url || "" : "",
+    subject: m.subjectUuid || "",
+    classNum: m.classUuid || "",
+    section: m.sectionUuid || "",
+    description: m.description || "",
+    existingFileName: m.type === "PDF" ? m.fileName || "" : "",
+  });
+  setFormErrorsM({});
+  setEditingMaterialUuid(m.id);
+  setOpenM(true);
+};
 
   const handleUpdateMaterial = async () => {
     if (!validateMaterialForm(true))
@@ -840,14 +859,27 @@ export default function TeacherAssignmentsPage() {
       const res = await updateStudyMaterial(editingMaterialUuid, fd);
       if (res?.success) {
         toast.success(res.message || "Study material updated");
-        setMaterials((rows) =>
-          rows.map((r) =>
-            r.id === editingMaterialUuid ? mapMaterial(res.data) : r,
-          ),
-        );
+        // The PUT response may omit joined display fields (such as
+        // section_name). Fetch the material detail before updating the row.
+        try {
+          const detailRes = await getStudyMaterial(editingMaterialUuid);
+          const updatedMaterial = detailRes?.data ?? detailRes;
+          setMaterials((rows) =>
+            rows.map((r) =>
+              r.id === editingMaterialUuid
+                ? mapMaterial(updatedMaterial)
+                : r,
+            ),
+          );
+        } catch (detailErr) {
+          // The update still succeeded; refresh the collection as a fallback.
+          console.log(detailErr);
+          await loadMaterials();
+        }
         setOpenM(false);
         setFormM(emptyM);
         setEditingMaterialUuid(null);
+        handleMainTabChange("materials");
       } else {
         toast.error(res?.message || "Failed to update material");
       }
@@ -911,7 +943,7 @@ export default function TeacherAssignmentsPage() {
         setMaterials((rows) => [mapMaterial(res.data), ...rows]);
         setOpenM(false);
         setFormM(emptyM);
-        setMainTab("materials");
+        handleMainTabChange("materials");
       } else {
         toast.error(res?.message || "Failed to share material");
       }
@@ -1594,35 +1626,42 @@ export default function TeacherAssignmentsPage() {
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">
-              PDF File <span className="text-destructive">*</span>
-            </Label>
-            <div className="relative">
-              <Paperclip className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-              <label
-                htmlFor="material-upload"
-                className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
-              >
-                <span
-                  className={
-                    formM.pdfFile ? "truncate" : "text-muted-foreground"
-                  }
-                >
-                  {formM.pdfFile ? formM.pdfFile.name : "Attach PDF"}
-                </span>
-              </label>
-              <input
-                id="material-upload"
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                onChange={(e) => {
-                  setFormM({ ...formM, pdfFile: e.target.files?.[0] ?? null });
-                  setFormErrorsM((errors) => ({ ...errors, attachment: "" }));
-                }}
-              />
-            </div>
-          </div>
+  <Label className="text-xs">
+    PDF File
+    {!editingMaterialUuid && <span className="text-destructive"> *</span>}
+  </Label>
+  <div className="relative">
+    <Paperclip className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+    <label
+      htmlFor="material-upload"
+      className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
+    >
+      <span
+        className={
+          formM.pdfFile ? "truncate" : "text-muted-foreground"
+        }
+      >
+        {formM.pdfFile ? formM.pdfFile.name : "Attach PDF"}
+      </span>
+    </label>
+    <input
+      id="material-upload"
+      type="file"
+      accept="application/pdf"
+      className="hidden"
+      onChange={(e) => {
+        setFormM({ ...formM, pdfFile: e.target.files?.[0] ?? null });
+        setFormErrorsM((errors) => ({ ...errors, attachment: "" }));
+      }}
+    />
+  </div>
+  {editingMaterialUuid && !formM.pdfFile && formM.existingFileName && (
+    <div className="flex items-center gap-1.5 pl-1 text-xs text-primary truncate">
+      <FileText className="h-3 w-3 shrink-0" />
+      Current: {formM.existingFileName}
+    </div>
+  )}
+</div>
 
           <div className="space-y-1">
             <Label className="text-xs">
@@ -2046,7 +2085,7 @@ export default function TeacherAssignmentsPage() {
           tone="info"
         />
       </div>
-      <Tabs value={mainTab} onValueChange={setMainTab}>
+      <Tabs value={mainTab} onValueChange={handleMainTabChange}>
         <TabsList>
           <TabsTrigger value="assignments">Assignments</TabsTrigger>
           <TabsTrigger value="materials">Study Materials</TabsTrigger>
@@ -2434,7 +2473,7 @@ export default function TeacherAssignmentsPage() {
         </TabsContent>
 
         <TabsContent value="plans" className="mt-4">
-          <LessonPlansTab teacherName={teacherName} setMainTab={setMainTab} />
+          <LessonPlansTab setMainTab={handleMainTabChange} />
         </TabsContent>
       </Tabs>
     </PageContainer>
@@ -2443,7 +2482,7 @@ export default function TeacherAssignmentsPage() {
 
 /** Lesson planning lives inside the assignments workspace for teachers. */
 // eslint-disable-next-line no-unused-vars
-function LessonPlansTab({ teacherName, setMainTab }) {
+function LessonPlansTab({ setMainTab }) {
   const [plans, setPlans] = useState([]);
   const [plansLoading, setPlansLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -2544,6 +2583,11 @@ function LessonPlansTab({ teacherName, setMainTab }) {
   useEffect(() => {
     const sec = sectionsList.filter((s) => s.class_uuid === form.classNum);
     setFilteredSections(sec);
+
+    // An edit opens before the picker data has loaded. Do not discard the
+    // saved section during that interim empty state.
+    if (!sectionsList.length) return;
+
     setForm((prev) => ({
       ...prev,
       section: sec.some((s) => s.section_uuid === prev.section)
@@ -2690,13 +2734,14 @@ function LessonPlansTab({ teacherName, setMainTab }) {
       const res = await updateLessonPlan(editingUuid, fd);
       if (res?.success) {
         toast.success(res.message || "Lesson plan updated");
-        setPlans((rows) =>
-          rows.map((r) => (r.id === editingUuid ? mapLessonPlan(res.data) : r)),
-        );
+        // Update responses do not always include the joined class/section
+        // names. Reload the list so the displayed section remains correct.
+        await loadPlans();
         setOpen(false);
         setForm(empty);
         setErrors({});
         setEditingUuid(null);
+        setMainTab("plans");
       } else {
         toast.error(res?.message || "Failed to update lesson plan");
       }
@@ -3005,6 +3050,12 @@ function LessonPlansTab({ teacherName, setMainTab }) {
                         }
                       />
                     </div>
+                    {editingUuid && !form.pdfFile && form.existingPdfName && (
+                      <div className="flex items-center gap-1.5 pl-1 text-xs text-primary truncate">
+                        <FileText className="h-3 w-3 shrink-0" />
+                        Current: {form.existingPdfName}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <DialogFooter>

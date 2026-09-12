@@ -52,3 +52,12 @@ export const downloadStudyMaterial = async (material_uuid) => {
 
   return data;
 };
+
+// Get one material with its resolved subject, class, and section names.
+export const getStudyMaterial = async (material_uuid) => {
+  const { data } = await api.get(`/materials/${material_uuid}`, {
+    headers: getHeaders(),
+  });
+
+  return data;
+};

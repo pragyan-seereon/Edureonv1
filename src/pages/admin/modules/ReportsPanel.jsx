@@ -44,6 +44,7 @@ import { Badge } from "../../../components/ui/badge";
 import {
   getStudentFeeReport,
   getMonthlyFeeManagementReport,
+  getOtherPaymentsReport,
 } from "../../../api/feeReports";
 import { getPayments } from "../../../api/payment";
 
@@ -153,6 +154,12 @@ function ReportsPanel({ students }) {
       description: "Students with pending / overdue fees",
     },
 
+    {
+      value: "OTHER_PAYMENTS",
+      label: "Other Payments Report",
+      description: "Institute-specific collections received from students and staff",
+    },
+
     // =====================================================
     // NEW MONTHLY MANAGEMENT REPORT
     // =====================================================
@@ -253,6 +260,17 @@ function ReportsPanel({ students }) {
           paymentStatus: false,
         };
 
+      case "OTHER_PAYMENTS":
+        return {
+          academicYear: false,
+          student: false,
+          class: false,
+          section: false,
+          dateRange: true,
+          collectionDate: false,
+          paymentStatus: true,
+        };
+
       // =====================================================
       // MONTHLY MANAGEMENT
       // =====================================================
@@ -297,6 +315,15 @@ function ReportsPanel({ students }) {
   // =====================================================
 
   const statusOptionsForReport = useMemo(() => {
+    if (reportType === "OTHER_PAYMENTS") {
+      return [
+        { value: "all", label: "All Status" },
+        { value: "PAID", label: "Paid" },
+        { value: "PENDING", label: "Pending" },
+        { value: "CANCELLED", label: "Cancelled" },
+      ];
+    }
+
     if (reportType === "MASTER_FEES") {
       return [
         { value: "all", label: "All Status" },
@@ -1266,7 +1293,50 @@ function ReportsPanel({ students }) {
         return;
       }
 
+      // OTHER PAYMENTS REPORT
       // =================================================
+
+      if (reportType === "OTHER_PAYMENTS") {
+        const response = await getOtherPaymentsReport({
+          from_date: fromDate || undefined,
+          to_date: toDate || undefined,
+          payment_status: paymentStatus === "all" ? undefined : paymentStatus,
+        });
+        const body = response?.data ?? response ?? {};
+
+        if (!body.success) {
+          throw new Error(body.message || "Failed to fetch other payments report");
+        }
+
+        const data = Array.isArray(body.data) ? body.data : [];
+        const summary = body.summary || {};
+
+        setComponents([]);
+        setReportData(data.map((row) => ({
+          "Sr No": row.sr_no,
+          Receipt: row.receipt_number || "â€”",
+          Type: row.collection_type || "â€”",
+          Person: row.person_name || "â€”",
+          Role: row.role_name || "â€”",
+          "Payment Mode": row.payment_mode || "â€”",
+          "Gross Amount": Number(row.gross_amount || 0),
+          Discount: Number(row.discount_amount || 0),
+          "Paid Amount": Number(row.paid_amount || 0),
+          Status: row.payment_status || "â€”",
+          Date: row.collection_date
+            ? new Date(row.collection_date).toLocaleDateString("en-IN")
+            : "â€”",
+        })));
+        setTotals([
+          { label: "Transactions", value: summary.transactions || 0 },
+          { label: "Gross Amount", value: inr(summary.gross_amount) },
+          { label: "Discount", value: inr(summary.discount_amount) },
+          { label: "Paid Amount", value: inr(summary.paid_amount) },
+          { label: "Pending Amount", value: inr(summary.pending_amount) },
+        ]);
+        return;
+      }
+
       // MONTHLY FEE MANAGEMENT REPORT
       // =================================================
 

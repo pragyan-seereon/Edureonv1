@@ -69,6 +69,7 @@ import NotificationsPage from "./pages/superadmin/NotificationsPage";
 import SendNotificationPage from "./pages/superadmin/send-notification";
 import TransactionsPage from "./pages/superadmin/TransactionsPage";
 import FeeCollection from "./pages/admin/modules/FeeCollection";
+import OtherCollection from "./pages/admin/modules/Other_collection";
 import SubjectDetail from "./pages/admin/academic/SubjectDetail";
 import SectionDetail from "./pages/admin/academic/SectionDetail";
 import StudentArchive from "./pages/admin/academic/Studentarchive";
@@ -197,6 +198,7 @@ const router = createBrowserRouter([
       { path: "/library", element: <LibraryPage /> },
       { path: "/communication", element: <Communication /> },
       { path: "/fee-collection", element: <FeeCollection /> },
+      { path: "/other-collections", element: <OtherCollection /> },
        //admin staff routes
       { path: "/employees", element: <EmployeesPage /> },
       {path:"/shift",element:<ShiftsPage/>},

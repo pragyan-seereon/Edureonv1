@@ -40,3 +40,10 @@ export const getMonthlyFeeManagementReport = (
     params,
   });
 };
+
+export const getOtherPaymentsReport = (params = {}) => {
+  return api.get("/reports/student-fees/other-payments", {
+    headers: getHeaders(),
+    params,
+  });
+};

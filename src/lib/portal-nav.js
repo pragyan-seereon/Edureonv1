@@ -81,6 +81,7 @@ const adminGroups = [
     label: "Operations",
     items: [
       { title: "Fees & Finance", url: "/fees", icon: IndianRupee },
+      { title: "Other Collection", url: "/other-collections", icon: Receipt },
       { title: "Expenses", url: "/expenses", icon: Receipt },
       { title: "Infrastructure", url: "/infrastructure", icon: Network },
       { title: "Assets", url: "/assets", icon: Boxes },
@@ -177,6 +178,7 @@ const superGroups = [
     items: [
       { title: "Fees & Finance", url: "/fees", icon: IndianRupee },
       { title: "Fee Collection", url: "/fee-collection", icon: IndianRupee },
+      { title: "Other Collection", url: "/other-collections", icon: Receipt },
       // { title: "Expenses", url: "/expenses", icon: Receipt },
       // { title: "Assets", url: "/assets", icon: Boxes },
       { title: "Infrastructure", url: "/infrastructure", icon: Network },
@@ -430,6 +432,7 @@ const NAV_MODULE_CODES = {
   Studentarchive: ["students", "student_archive"], Employees: ["employees", "staff"],
   Shift: ["shift", "shifts", "employees"], Payroll: ["payroll"], "Roles & Permissions": ["roles", "permissions"],
   "Fees & Finance": ["fees", "finance"], "Fee Collection": ["fees", "fee_collection"],
+  "Other Collection": ["other_collection", "other_collections", "fees"],
   Expenses: ["expenses"], Infrastructure: ["infrastructure"], Assets: ["assets"],
   Transport: ["transport"], Hostel: ["hostel"], Library: ["library"], Documents: ["dms", "documents"],
   Communication: ["communication"], Settings: ["settings"], "My Classes": ["classes"],

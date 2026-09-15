@@ -171,6 +171,7 @@ import {
   openPaymentReceipt,
   downloadPaymentReceipt,
 } from "../../../api/payment";
+import { getOtherCollectionReceiptPdf } from "../../../api/other_collection";
 
 import {
  getStudentFeeReport,
@@ -7490,9 +7491,14 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
       // Transform API response to ledger format
       const transformed = data.map((txn) => ({
         id: txn.receipt_no || txn.transaction_uuid,
-        kind: txn.payment_type === "ADVANCE" ? "Advance" : "Payment",
-        student_uuid: txn.student_uuid,
-        student_name: txn.student_name,
+        kind: txn.source_type === "OTHER_COLLECTION"
+          ? "Other Payment"
+          : txn.payment_type === "ADVANCE" ? "Advance" : "Payment",
+        student_uuid: txn.student_uuid || txn.person_uuid,
+        student_name: txn.person_name || txn.student_name || "Person unavailable",
+        role_name: txn.role_name || txn.person_type || "â€”",
+        is_other_collection: txn.source_type === "OTHER_COLLECTION",
+        source_uuid: txn.source_uuid,
         class_name: students.find(s => s.student_uuid === txn.student_uuid)?.class_name || "—",
         section: students.find(s => s.student_uuid === txn.student_uuid)?.section_name || "",
         amount: txn.total_amount || 0,
@@ -7505,7 +7511,9 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
         lateFee: txn.late_fee || 0,
         note: txn.remarks || "",
         date: txn.created_at?.split("T")[0] || "",
-        status: txn.transaction_status === "SUCCESS" ? "Success" : "Pending",
+        status: txn.transaction_status === "SUCCESS"
+          ? "Success"
+          : txn.transaction_status === "CANCELLED" ? "Cancelled" : "Pending",
         transaction_uuid: txn.transaction_uuid,
         receipt_no: txn.receipt_no,
         payment_mode: txn.payment_mode,
@@ -7607,7 +7615,7 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
               <Select value={kind} onValueChange={setKind}>
                 <SelectTrigger className="h-9 w-36"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {["All", "Invoice", "Payment", "Advance", "Refund", "Adjustment", "Cancelled"].map((k) => 
+                  {["All", "Invoice", "Payment", "Other Payment", "Advance", "Refund", "Adjustment", "Cancelled"].map((k) => 
                     <SelectItem key={k} value={k}>{k}</SelectItem>
                   )}
                 </SelectContent>
@@ -7616,7 +7624,7 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
             <Input 
               value={q} 
               onChange={(e) => setQ(e.target.value)} 
-              placeholder="Search student or ID..." 
+              placeholder="Search person or receipt..." 
               className="h-9 w-56" 
             />
             <Button size="sm" variant="outline" onClick={fetchPayments}>
@@ -7691,8 +7699,8 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
                 <TableRow>
                   <TableHead>Receipt</TableHead>
                   <TableHead>Kind</TableHead>
-                  <TableHead>Student</TableHead>
-                  <TableHead>Class</TableHead>
+                  <TableHead>Person</TableHead>
+                  <TableHead>Class / Role</TableHead>
                   <TableHead>Mode</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead className="text-right">Discount</TableHead>
@@ -7712,7 +7720,11 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm">{r.student_name}</TableCell>
-                    <TableCell className="text-xs">{r.class_name}{r.section ? "-" + r.section : ""}</TableCell>
+                    <TableCell className="text-xs">
+                      {r.is_other_collection
+                        ? r.role_name
+                        : `${r.class_name}${r.section ? `-${r.section}` : ""}`}
+                    </TableCell>
                     <TableCell className="text-xs">{r.mode !== "—" ? r.mode : "—"}</TableCell>
                     <TableCell className="text-right font-semibold">{inr(r.amount)}</TableCell>
                     <TableCell className="text-right text-orange-500">{r.discount > 0 ? inr(r.discount) : "—"}</TableCell>
@@ -7731,17 +7743,26 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
                           </Button>
                         </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+  {!r.is_other_collection && (
   <DropdownMenuItem onClick={() => setOpenStudentId(r.student_uuid)}>
     <Eye className="h-4 w-4 mr-2" />
     Student Ledger
   </DropdownMenuItem>
+  )}
 
   {r.status === "Success" && r.transaction_uuid && (
     <>
       <DropdownMenuItem
         onClick={async () => {
           try {
-            await openPaymentReceipt(r.transaction_uuid);
+            if (r.is_other_collection) {
+              const response = await getOtherCollectionReceiptPdf(r.source_uuid);
+              const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+              window.open(url, "_blank", "noopener,noreferrer");
+              setTimeout(() => URL.revokeObjectURL(url), 60_000);
+            } else {
+              await openPaymentReceipt(r.transaction_uuid);
+            }
           } catch (err) {
             console.error(err);
             toast.error(getErrorMessage(err, "Failed to open receipt"));
@@ -7755,7 +7776,17 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
       <DropdownMenuItem
         onClick={async () => {
           try {
-            await downloadPaymentReceipt(r.transaction_uuid, r.receipt_no);
+            if (r.is_other_collection) {
+              const response = await getOtherCollectionReceiptPdf(r.source_uuid);
+              const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = `${r.receipt_no || "other-collection"}.pdf`;
+              link.click();
+              URL.revokeObjectURL(url);
+            } else {
+              await downloadPaymentReceipt(r.transaction_uuid, r.receipt_no);
+            }
             toast.success("Receipt downloaded");
           } catch (err) {
             console.error(err);

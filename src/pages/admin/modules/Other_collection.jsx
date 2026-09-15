@@ -42,13 +42,14 @@ import {
   createOtherCollectionType,
   getOtherCollections,
   getOtherCollectionReceiptPdf,
+  getOtherCollectionRoles,
   getOtherCollectionTypes,
   updateOtherCollectionType,
   verifyOtherCollectionRazorpayPayment,
 } from "../../../api/other_collection";
-import { getAllRoles } from "../../../api/role";
 import { getAllStudents } from "../../../api/students";
 import { getEmployees } from "../../../api/employee";
+import useSessionStore from "../../../store/sessionStore";
 
 const emptyType = { name: "", description: "" };
 const emptyCollection = {
@@ -60,6 +61,7 @@ const emptyCollection = {
   payment_mode: "CASH",
   transaction_number: "",
   collection_date: "",
+  session_year: "",
   remarks: "",
 };
 
@@ -117,6 +119,7 @@ const statusStyle = (status) =>
   };
 
 export default function OtherCollection() {
+  const sessionYear = useSessionStore((state) => state.sessionYear);
   const [types, setTypes] = useState([]);
   const [roles, setRoles] = useState([]);
   const [people, setPeople] = useState([]);
@@ -134,8 +137,8 @@ export default function OtherCollection() {
     try {
       const [typeResponse, collectionResponse, roleResponse] = await Promise.all([
         getOtherCollectionTypes(),
-        getOtherCollections(),
-        getAllRoles({ page: 1, limit: 100, activeOnly: true }),
+        getOtherCollections({ session_year: sessionYear }),
+        getOtherCollectionRoles(),
       ]);
       setTypes(listFrom(typeResponse));
       setCollections(listFrom(collectionResponse));
@@ -145,7 +148,7 @@ export default function OtherCollection() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sessionYear]);
 
   useEffect(() => {
     loadData();
@@ -210,6 +213,7 @@ export default function OtherCollection() {
     try {
       const payload = {
         ...collectionForm,
+        session_year: sessionYear,
         amount: Number(collectionForm.amount),
         discount: Number(collectionForm.discount || 0),
         collection_date: collectionForm.collection_date || null,

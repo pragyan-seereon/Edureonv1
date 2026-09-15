@@ -13,6 +13,11 @@ const getHeaders = () => {
 // Other Collection Type APIs
 // ================================
 
+export const getOtherCollectionRoles = () =>
+  api.get("/other-collections/roles", {
+    headers: getHeaders(),
+  });
+
 export const getOtherCollectionTypes = (params = {}) =>
   api.get("/other-collections/types", {
     headers: getHeaders(),

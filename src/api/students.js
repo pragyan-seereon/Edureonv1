@@ -936,7 +936,7 @@ export const getArchivedStudents = (sessionYear = "") => {
 // ==========================
 // Import Students Excel
 // ==========================
-export const importStudentsExcel = (file) => {
+export const importStudentsExcel = (file, sessionYear) => {
   const formData = new FormData();
 
   formData.append("file", file);
@@ -947,6 +947,7 @@ export const importStudentsExcel = (file) => {
     {
       headers: {
         ...getHeaders(),
+        ...(sessionYear ? { "X-Session-Year": sessionYear } : {}),
         "Content-Type": "multipart/form-data",
       },
     }

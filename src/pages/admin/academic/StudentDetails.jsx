@@ -1321,6 +1321,9 @@ import {
   archiveStudent,
   restoreStudent,
   getStudentActivity,
+  getStudentAttendance,
+  getStudentAssignments,
+  getStudentResults,
   updateStudent,
 } from "../../../api/students";
 import { getStudentPayments } from "../../../api/payment";
@@ -1435,8 +1438,6 @@ const ARCHIVE_STATUS_OPTIONS = [
 
 const ARCHIVED_LIKE_STATUSES = ["INACTIVE", "PASSED_OUT", "TRANSFERRED", "LEFT"];
 
-const MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 /* ---------- deterministic helper for demo-only sections ---------- */
 function seedFrom(str) {
   let h = 0;
@@ -1456,6 +1457,10 @@ export default function StudentDetails() {
   const [activityLogs, setActivityLogs] = useState([]);
   const [studentPayments, setStudentPayments] = useState([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [attendanceData, setAttendanceData] = useState(null);
+  const [assignments, setAssignments] = useState([]);
+  const [results, setResults] = useState([]);
+  const [academicLoading, setAcademicLoading] = useState(false);
   const [notes, setNotes] = useState([]);
   const [viewingDoc, setViewingDoc] = useState(null);
 
@@ -1485,6 +1490,33 @@ export default function StudentDetails() {
           student.student_uuid
         );
         setActivityLogs(activityRes.data || []);
+
+        setAcademicLoading(true);
+        const unwrap = (response) => response?.data?.data ?? response?.data ?? response;
+        const [attendanceResult, assignmentsResult, resultsResult] = await Promise.allSettled([
+          getStudentAttendance(student.student_uuid),
+          getStudentAssignments(student.student_uuid),
+          getStudentResults(student.student_uuid),
+        ]);
+
+        setAttendanceData(
+          attendanceResult.status === "fulfilled" ? unwrap(attendanceResult.value) : null
+        );
+        setAssignments(
+          assignmentsResult.status === "fulfilled"
+            ? (Array.isArray(unwrap(assignmentsResult.value))
+              ? unwrap(assignmentsResult.value)
+              : unwrap(assignmentsResult.value)?.assignments || [])
+            : []
+        );
+        setResults(
+          resultsResult.status === "fulfilled"
+            ? (Array.isArray(unwrap(resultsResult.value))
+              ? unwrap(resultsResult.value)
+              : unwrap(resultsResult.value)?.results || unwrap(resultsResult.value)?.exams || [])
+            : []
+        );
+        setAcademicLoading(false);
 
         // ==========================================
         // STUDENT-WISE PAYMENT API
@@ -1518,6 +1550,7 @@ export default function StudentDetails() {
       console.error(error);
       toast.error("Failed to load student");
     } finally {
+      setAcademicLoading(false);
       setLoading(false);
     }
   };
@@ -1637,6 +1670,29 @@ export default function StudentDetails() {
   // Student's Father record is linked to a staff (employee) account — highlight it
   const isStaffChild = Boolean(s.employee_uuid);
   const staffChildName = s.employee_name || s.employee?.full_name || null;
+  const latestResult = results[0] || null;
+  const averageScore =
+    latestResult?.percentage ??
+    latestResult?.average_score ??
+    latestResult?.average_percentage ??
+    s.average_score ??
+    s.average_percentage ??
+    s.last_aggregate_percentage ??
+    null;
+  const classRank =
+    latestResult?.class_rank ??
+    latestResult?.rank ??
+    s.class_rank ??
+    s.rank ??
+    null;
+  const quickActions = [
+    { key: "edit", label: "Edit", icon: <Pencil className="h-3.5 w-3.5" />, onClick: () => setEditOpen(true) },
+    { key: "promote", label: "Promote", icon: <ArrowUpRight className="h-3.5 w-3.5" />, onClick: () => navigate("/classes", { state: { action: "promote", student: s } }) },
+    { key: "transfer", label: "Transfer", icon: <ArrowRightLeft className="h-3.5 w-3.5" />, onClick: () => navigate("/classes", { state: { action: "transfer", student: s } }) },
+    { key: "transport", label: s.transport_required ? "Manage Transport" : "Assign Transport", icon: <Bus className="h-3.5 w-3.5" />, onClick: () => navigate("/transport", { state: { student: s } }) },
+    { key: "hostel", label: s.hostel_required ? "Manage Hostel" : "Assign Hostel", icon: <Building2 className="h-3.5 w-3.5" />, onClick: () => navigate("/hostel", { state: { student: s } }) },
+    { key: "certificate", label: "Certificate", icon: <FileText className="h-3.5 w-3.5" />, onClick: () => window.print() },
+  ];
 
   return (
     <PageContainer>
@@ -1721,7 +1777,7 @@ export default function StudentDetails() {
               <div className="flex flex-wrap gap-2 mb-2">
                 <Badge>{s.fee_status || "N/A"}</Badge>
                 <Badge variant="outline">{s.gender || "N/A"}</Badge>
-                <Badge variant="outline">Attendance {s.attendance_percentage || 0}%</Badge>
+                <Badge variant="outline">Attendance {attendanceData?.attendance_percentage ?? s.attendance_percentage ?? 0}%</Badge>
                 {s.blood_group && <Badge variant="outline">{s.blood_group}</Badge>}
                 {s.category && s.category !== "General" && (
                   <Badge variant="outline">{s.category}</Badge>
@@ -1760,24 +1816,11 @@ export default function StudentDetails() {
           <CardContent className="p-5 space-y-2">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Quick Actions</div>
             <div className="grid grid-cols-2 gap-2">
-              <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
-                <Pencil className="h-3.5 w-3.5" />Edit
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => toast.success("Promoted")}>
-                <ArrowUpRight className="h-3.5 w-3.5" />Promote
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => toast.success("Transferred")}>
-                <ArrowRightLeft className="h-3.5 w-3.5" />Transfer
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => toast.success("Transport assigned")}>
-                <Bus className="h-3.5 w-3.5" />Transport
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => toast.success("Hostel assigned")}>
-                <Building2 className="h-3.5 w-3.5" />Hostel
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => toast.success("Certificate printed")}>
-                <FileText className="h-3.5 w-3.5" />Certificate
-              </Button>
+              {quickActions.map((action) => (
+                <Button key={action.key} size="sm" variant="outline" onClick={action.onClick}>
+                  {action.icon}{action.label}
+                </Button>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -1799,9 +1842,9 @@ export default function StudentDetails() {
         {/* ══════════════════════ OVERVIEW TAB ══════════════════════ */}
         <TabsContent value="overview" className="mt-4 space-y-4">
           <div className="grid md:grid-cols-4 gap-3">
-            <Stat label="Attendance" value={`${s.attendance_percentage || 0}%`} />
-            <Stat label="Avg Score" value={`${72 + (seed % 18)}%`} />
-            <Stat label="Class Rank" value={`#${(seed % 30) + 1}`} />
+            <Stat label="Attendance" value={`${attendanceData?.attendance_percentage ?? s.attendance_percentage ?? 0}%`} />
+            <Stat label="Avg Score" value={averageScore === null || averageScore === "" ? "—" : `${averageScore}%`} />
+            <Stat label="Class Rank" value={classRank === null || classRank === "" ? "—" : `#${classRank}`} />
             <Stat label="Fee Status" value={s.fee_status || "N/A"} />
           </div>
 
@@ -1965,17 +2008,21 @@ export default function StudentDetails() {
 
         {/* ══════════════════════ ATTENDANCE TAB ══════════════════════ */}
         <TabsContent value="attendance" className="mt-4">
-          <AttendanceTab attendance={s.attendance_percentage || 0} seed={seed} />
+          <AttendanceTab data={attendanceData} loading={academicLoading} />
         </TabsContent>
 
         {/* ══════════════════════ ASSIGNMENTS TAB ══════════════════════ */}
         <TabsContent value="assignments" className="mt-4">
-          <AssignmentsTab klass={`${s.class_name || "-"}-${s.section_name || "-"}`} seed={seed} />
+          <AssignmentsTab
+            klass={`${s.class_name || "-"}-${s.section_name || "-"}`}
+            assignments={assignments}
+            loading={academicLoading}
+          />
         </TabsContent>
 
         {/* ══════════════════════ RESULTS TAB ══════════════════════ */}
         <TabsContent value="results" className="mt-4">
-          <ResultsTab seed={seed} onPrint={() => toast.success("Report card sent to printer")} />
+          <ResultsTab results={results} loading={academicLoading} onPrint={() => toast.success("Report card sent to printer")} />
         </TabsContent>
 
         {/* ══════════════════════ FEES TAB ══════════════════════ */}
@@ -2130,42 +2177,27 @@ export default function StudentDetails() {
 }
 
 /* ====================== ATTENDANCE TAB ====================== */
-function AttendanceTab({ attendance, seed }) {
+function AttendanceTab({ data, loading }) {
   const [range, setRange] = useState("month");
-  const days = range === "week" ? 7 : 30;
+  const allRecords = data?.attendance || data?.records || [];
 
-  const records = useMemo(() => {
-    const out = [];
-    const today = new Date();
-    for (let i = 0; i < days; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const dow = d.getDay();
-      let mark = "P";
-      if (dow === 0) mark = "H";
-      else if ((i * 7 + seed) % 13 === 0) mark = "A";
-      else if ((i * 5 + seed) % 17 === 0) mark = "L";
-      out.push({
-        date: d.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" }),
-        mark,
-        remark: mark === "A" ? "Unexcused absence" : mark === "L" ? "Approved leave" : mark === "H" ? "Holiday" : "—",
-      });
-    }
-    return out;
-  }, [days, seed]);
+  const records = allRecords.filter((record) => {
+    const date = new Date(record.attendance_date || record.date);
+    if (Number.isNaN(date.getTime())) return false;
+    return range === "week" ? Date.now() - date.getTime() <= 7 * 86400000 : Date.now() - date.getTime() <= 31 * 86400000;
+  });
 
-  const present = records.filter((r) => r.mark === "P").length;
-  const absent = records.filter((r) => r.mark === "A").length;
-  const leave = records.filter((r) => r.mark === "L").length;
-  const considered = present + absent + leave;
-  const pct = considered ? Math.round((present / considered) * 100) : 0;
-  const trend = MONTHS.map((m, i) => ({ month: m, pct: 80 + ((seed + i * 7) % 18) }));
+  const present = Number(data?.present ?? records.filter((r) => (r.status || r.mark) === "P").length);
+  const absent = Number(data?.absent ?? records.filter((r) => (r.status || r.mark) === "A").length);
+  const leave = Number(data?.on_leave ?? data?.leave ?? records.filter((r) => (r.status || r.mark) === "L").length);
+  const pct = Number(data?.attendance_percentage ?? (present + absent + leave ? Math.round((present / (present + absent + leave)) * 100) : 0));
+  const trend = data?.monthly_trend || data?.trend || [];
   const markColor = { P: "bg-success/15 text-success", A: "bg-destructive/15 text-destructive", L: "bg-warning/15 text-warning", H: "bg-muted text-muted-foreground" };
   const markLabel = { P: "Present", A: "Absent", L: "Leave", H: "Holiday" };
 
   return (
     <div className="space-y-4">
-      {pct < 75 && (
+      {!loading && pct < 75 && present + absent + leave > 0 && (
         <div className="flex items-start gap-3 p-4 rounded-md bg-warning/10 border border-warning/30">
           <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
           <div>
@@ -2178,7 +2210,7 @@ function AttendanceTab({ attendance, seed }) {
         <Stat label="Present" value={String(present)} />
         <Stat label="Absent" value={String(absent)} />
         <Stat label="On Leave" value={String(leave)} />
-        <Stat label="Overall %" value={`${attendance}%`} />
+        <Stat label="Overall %" value={`${pct}%`} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4">
@@ -2206,13 +2238,15 @@ function AttendanceTab({ attendance, seed }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {records.map((r, i) => (
-                  <TableRow key={i}>
-                    <TableCell>{r.date}</TableCell>
-                    <TableCell><Badge className={markColor[r.mark]} variant="outline">{markLabel[r.mark]}</Badge></TableCell>
-                    <TableCell className="text-muted-foreground">{r.remark}</TableCell>
-                  </TableRow>
-                ))}
+                {records.length === 0 ? <TableRow><TableCell colSpan={3} className="py-8 text-center text-muted-foreground">{loading ? "Loading attendance..." : "No attendance records found."}</TableCell></TableRow> : records.map((r, i) => {
+                  const mark = r.status || r.mark || "H";
+                  const date = r.attendance_date || r.date;
+                  return <TableRow key={r.attendance_uuid || r.id || `${date}-${i}`}>
+                    <TableCell>{new Date(date).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" })}</TableCell>
+                    <TableCell><Badge className={markColor[mark] || markColor.H} variant="outline">{markLabel[mark] || mark}</Badge></TableCell>
+                    <TableCell className="text-muted-foreground">{r.remark || r.remarks || "—"}</TableCell>
+                  </TableRow>;
+                })}
               </TableBody>
             </Table>
           </CardContent>
@@ -2224,7 +2258,7 @@ function AttendanceTab({ attendance, seed }) {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={trend}>
+              <LineChart data={trend.map((item) => ({ month: item.month_label || item.month, pct: Number(item.attendance_percentage ?? item.pct ?? item.percent ?? 0) }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="month" fontSize={11} stroke="var(--muted-foreground)" />
                 <YAxis domain={[60, 100]} fontSize={11} stroke="var(--muted-foreground)" />
@@ -2240,35 +2274,32 @@ function AttendanceTab({ attendance, seed }) {
 }
 
 /* ====================== ASSIGNMENTS TAB ====================== */
-function AssignmentsTab({ klass, seed }) {
+function AssignmentsTab({ klass, assignments, loading }) {
   const [subject, setSubject] = useState("all");
 
-  const baseAssignments = useMemo(() => ([
-    { id: "A1", title: "Trigonometry W/S", subject: "Math", due: "28 Nov", maxMarks: 20 },
-    { id: "A2", title: "Lab Report", subject: "Science", due: "30 Nov", maxMarks: 20 },
-    { id: "A3", title: "Essay: Role Models", subject: "English", due: "26 Nov", maxMarks: 20 },
-    { id: "A4", title: "Python Functions", subject: "CS", due: "24 Nov", maxMarks: 20 },
-  ]), []);
-
-  const rows = useMemo(() => {
-    return baseAssignments.map((a, i) => {
-      const pending = (seed + i) % 4 === 0;
-      const score = pending ? undefined : a.maxMarks - ((seed + i * 3) % (a.maxMarks / 2 || 1) | 0);
-      return { ...a, score, status: pending ? "Pending" : "Graded" };
-    });
-  }, [baseAssignments, seed]);
-
-  const subjects = Array.from(new Set(baseAssignments.map((a) => a.subject)));
+  const rows = assignments.map((assignment) => {
+    const rawScore = assignment.obtained_marks ?? assignment.score;
+    return {
+      id: assignment.assignment_uuid || assignment.id,
+      title: assignment.title || assignment.assignment_title || "Untitled assignment",
+      subject: assignment.subject_name || assignment.subject || "Unspecified",
+      due: assignment.due_date || assignment.due || null,
+      maxMarks: Number(assignment.max_marks ?? assignment.maxMarks ?? 0),
+      score: rawScore === null || rawScore === undefined ? null : Number(rawScore),
+      status: assignment.submission_status || assignment.status || "PENDING",
+    };
+  });
+  const subjects = Array.from(new Set(rows.map((a) => a.subject)));
   const filtered = rows.filter((r) => subject === "all" || r.subject === subject);
   const graded = filtered.filter((r) => typeof r.score === "number");
-  const avg = graded.length ? Math.round(graded.reduce((a, r) => a + (r.score / r.maxMarks) * 100, 0) / graded.length) : 0;
+  const avg = graded.length ? Math.round(graded.reduce((a, r) => a + (r.maxMarks ? (r.score / r.maxMarks) * 100 : 0), 0) / graded.length) : 0;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Assignments" value={String(filtered.length)} />
-        <Stat label="Submitted" value={String(filtered.filter((r) => r.status !== "Pending").length)} />
-        <Stat label="Pending" value={String(filtered.filter((r) => r.status === "Pending").length)} />
+        <Stat label="Submitted" value={String(filtered.filter((r) => r.status !== "PENDING").length)} />
+        <Stat label="Pending" value={String(filtered.filter((r) => r.status === "PENDING").length)} />
         <Stat label="Avg Score" value={`${avg}%`} />
       </div>
       <Card className="border-border/60">
@@ -2298,13 +2329,13 @@ function AssignmentsTab({ klass, seed }) {
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">No assignments.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">{loading ? "Loading assignments..." : "No assignments found."}</TableCell></TableRow>
               ) : filtered.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>{r.title}</TableCell>
                   <TableCell>{r.subject}</TableCell>
-                  <TableCell>{r.due}</TableCell>
-                  <TableCell><Badge variant={r.status === "Pending" ? "outline" : "default"}>{r.status}</Badge></TableCell>
+                  <TableCell>{r.due ? new Date(r.due).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "—"}</TableCell>
+                  <TableCell><Badge variant={r.status === "PENDING" ? "outline" : "default"}>{r.status}</Badge></TableCell>
                   <TableCell>{typeof r.score === "number" ? `${r.score}/${r.maxMarks}` : "—"}</TableCell>
                 </TableRow>
               ))}
@@ -2317,34 +2348,41 @@ function AssignmentsTab({ klass, seed }) {
 }
 
 /* ====================== RESULTS TAB ====================== */
-function ResultsTab({ seed, onPrint }) {
-  const examTypes = [{ id: "T1", name: "Term 1" }, { id: "T2", name: "Term 2" }];
-  const [examId, setExamId] = useState(examTypes[0].id);
-  const subjects = ["Math", "Science", "English", "Social", "Hindi", "CS"];
-
-  const rows = useMemo(() => {
-    return subjects.map((subj, i) => {
-      const obtained = 55 + ((seed + i * 13 + seedFrom(examId)) % 43);
-      const max = 100;
-      const pct = Math.round((obtained / max) * 100);
-      const grade = pct >= 90 ? "A+" : pct >= 80 ? "A" : pct >= 70 ? "B" : pct >= 60 ? "C" : pct >= 40 ? "D" : "E";
-      return { subject: subj, obtained, max, pct, grade };
-    });
-  }, [examId, seed]);
+function ResultsTab({ results, loading, onPrint }) {
+  const examTypes = results.map((exam, index) => ({
+    id: String(exam.exam_uuid || exam.result_uuid || exam.id || index),
+    name: exam.exam_name || exam.name || exam.exam_type_name || `Exam ${index + 1}`,
+    raw: exam,
+  }));
+  const [examId, setExamId] = useState("");
+  const activeExam = examTypes.find((exam) => exam.id === examId) || examTypes[0];
+  const rawRows = activeExam?.raw?.subjects || activeExam?.raw?.subject_results || activeExam?.raw?.marks || [];
+  const rows = rawRows.map((row) => {
+    const obtained = Number(row.obtained_marks ?? row.marks_obtained ?? row.obtained ?? row.score ?? 0);
+    const max = Number(row.max_marks ?? row.total_marks ?? row.maximum_marks ?? 0);
+    const pct = max ? Math.round((obtained / max) * 100) : 0;
+    return {
+      subject: row.subject_name || row.subject || "Unspecified",
+      obtained,
+      max,
+      pct,
+      grade: row.grade || "—",
+    };
+  });
 
   const total = rows.reduce((a, r) => a + r.obtained, 0);
   const totalMax = rows.reduce((a, r) => a + r.max, 0);
   const pct = totalMax ? Math.round((total / totalMax) * 100) : 0;
-  const overallGrade = pct >= 90 ? "A+" : pct >= 80 ? "A" : pct >= 70 ? "B" : pct >= 60 ? "C" : "D";
+  const overallGrade = activeExam?.raw?.overall_grade || activeExam?.raw?.grade || "—";
   const chart = rows.map((r) => ({ subject: r.subject, pct: r.pct }));
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Select value={examId} onValueChange={setExamId}>
+        <Select value={activeExam?.id || ""} onValueChange={setExamId} disabled={!examTypes.length}>
           <SelectTrigger className="w-64"><SelectValue placeholder="Exam type" /></SelectTrigger>
           <SelectContent>
-            {examTypes.map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
+            {examTypes.length ? examTypes.map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>) : <SelectItem value="no-results" disabled>No results available</SelectItem>}
           </SelectContent>
         </Select>
         <Button size="sm" onClick={onPrint}><Printer className="h-4 w-4" />Generate Report Card</Button>
@@ -2354,14 +2392,14 @@ function ResultsTab({ seed, onPrint }) {
         <Stat label="Total Marks" value={`${total}/${totalMax}`} />
         <Stat label="Percentage" value={`${pct}%`} />
         <Stat label="Overall Grade" value={overallGrade} />
-        <Stat label="Result" value={pct >= 33 ? "Pass" : "Fail"} />
+        <Stat label="Result" value={activeExam?.raw?.result || activeExam?.raw?.status || (rows.length ? (pct >= 33 ? "Pass" : "Fail") : "—")} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2 border-border/60">
           <CardHeader className="pb-2">
             <CardTitle className="font-display text-base">Subject-wise Results</CardTitle>
-            <CardDescription>{examTypes.find((e) => e.id === examId)?.name}</CardDescription>
+            <CardDescription>{activeExam?.name || (loading ? "Loading results..." : "No published results")}</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
@@ -2374,7 +2412,7 @@ function ResultsTab({ seed, onPrint }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
+                {rows.length === 0 ? <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">{loading ? "Loading results..." : "No results found."}</TableCell></TableRow> : rows.map((r) => (
                   <TableRow key={r.subject}>
                     <TableCell>{r.subject}</TableCell>
                     <TableCell>{r.obtained}/{r.max}</TableCell>

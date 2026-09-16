@@ -953,3 +953,28 @@ export const importStudentsExcel = (file, sessionYear) => {
     }
   );
 };
+
+// ==========================
+// Student academic records
+// ==========================
+// These endpoints are intentionally scoped to a student UUID so that an
+// administrator sees the selected student's records, rather than records for
+// the currently logged-in portal student.
+export const getStudentAttendance = (studentUuid, params = {}) => {
+  return api.get(`/students/${studentUuid}/attendance`, {
+    params,
+    headers: getHeaders(),
+  });
+};
+
+export const getStudentAssignments = (studentUuid) => {
+  return api.get(`/students/${studentUuid}/assignments`, {
+    headers: getHeaders(),
+  });
+};
+
+export const getStudentResults = (studentUuid) => {
+  return api.get(`/students/${studentUuid}/results`, {
+    headers: getHeaders(),
+  });
+};

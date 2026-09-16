@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -148,7 +148,19 @@ const FILE_FIELDS = [
   "other_file",
 ];
 
-export function EmployeeViewDialog({
+export function EmployeeViewDialog(props) {
+  const { employee } = props;
+
+  if (!employee) return null;
+
+  // A different employee is a different edit session. Remounting the session
+  // resets its local form, image, and editing state without a state-setting
+  // effect after render.
+  const sessionKey = `${employee.uuid ?? employee.id ?? employee.employee_no ?? "employee"}:${employee.updated_at ?? ""}`;
+  return <EmployeeViewDialogContent key={sessionKey} {...props} />;
+}
+
+function EmployeeViewDialogContent({
   open,
   onOpenChange,
   employee,
@@ -159,18 +171,8 @@ export function EmployeeViewDialog({
   const [activeTab, setActiveTab] = useState("personal");
   const [imageError, setImageError] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({});
+  const [formData, setFormData] = useState(employee);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setImageError(false);
-    if (employee) {
-      setFormData(employee);
-    }
-    setIsEditing(false);
-  }, [employee]);
-
-  if (!employee) return null;
 
   // Format date
   const formatDate = (dateStr) => {
@@ -289,7 +291,7 @@ export function EmployeeViewDialog({
       if (employee.profile_image.startsWith("data:image/")) {
         return employee.profile_image;
       }
-      const baseUrl = process.env.REACT_APP_API_URL || "";
+      const baseUrl = import.meta.env.VITE_API_URL || "";
       return `${baseUrl}/uploads/${employee.profile_image}`;
     }
 

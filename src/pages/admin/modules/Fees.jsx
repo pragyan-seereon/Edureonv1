@@ -173,6 +173,7 @@ import {
   openPaymentReceipt,
   downloadPaymentReceipt,
 } from "../../../api/payment";
+import { getOtherCollectionReceiptPdf } from "../../../api/other_collection";
 
 import {
  getStudentFeeReport,
@@ -1298,6 +1299,8 @@ function StudentDiscountsPanel({
   const [q, setQ] = useState("");
   const [cls, setCls] = useState("");
   const [sec, setSec] = useState("");
+  const [studentType, setStudentType] = useState("all");
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [open, setOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null); // student row when editing one student's set
 
@@ -1313,15 +1316,45 @@ function StudentDiscountsPanel({
     return m;
   }, [studentDiscounts]);
 
+  const studentSuggestions = useMemo(() => {
+    const search = q.trim().toLowerCase();
+    if (!search) return [];
+
+    return students
+      .filter((student) =>
+        student.full_name?.toLowerCase().includes(search) ||
+        student.father_name?.toLowerCase().includes(search) ||
+        student.student_no?.toLowerCase().includes(search) ||
+        student.admission_no?.toLowerCase().includes(search)
+      )
+      .slice(0, 20);
+  }, [students, q]);
+
   const rows = useMemo(() => {
     return students
       .filter(
-        (s) =>
-          (!cls || s.class_name === cls) &&
-          (!sec || s.section_name === sec) &&
-          (!q ||
-            s.full_name?.toLowerCase().includes(q.toLowerCase()) ||
-            s.student_no?.toLowerCase().includes(q.toLowerCase()))
+        (s) => {
+          const isStaffStudent = Boolean(s.employee_uuid);
+          const isSiblingStudent = Number(s.siblings || 0) > 0;
+          const isRteStudent = Boolean(s.is_rte_student);
+          const matchesStudentType =
+            studentType === "all" ||
+            (studentType === "staff" && isStaffStudent) ||
+            (studentType === "sibling" && isSiblingStudent) ||
+            (studentType === "rte" && isRteStudent) ||
+            (studentType === "normal" && !isStaffStudent && !isSiblingStudent && !isRteStudent);
+
+          return (
+            (!cls || s.class_name === cls) &&
+            (!sec || s.section_name === sec) &&
+            matchesStudentType &&
+            (!q ||
+              s.full_name?.toLowerCase().includes(q.toLowerCase()) ||
+              s.father_name?.toLowerCase().includes(q.toLowerCase()) ||
+              s.student_no?.toLowerCase().includes(q.toLowerCase()) ||
+              s.admission_no?.toLowerCase().includes(q.toLowerCase()))
+          );
+        }
       )
       .map((s) => {
         const match = byStudentUuid.get(s.student_uuid);
@@ -1329,12 +1362,13 @@ function StudentDiscountsPanel({
           student_uuid: s.student_uuid,
           student_name: s.full_name,
           student_no: s.student_no,
+          father_name: s.father_name,
           class_name: s.class_name,
           section_name: s.section_name,
           discounts: match?.discounts || [],
         };
       });
-  }, [students, studentDiscounts, byStudentUuid, cls, sec, q]);
+  }, [students, studentDiscounts, byStudentUuid, cls, sec, q, studentType]);
 
   return (
     <Card className="border-border/60">
@@ -1352,7 +1386,56 @@ function StudentDiscountsPanel({
             <SelectTrigger className="w-28 h-9"><SelectValue placeholder="Section" /></SelectTrigger>
             <SelectContent>{sectionsFor.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
           </Select>
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search student..." className="h-9 w-48" />
+          <Select value={studentType} onValueChange={setStudentType}>
+            <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Student type" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Students</SelectItem>
+              <SelectItem value="staff">Staff Students</SelectItem>
+              <SelectItem value="sibling">Sibling Students</SelectItem>
+              <SelectItem value="rte">RTE Students</SelectItem>
+              <SelectItem value="normal">Normal Students</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="relative w-56">
+            <Input
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              placeholder="Search student or father..."
+              className="h-9 w-full"
+              autoComplete="off"
+            />
+            {showSuggestions && studentSuggestions.length > 0 && (
+              <div className="absolute z-50 top-full left-0 mt-1 w-[360px] max-h-72 overflow-y-auto rounded-md border bg-popover shadow-md">
+                {studentSuggestions.map((student) => (
+                  <button
+                    key={student.student_uuid}
+                    type="button"
+                    className="block w-full border-b px-3 py-2 text-left last:border-b-0 hover:bg-muted/60"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setQ(student.full_name || "");
+                      setShowSuggestions(false);
+                    }}
+                  >
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-medium truncate">{student.full_name}</span>
+                      <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
+                        {student.admission_no || student.student_no || "-"}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                      Father: {student.father_name || "-"} · Class: {student.class_name || "-"} · Section: {student.section_name || "-"}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <Button size="sm" className="gradient-primary border-0" onClick={() => { setEditingStudent(null); setOpen(true); }}>
             <Plus className="h-4 w-4" />Assign Discount
           </Button>
@@ -1363,7 +1446,8 @@ function StudentDiscountsPanel({
           <TableHeader>
             <TableRow>
               <TableHead>Student</TableHead>
-              <TableHead>Class</TableHead>
+              <TableHead>Father's Name</TableHead>
+              <TableHead>Class / Section</TableHead>
               <TableHead>Discounts</TableHead>
               <TableHead className="w-32"></TableHead>
             </TableRow>
@@ -1374,6 +1458,7 @@ function StudentDiscountsPanel({
                 <TableCell className="text-sm font-medium">
                   {r.student_name} <span className="text-xs text-muted-foreground">· {r.student_no}</span>
                 </TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.father_name || "-"}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{r.class_name}{r.section_name ? `-${r.section_name}` : ""}</TableCell>
                 <TableCell>
                   {r.discounts.length === 0 && <span className="text-xs text-muted-foreground">None</span>}
@@ -1397,10 +1482,10 @@ function StudentDiscountsPanel({
               </TableRow>
             ))}
             {!loading && rows.length === 0 && (
-              <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">No students found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">No students found.</TableCell></TableRow>
             )}
             {loading && (
-              <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">Loading student discounts…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">Loading student discounts…</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -2031,10 +2116,17 @@ function normalizePaymentForAudit(txn, students = []) {
 
     student_uuid: txn.student_uuid,
 
-    student_name:
+    payer_name:
+      txn.payer_name ||
+      txn.person_name ||
       txn.student_name ||
       student?.full_name ||
-      "—",
+      "Other Payment",
+
+    payer_type:
+      txn.payer_type ||
+      txn.person_type ||
+      (txn.student_name || student ? "Student" : "Other"),
 
     class_name:
       student?.class_name ||
@@ -2432,7 +2524,7 @@ async function openAuditReport({
           <table>
             <thead>
               <tr>
-                <th>Student</th>
+                <th>Paid By</th>
                 <th>Class</th>
                 <th>Section</th>
                 <th class="right">Amount</th>
@@ -2452,7 +2544,11 @@ async function openAuditReport({
                         (e) => `
                           <tr>
                             <td>
-                              ${e.student_name || "—"}
+                              ${e.payer_name || "Other Payment"}
+                              <br />
+                              <span style="color:#64748b;font-size:11px">
+                                ${e.payer_type || "Other"}
+                              </span>
                             </td>
 
                             <td>
@@ -3079,7 +3175,8 @@ const dashboardLedger = useMemo(() => {
   return dashboardData.recent_transactions.map((txn) => ({
     id: txn.receipt_no || txn.transaction_uuid,
     transaction_uuid: txn.transaction_uuid,
-    student_name: txn.student_name || "—",
+    payer_name: txn.payer_name || txn.student_name || "Other Payment",
+    payer_type: txn.payer_type || (txn.student_name ? "Student" : "Other"),
     mode: txn.payment_mode || "—",
     amount: Number(
       txn.amount ??
@@ -3470,7 +3567,7 @@ function DashboardPanel({ kpis, ledger, onQuick, onCollect }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Ref</TableHead><TableHead>Student</TableHead><TableHead>Mode</TableHead>
+                  <TableHead>Ref</TableHead><TableHead>Paid By</TableHead><TableHead>Mode</TableHead>
                   <TableHead className="text-right">Amount</TableHead><TableHead>When</TableHead><TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -3478,7 +3575,12 @@ function DashboardPanel({ kpis, ledger, onQuick, onCollect }) {
                 {recent.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-mono text-xs">{r.id}</TableCell>
-                    <TableCell className="text-sm">{r.student_name}</TableCell>
+                    <TableCell className="text-sm">
+                      <div>{r.payer_name}</div>
+                      <Badge variant="secondary" className="mt-1 text-[10px]">
+                        {r.payer_type}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="text-xs">{r.mode ?? "—"}</TableCell>
                     <TableCell className="text-right font-semibold">{inr(r.amount)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{r.date}</TableCell>
@@ -7527,9 +7629,14 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
       // Transform API response to ledger format
       const transformed = data.map((txn) => ({
         id: txn.receipt_no || txn.transaction_uuid,
-        kind: txn.payment_type === "ADVANCE" ? "Advance" : "Payment",
-        student_uuid: txn.student_uuid,
-        student_name: txn.student_name,
+        kind: txn.source_type === "OTHER_COLLECTION"
+          ? "Other Payment"
+          : txn.payment_type === "ADVANCE" ? "Advance" : "Payment",
+        student_uuid: txn.student_uuid || txn.person_uuid,
+        student_name: txn.person_name || txn.student_name || "Person unavailable",
+        role_name: txn.role_name || txn.person_type || "â€”",
+        is_other_collection: txn.source_type === "OTHER_COLLECTION",
+        source_uuid: txn.source_uuid,
         class_name: students.find(s => s.student_uuid === txn.student_uuid)?.class_name || "—",
         section: students.find(s => s.student_uuid === txn.student_uuid)?.section_name || "",
         amount: txn.total_amount || 0,
@@ -7542,7 +7649,9 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
         lateFee: txn.late_fee || 0,
         note: txn.remarks || "",
         date: txn.created_at?.split("T")[0] || "",
-        status: txn.transaction_status === "SUCCESS" ? "Success" : "Pending",
+        status: txn.transaction_status === "SUCCESS"
+          ? "Success"
+          : txn.transaction_status === "CANCELLED" ? "Cancelled" : "Pending",
         transaction_uuid: txn.transaction_uuid,
         receipt_no: txn.receipt_no,
         payment_mode: txn.payment_mode,
@@ -7644,7 +7753,7 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
               <Select value={kind} onValueChange={setKind}>
                 <SelectTrigger className="h-9 w-36"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {["All", "Invoice", "Payment", "Advance", "Refund", "Adjustment", "Cancelled"].map((k) => 
+                  {["All", "Invoice", "Payment", "Other Payment", "Advance", "Refund", "Adjustment", "Cancelled"].map((k) => 
                     <SelectItem key={k} value={k}>{k}</SelectItem>
                   )}
                 </SelectContent>
@@ -7653,7 +7762,7 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
             <Input 
               value={q} 
               onChange={(e) => setQ(e.target.value)} 
-              placeholder="Search student or ID..." 
+              placeholder="Search person or receipt..." 
               className="h-9 w-56" 
             />
             <Button size="sm" variant="outline" onClick={fetchPayments}>
@@ -7728,8 +7837,8 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
                 <TableRow>
                   <TableHead>Receipt</TableHead>
                   <TableHead>Kind</TableHead>
-                  <TableHead>Student</TableHead>
-                  <TableHead>Class</TableHead>
+                  <TableHead>Person</TableHead>
+                  <TableHead>Class / Role</TableHead>
                   <TableHead>Mode</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead className="text-right">Discount</TableHead>
@@ -7749,7 +7858,11 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm">{r.student_name}</TableCell>
-                    <TableCell className="text-xs">{r.class_name}{r.section ? "-" + r.section : ""}</TableCell>
+                    <TableCell className="text-xs">
+                      {r.is_other_collection
+                        ? r.role_name
+                        : `${r.class_name}${r.section ? `-${r.section}` : ""}`}
+                    </TableCell>
                     <TableCell className="text-xs">{r.mode !== "—" ? r.mode : "—"}</TableCell>
                     <TableCell className="text-right font-semibold">{inr(r.amount)}</TableCell>
                     <TableCell className="text-right text-orange-500">{r.discount > 0 ? inr(r.discount) : "—"}</TableCell>
@@ -7768,17 +7881,26 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
                           </Button>
                         </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+  {!r.is_other_collection && (
   <DropdownMenuItem onClick={() => setOpenStudentId(r.student_uuid)}>
     <Eye className="h-4 w-4 mr-2" />
     Student Ledger
   </DropdownMenuItem>
+  )}
 
   {r.status === "Success" && r.transaction_uuid && (
     <>
       <DropdownMenuItem
         onClick={async () => {
           try {
-            await openPaymentReceipt(r.transaction_uuid);
+            if (r.is_other_collection) {
+              const response = await getOtherCollectionReceiptPdf(r.source_uuid);
+              const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+              window.open(url, "_blank", "noopener,noreferrer");
+              setTimeout(() => URL.revokeObjectURL(url), 60_000);
+            } else {
+              await openPaymentReceipt(r.transaction_uuid);
+            }
           } catch (err) {
             console.error(err);
             toast.error(getErrorMessage(err, "Failed to open receipt"));
@@ -7792,7 +7914,17 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
       <DropdownMenuItem
         onClick={async () => {
           try {
-            await downloadPaymentReceipt(r.transaction_uuid, r.receipt_no);
+            if (r.is_other_collection) {
+              const response = await getOtherCollectionReceiptPdf(r.source_uuid);
+              const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = `${r.receipt_no || "other-collection"}.pdf`;
+              link.click();
+              URL.revokeObjectURL(url);
+            } else {
+              await downloadPaymentReceipt(r.transaction_uuid, r.receipt_no);
+            }
             toast.success("Receipt downloaded");
           } catch (err) {
             console.error(err);

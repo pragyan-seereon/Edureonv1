@@ -112,8 +112,9 @@ function validateAdmissionUpdate(d) {
     errs.gender = "Invalid gender";
   }
 
-  // dates cannot be in the future
-  ["dob", "father_dob", "mother_dob", "guardian_dob", "admission_date", "joining_date"].forEach((k) => {
+  // Birth dates cannot be in the future. Admission and joining dates may be
+  // scheduled in advance, so future values are valid for those fields.
+  ["dob", "father_dob", "mother_dob", "guardian_dob"].forEach((k) => {
     if (d[k]) {
       const dt = new Date(d[k]);
       const today = new Date();
@@ -910,10 +911,10 @@ function PersonalTab({ inq, id, loadData }) {
             </Select>
           </F>
           <F label="Admission Date" error={fieldErrors.admission_date}>
-            <Input type="date" value={d.admission_date} onChange={(e) => set("admission_date", e.target.value)} max={new Date().toISOString().split("T")[0]} />
+            <Input type="date" value={d.admission_date} onChange={(e) => set("admission_date", e.target.value)} />
           </F>
           <F label="Joining Date" error={fieldErrors.joining_date}>
-            <Input type="date" value={d.joining_date} onChange={(e) => set("joining_date", e.target.value)} max={new Date().toISOString().split("T")[0]} />
+            <Input type="date" value={d.joining_date} onChange={(e) => set("joining_date", e.target.value)} />
           </F>
           <F label="Religion">
             <Input value={d.religion} onChange={(e) => set("religion", e.target.value)} placeholder="Hindu / Muslim / Sikh" />
@@ -1369,6 +1370,7 @@ function ServicesTab({ inq, id, loadData }) {
     transport_required: inq.transport_required ? "Yes" : "No",
     mode_of_conveyance: inq.mode_of_conveyance || "",
     hostel_required: inq.hostel_required ? "Yes" : "No",
+    is_rte_student: inq.is_rte_student ? "Yes" : "No",
   });
 
   useEffect(() => {
@@ -1377,6 +1379,7 @@ function ServicesTab({ inq, id, loadData }) {
       transport_required: inq.transport_required ? "Yes" : "No",
       mode_of_conveyance: inq.mode_of_conveyance || "",
       hostel_required: inq.hostel_required ? "Yes" : "No",
+      is_rte_student: inq.is_rte_student ? "Yes" : "No",
     });
   }, [inq]);
 
@@ -1407,6 +1410,7 @@ function ServicesTab({ inq, id, loadData }) {
         transport_required: d.transport_required === "Yes",
         mode_of_conveyance: d.mode_of_conveyance,
         hostel_required: d.hostel_required === "Yes",
+        is_rte_student: d.is_rte_student === "Yes",
       });
       await loadData();
       toast.success("Services saved");
@@ -1451,6 +1455,15 @@ function ServicesTab({ inq, id, loadData }) {
           </F>
           <F label="Hostel Required">
             <Select value={d.hostel_required} onValueChange={(v) => set("hostel_required", v)}>
+              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="No">No</SelectItem>
+                <SelectItem value="Yes">Yes</SelectItem>
+              </SelectContent>
+            </Select>
+          </F>
+          <F label="RTE Student">
+            <Select value={d.is_rte_student} onValueChange={(v) => set("is_rte_student", v)}>
               <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="No">No</SelectItem>

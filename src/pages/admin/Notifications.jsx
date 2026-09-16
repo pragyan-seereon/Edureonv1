@@ -34,8 +34,8 @@ import {
   useExams,
   useAssignments,
 } from "../../lib/store";
-const ago = (ts) => {
-  const diff = Date.now() - ts;
+const ago = (ts, now) => {
+  const diff = now - ts;
   if (diff < 60_000) return "just now";
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
@@ -51,6 +51,9 @@ export default function Notifications() {
   const assignments = useAssignments();
   const [read, setRead] = useState(new Set());
   const [tab, setTab] = useState("all");
+  // Use one stable timestamp for fallback notification times during this view.
+  // Calling Date.now while rendering makes otherwise identical renders impure.
+  const [referenceTime] = useState(() => Date.now());
   const items = useMemo(() => {
     const out = [];
     notices
@@ -79,7 +82,7 @@ export default function Notifications() {
               : "bg-warning/10 text-warning",
         title: `Leave ${l.status.toLowerCase()} — ${l.studentName}`,
         desc: `${l.type} · ${l.from} → ${l.to} · ${l.klass}`,
-        ts: new Date(l.raisedAt || Date.now()).getTime(),
+        ts: new Date(l.raisedAt || referenceTime).getTime(),
         category: "HR",
       }),
     );
@@ -90,7 +93,7 @@ export default function Notifications() {
         tone: "bg-warning/10 text-warning",
         title: `Attendance correction — ${c.status}`,
         desc: `${c.studentName} · ${c.date} · ${c.reason}`,
-        ts: new Date(c.raisedAt || Date.now()).getTime(),
+        ts: new Date(c.raisedAt || referenceTime).getTime(),
         category: "Academic",
       }),
     );
@@ -104,7 +107,7 @@ export default function Notifications() {
           tone: "bg-success/10 text-success",
           title: `Result published — ${m.subject}`,
           desc: `${m.studentName} · ${m.obtained}/${m.max} · ${m.klass}`,
-          ts: new Date(m.publishedAt || m.enteredAt || Date.now()).getTime(),
+          ts: new Date(m.publishedAt || m.enteredAt || referenceTime).getTime(),
           category: "Academic",
         }),
       );
@@ -119,7 +122,7 @@ export default function Notifications() {
           tone: "bg-info/10 text-info",
           title: `New submission — ${a?.title || "Assignment"}`,
           desc: `${s.studentName} · ${a?.subject || ""} · awaiting grading`,
-          ts: new Date(s.submittedAt || Date.now()).getTime(),
+          ts: new Date(s.submittedAt || referenceTime).getTime(),
           category: "Academic",
         });
       });
@@ -133,7 +136,7 @@ export default function Notifications() {
           tone: "bg-info/10 text-info",
           title: `${e.name} scheduled`,
           desc: `Class ${e.class} · ${e.from} → ${e.to} · ${e.subjects} subjects`,
-          ts: Date.now() - 6 * 3_600_000,
+          ts: referenceTime - 6 * 3_600_000,
           category: "Academic",
         }),
       );
@@ -147,12 +150,12 @@ export default function Notifications() {
           tone: "bg-primary/10 text-primary",
           title: `Assignment published — ${a.title}`,
           desc: `${a.klass} · ${a.subject} · due ${a.due}`,
-          ts: Date.now() - 12 * 3_600_000,
+          ts: referenceTime - 12 * 3_600_000,
           category: "Academic",
         }),
       );
     return out.sort((a, b) => b.ts - a.ts);
-  }, [notices, leaves, corrections, subs, marks, exams, assignments]);
+  }, [notices, leaves, corrections, subs, marks, exams, assignments, referenceTime]);
   const filtered = items.filter((i) => {
     if (tab === "all") return true;
     if (tab === "unread") return !read.has(i.id);
@@ -232,7 +235,7 @@ export default function Notifications() {
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-xs text-muted-foreground">
-                          {ago(n.ts)} ago
+                          {ago(n.ts, referenceTime)} ago
                         </div>
                         <Badge variant="outline" className="mt-1 text-[10px]">
                           {n.category}

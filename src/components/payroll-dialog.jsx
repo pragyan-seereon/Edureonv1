@@ -65,11 +65,6 @@ export function PayrollDialog({ open, onOpenChange }) {
     });
   };
   const computed = useMemo(() => {
-    let gross = 0,
-      totalTds = 0,
-      totalPf = 0,
-      totalAdj = 0,
-      totalBonus = 0;
     const rows = employees.map((e) => {
       const base = e.salary || f.avgSalary;
       const a = adj[e.id] ?? { bonus: 0, deduction: 0, loan: 0, note: "" };
@@ -77,22 +72,22 @@ export function PayrollDialog({ open, onOpenChange }) {
       const tds = Math.round(empGross * (f.tdsPct / 100));
       const pf = Math.round(empGross * (f.pfPct / 100));
       const net = empGross - tds - pf - a.deduction - a.loan;
-      gross += empGross;
-      totalTds += tds;
-      totalPf += pf;
-      totalAdj += a.deduction + a.loan;
-      totalBonus += a.bonus;
       return { e, base, a, empGross, tds, pf, net };
     });
-    const net = rows.reduce((s, r) => s + r.net, 0);
+    const totals = rows.reduce(
+      (sum, row) => ({
+        gross: sum.gross + row.empGross,
+        tds: sum.tds + row.tds,
+        pf: sum.pf + row.pf,
+        totalAdj: sum.totalAdj + row.a.deduction + row.a.loan,
+        totalBonus: sum.totalBonus + row.a.bonus,
+        net: sum.net + row.net,
+      }),
+      { gross: 0, tds: 0, pf: 0, totalAdj: 0, totalBonus: 0, net: 0 },
+    );
     return {
       rows,
-      gross,
-      tds: totalTds,
-      pf: totalPf,
-      totalAdj,
-      totalBonus,
-      net,
+      ...totals,
     };
   }, [employees, f, adj]);
   const reset = () => {

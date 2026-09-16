@@ -56,6 +56,7 @@ import {
   deactivateEmployee,
   getDepartments,
   getEmployeeByUUID,
+  importEmployeeExcel,
 } from "../../../api/employee";
 import useAuthStore from "../../../store/authStore";
 
@@ -280,32 +281,27 @@ export default function EmployeesPage() {
   };
 
   // Handle Excel import
-  const handleExcelImport = async (rows) => {
-    let successCount = 0;
-    let errorCount = 0;
-    
-    for (const row of rows) {
-      if (!row.name) continue;
-      
-      try {
-        // Find department by name
-        const dept = departments.find(d => 
-          d.department_name.toLowerCase() === row.department?.toLowerCase()
+  const handleExcelImport = async (file) => {
+    try {
+      const result = await importEmployeeExcel(file);
+      const imported = result?.imported || 0;
+      const skipped = result?.skipped || 0;
+
+      if (imported) {
+        toast.success(
+          `${imported} employee${imported === 1 ? "" : "s"} imported` +
+          (skipped ? `; ${skipped} row${skipped === 1 ? "" : "s"} skipped.` : ".")
         );
-        const deptUuid = dept?.department_uuid || null;
-        
-        successCount++;
-      } catch (error) {
-        errorCount++;
-        console.error("Failed to import row:", row, error);
+        fetchEmployees();
+      } else {
+        const firstError = result?.errors?.[0]?.reason;
+        toast.error(firstError || "No employees were imported.");
       }
-    }
-    
-    if (successCount > 0) {
-      toast.success(`${successCount} employees onboarded from Excel${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
-      fetchEmployees();
-    } else if (errorCount > 0) {
-      toast.error("Failed to import employees from Excel");
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(
+        typeof detail === "string" ? detail : "Employee Excel import failed."
+      );
     }
   };
 
@@ -320,18 +316,15 @@ export default function EmployeesPage() {
             <ExcelUpload
               label="Import Excel"
               templateHeaders={[
-                "name", 
-                "email", 
-                "phone", 
-                "role", 
-                "department", 
-                "type",
-                "employee_group",
-                "gender",
-                "join_date"
+                "Sr. No.", "Name", "ID", "Email ID", "Date Of Birth",
+                "Gender", "Blood Group", "Marital Status", "Contact Number",
+                "Address", "City", "State", "Pincode", "Qualification",
+                "Class teacher for class", "Assigned Classes", "Assigned Subject",
+                "Subject Code", "Date of Joining", "Remark", "Status",
+                "Anniversary Date", "Display Order"
               ]}
-              templateName="employees-template.xlsx"
-              onRows={handleExcelImport}
+              templateName="employee-import-template.xlsx"
+              onFile={handleExcelImport}
             />
             <Button
               variant="outline"

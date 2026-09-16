@@ -2114,10 +2114,17 @@ function normalizePaymentForAudit(txn, students = []) {
 
     student_uuid: txn.student_uuid,
 
-    student_name:
+    payer_name:
+      txn.payer_name ||
+      txn.person_name ||
       txn.student_name ||
       student?.full_name ||
-      "—",
+      "Other Payment",
+
+    payer_type:
+      txn.payer_type ||
+      txn.person_type ||
+      (txn.student_name || student ? "Student" : "Other"),
 
     class_name:
       student?.class_name ||
@@ -2515,7 +2522,7 @@ async function openAuditReport({
           <table>
             <thead>
               <tr>
-                <th>Student</th>
+                <th>Paid By</th>
                 <th>Class</th>
                 <th>Section</th>
                 <th class="right">Amount</th>
@@ -2535,7 +2542,11 @@ async function openAuditReport({
                         (e) => `
                           <tr>
                             <td>
-                              ${e.student_name || "—"}
+                              ${e.payer_name || "Other Payment"}
+                              <br />
+                              <span style="color:#64748b;font-size:11px">
+                                ${e.payer_type || "Other"}
+                              </span>
                             </td>
 
                             <td>
@@ -3162,7 +3173,8 @@ const dashboardLedger = useMemo(() => {
   return dashboardData.recent_transactions.map((txn) => ({
     id: txn.receipt_no || txn.transaction_uuid,
     transaction_uuid: txn.transaction_uuid,
-    student_name: txn.student_name || "—",
+    payer_name: txn.payer_name || txn.student_name || "Other Payment",
+    payer_type: txn.payer_type || (txn.student_name ? "Student" : "Other"),
     mode: txn.payment_mode || "—",
     amount: Number(
       txn.amount ??
@@ -3553,7 +3565,7 @@ function DashboardPanel({ kpis, ledger, onQuick, onCollect }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Ref</TableHead><TableHead>Student</TableHead><TableHead>Mode</TableHead>
+                  <TableHead>Ref</TableHead><TableHead>Paid By</TableHead><TableHead>Mode</TableHead>
                   <TableHead className="text-right">Amount</TableHead><TableHead>When</TableHead><TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -3561,7 +3573,12 @@ function DashboardPanel({ kpis, ledger, onQuick, onCollect }) {
                 {recent.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-mono text-xs">{r.id}</TableCell>
-                    <TableCell className="text-sm">{r.student_name}</TableCell>
+                    <TableCell className="text-sm">
+                      <div>{r.payer_name}</div>
+                      <Badge variant="secondary" className="mt-1 text-[10px]">
+                        {r.payer_type}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="text-xs">{r.mode ?? "—"}</TableCell>
                     <TableCell className="text-right font-semibold">{inr(r.amount)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{r.date}</TableCell>

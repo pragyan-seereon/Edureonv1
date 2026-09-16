@@ -483,10 +483,14 @@ function ReportsPanel({ students }) {
         const admissionNo =
           student.admission_no?.toLowerCase() || "";
 
+        const fatherName =
+          student.father_name?.toLowerCase() || "";
+
         return (
           name.includes(q) ||
           studentNo.includes(q) ||
-          admissionNo.includes(q)
+          admissionNo.includes(q) ||
+          fatherName.includes(q)
         );
       })
       .slice(0, 8);
@@ -3512,7 +3516,7 @@ function ReportsPanel({ students }) {
                   </Label>
 
                   <Input
-                    placeholder="Search by name, student no or admission no..."
+                    placeholder="Search by student or father's name..."
                     value={
                       studentQuery
                     }
@@ -3547,7 +3551,7 @@ function ReportsPanel({ students }) {
                                 student.student_uuid
                               }
                               type="button"
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center justify-between"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60"
                               onClick={() =>
                                 handleStudentSelect(
                                   student
@@ -3555,23 +3559,17 @@ function ReportsPanel({ students }) {
                               }
                             >
 
-                              <span>
-                                {
-                                  student.full_name
-                                }
-                              </span>
-
-                              <span className="text-xs text-muted-foreground">
-
-                                {
-                                  student.class_name
-                                }
-
-                                {student.section_name
-                                  ? `-${student.section_name}`
-                                  : ""}
-
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium truncate">
+                                  {student.full_name}
+                                </span>
+                                <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
+                                  {student.admission_no || student.student_no || "-"}
+                                </span>
+                              </div>
+                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                Father: {student.father_name || "-"} · Class: {student.class_name || "-"} · Section: {student.section_name || "-"}
+                              </div>
 
                             </button>
                           )

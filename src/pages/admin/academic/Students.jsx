@@ -85,16 +85,6 @@ import { StudentDialog } from "../../../components/student-dialog";
 import { toast } from "sonner";
 import useSessionStore from "../../../store/sessionStore";   
 /* =========================================================
-   Fee Status Colors
-========================================================= */
-
-const feeColor = {
-  Paid: "bg-success/10 text-success border-success/20",
-  Pending: "bg-warning/15 text-warning border-warning/30",
-  Overdue: "bg-destructive/10 text-destructive border-destructive/20",
-};
-
-/* =========================================================
    Student Status Colors
 ========================================================= */
 
@@ -1203,7 +1193,7 @@ const loadDashboard = async () => {
                               s.student_uuid
                             }
                             type="button"
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/60 focus:bg-muted/60 focus:outline-none"
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-muted/60 focus:bg-muted/60 focus:outline-none"
                             onMouseDown={(
                               e
                             ) =>
@@ -1215,17 +1205,17 @@ const loadDashboard = async () => {
                               )
                             }
                           >
-                            <span className="font-medium truncate">
-                              {
-                                s.full_name
-                              }
-                            </span>
-
-                            <span className="text-xs text-muted-foreground ml-auto font-mono shrink-0">
-                              {
-                                s.admission_no
-                              }
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium truncate">
+                                {s.full_name}
+                              </span>
+                              <span className="ml-auto text-xs text-muted-foreground font-mono shrink-0">
+                                {s.admission_no}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 text-xs text-muted-foreground truncate">
+                              Father: {s.father_name || "-"} · Class: {s.class_name || "-"} · Section: {s.section_name || s.section || "-"}
+                            </div>
                           </button>
                         )
                       )}
@@ -1294,12 +1284,16 @@ const loadDashboard = async () => {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent border-border/60">
-                  <TableHead className="w-[180px]">
-                    Student
+                  <TableHead>
+                    Admission No.
                   </TableHead>
 
                   <TableHead>
-                    Admission No
+                    Student ID
+                  </TableHead>
+
+                  <TableHead>
+                    Student Name
                   </TableHead>
 
                   <TableHead>
@@ -1307,23 +1301,15 @@ const loadDashboard = async () => {
                   </TableHead>
 
                   <TableHead>
-                    Roll
+                    Section
                   </TableHead>
 
                   <TableHead>
-                    Parent
+                    Roll No.
                   </TableHead>
 
                   <TableHead>
-                    Phone
-                  </TableHead>
-
-                  <TableHead className="text-center">
-                    Attendance
-                  </TableHead>
-
-                  <TableHead>
-                    Fee Status
+                    Parent Name
                   </TableHead>
 
                   <TableHead>
@@ -1344,7 +1330,7 @@ const loadDashboard = async () => {
                   0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={11}
+                      colSpan={9}
                       className="text-center text-sm text-muted-foreground py-10"
                     >
                       No students match your
@@ -1371,56 +1357,6 @@ const loadDashboard = async () => {
                       }
                     >
                       {/* ---------------------------------
-                          STUDENT
-                      --------------------------------- */}
-
-                      <TableCell>
-                        <div className="flex items-center gap-2.5">
-                          {s.passport_photo_file ? (
-                            <img
-                              src={
-                                s.passport_photo_file
-                              }
-                              alt={
-                                s.full_name
-                              }
-                              className="h-8 w-8 rounded-full object-cover border"
-                            />
-                          ) : (
-                            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/80 to-accent/80 flex items-center justify-center text-[11px] font-semibold text-primary-foreground">
-                              {s.full_name
-                                ?.split(
-                                  " "
-                                )
-                                .map(
-                                  (n) =>
-                                    n[0]
-                                )
-                                .join("")
-                                .slice(
-                                  0,
-                                  2
-                                )}
-                            </div>
-                          )}
-
-                          <div className="leading-tight">
-                            <div className="text-sm font-medium">
-                              {
-                                s.full_name
-                              }
-                            </div>
-
-                            <div className="text-[11px] text-muted-foreground">
-                              {
-                                s.gender
-                              }
-                            </div>
-                          </div>
-                        </div>
-                      </TableCell>
-
-                      {/* ---------------------------------
                           ADMISSION
                       --------------------------------- */}
 
@@ -1431,18 +1367,26 @@ const loadDashboard = async () => {
                       </TableCell>
 
                       {/* ---------------------------------
-                          CLASS
+                          STUDENT ID / NAME
                       --------------------------------- */}
 
+                      <TableCell className="font-mono text-xs">
+                        {s.student_no || s.student_uuid}
+                      </TableCell>
+
+                      <TableCell className="text-sm font-medium">
+                        {s.full_name}
+                      </TableCell>
+
                       <TableCell>
-                        <Badge
-                          variant="secondary"
-                          className="font-mono"
-                        >
-                          {s.class_name}
-                          {s.section
-                            ? `-${s.section}`
-                            : ""}
+                        <Badge variant="secondary" className="font-mono">
+                          {s.class_name || "—"}
+                        </Badge>
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge variant="secondary" className="font-mono">
+                          {s.section_name || s.section || "—"}
                         </Badge>
                       </TableCell>
 
@@ -1462,59 +1406,6 @@ const loadDashboard = async () => {
                         {
                           s.father_name
                         }
-                      </TableCell>
-
-                      {/* ---------------------------------
-                          PHONE
-                      --------------------------------- */}
-
-                      <TableCell className="text-xs text-muted-foreground">
-                        {
-                          s.primary_phone
-                        }
-                      </TableCell>
-
-                      {/* ---------------------------------
-                          ATTENDANCE
-                      --------------------------------- */}
-
-                      <TableCell className="text-center">
-                        <span
-                          className={`text-sm font-medium ${
-                            s.attendance_percentage >=
-                            90
-                              ? "text-success"
-                              : s.attendance_percentage >=
-                                80
-                              ? "text-warning"
-                              : "text-destructive"
-                          }`}
-                        >
-                          {
-                            s.attendance_percentage
-                          }
-                          %
-                        </span>
-                      </TableCell>
-
-                      {/* ---------------------------------
-                          FEE STATUS
-                      --------------------------------- */}
-
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={
-                            feeColor[
-                              s.fee_status
-                            ] ||
-                            "bg-muted text-muted-foreground"
-                          }
-                        >
-                          {
-                            s.fee_status
-                          }
-                        </Badge>
                       </TableCell>
 
                       {/* ---------------------------------

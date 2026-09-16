@@ -226,11 +226,15 @@ if (requiresInstituteSelection(authUser)) {
         <div className="absolute bottom-0 -left-20 h-80 w-80 rounded-full bg-primary/40 blur-3xl" />
         <div className="relative">
           <Link to="/" className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-lg gradient-primary flex items-center justify-center shadow-lg">
-              <GraduationCap className="h-6 w-6 text-primary-foreground" />
+            <div className="h-11 w-11 rounded-lg bg-white shadow-lg flex items-center justify-center shrink-0 overflow-hidden">
+              <img
+                src="/mothers-public-school-logo.png"
+                alt="Mother's Public School"
+                className="h-full w-full object-contain"
+              />
             </div>
             <div>
-              <div className="font-display text-lg font-semibold">EDUREON</div>
+              <div className="font-display text-lg font-semibold">MOTHER'S PUBLIC SCHOOL</div>
               <div className="text-[11px] uppercase tracking-wider text-sidebar-foreground/60">
                 Enterprise · CBSE Edition
               </div>

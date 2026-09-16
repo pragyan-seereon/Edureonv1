@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { GraduationCap, ChevronRight } from "lucide-react";
+import {  ChevronRight } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -88,14 +88,18 @@ const portalLabel = portalLabelForRole(role);
     <Sidebar collapsible="icon" className="border-r">
       <SidebarHeader className="border-b border-sidebar-border">
         <Link to="/" className="flex items-center gap-2.5 px-2 py-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md gradient-primary shadow-sm shrink-0">
-            <GraduationCap className="h-5 w-5 text-primary-foreground" />
-          </div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white shadow-sm shrink-0 overflow-hidden">
+  <img
+    src="/mothers-public-school-logo.png"
+    alt="Mother's Public School"
+    className="h-full w-full object-contain"
+  />
+</div>
           {!collapsed && (
             <div className="flex flex-col leading-tight min-w-0">
-              <span className="font-display font-semibold text-sidebar-foreground truncate">
-                EDUREON
-              </span>
+              <span className="font-display font-semibold text-sm text-sidebar-foreground truncate">
+  MOTHER'S PUBLIC SCHOOL
+</span>
               <span className="text-[10px] uppercase tracking-wider text-sidebar-foreground/60">
                 {portalLabel}
               </span>

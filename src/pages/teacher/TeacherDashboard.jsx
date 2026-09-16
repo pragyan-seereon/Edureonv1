@@ -212,12 +212,12 @@ export default function TeacherDashboard() {
               <NotebookPen className="h-4 w-4" />
               Pending Lesson Plans
             </CardTitle>
-            <Button variant="ghost" size="sm" asChild>
+            {/* <Button variant="ghost" size="sm" asChild>
               <Link to="/teacher/lesson-plans">
                 All
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
-            </Button>
+            </Button> */}
           </CardHeader>
           <CardContent className="space-y-2">
             {draftPlans.length === 0 && (

@@ -566,6 +566,28 @@ export const updateShift = async (
   return response.data;
 };
 
+// ===============================
+// Import Shifts Excel
+// ===============================
+export const importShiftExcel = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await api.post(
+    "/shifts/import-excel",
+    formData,
+    {
+      headers: {
+        ...getHeaders(),
+        "Content-Type": "multipart/form-data",
+      },
+      skipDataRefresh: true,
+    }
+  );
+
+  return response.data;
+};
+
 // ===================================
 // Import legacy employee Excel template
 // ===================================

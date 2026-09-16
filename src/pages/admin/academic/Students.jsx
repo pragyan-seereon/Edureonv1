@@ -164,6 +164,10 @@ const { sessionYear } = useSessionStore();
   const [q, setQ] = useState("");
   const [tab, setTab] = useState("all");
   const [classFilter, setClassFilter] = useState(null);
+  const [sectionFilter, setSectionFilter] = useState("all");
+  const [feeComponentFilter, setFeeComponentFilter] = useState("all");
+  const [feePaymentFilter, setFeePaymentFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -210,11 +214,6 @@ const { sessionYear } = useSessionStore();
      Initial Load
   ======================================================= */
 
-  useEffect(() => {
-    loadStudents();
-    loadDashboard();
-  }, [sessionYear]);
-
   /* =======================================================
      Load Students
   ======================================================= */
@@ -247,6 +246,11 @@ const loadDashboard = async () => {
   }
 };
 
+  useEffect(() => {
+    loadStudents();
+    loadDashboard();
+  }, [sessionYear]);
+
   /* =======================================================
      Click Outside Search Suggestions
   ======================================================= */
@@ -277,6 +281,34 @@ const loadDashboard = async () => {
   /* =======================================================
      Filter Students
   ======================================================= */
+
+  const feeComponentsByStudent = useMemo(
+    () => new Map(
+      students.map((student) => [
+        student.student_uuid,
+        Array.isArray(student.fee_components)
+          ? student.fee_components
+          : [],
+      ])
+    ),
+    [students]
+  );
+
+  const feeComponents = useMemo(() => {
+    const uniqueComponents = new Map();
+
+    students.forEach((student) => {
+      (student?.fee_components ?? []).forEach((component) => {
+        if (component?.component_uuid && component?.component_name) {
+          uniqueComponents.set(component.component_uuid, component);
+        }
+      });
+    });
+
+    return [...uniqueComponents.values()].sort((a, b) =>
+      String(a.component_name).localeCompare(String(b.component_name))
+    );
+  }, [students]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -327,6 +359,42 @@ const loadDashboard = async () => {
         return false;
       }
 
+      if (
+        sectionFilter !== "all" &&
+        String(s?.section_name ?? s?.section ?? "") !== sectionFilter
+      ) {
+        return false;
+      }
+
+      const selectedFeeComponent = feeComponentsByStudent
+        .get(s?.student_uuid)
+        ?.find(
+          (component) => component.component_uuid === feeComponentFilter
+        );
+
+      if (feeComponentFilter !== "all" && !selectedFeeComponent) {
+        return false;
+      }
+
+      const feeStatus = String(
+        selectedFeeComponent?.fee_status ?? s?.fee_status ?? ""
+      ).toLowerCase();
+
+      if (feePaymentFilter === "paid" && feeStatus !== "paid") {
+        return false;
+      }
+
+      if (feePaymentFilter === "unpaid" && feeStatus === "paid") {
+        return false;
+      }
+
+      if (
+        statusFilter !== "all" &&
+        String(s?.status ?? "").toLowerCase() !== statusFilter
+      ) {
+        return false;
+      }
+
       /* -----------------------------------------------
          Defaulters
       ------------------------------------------------ */
@@ -367,6 +435,11 @@ const loadDashboard = async () => {
     students,
     q,
     classFilter,
+    sectionFilter,
+    feeComponentFilter,
+    feeComponentsByStudent,
+    feePaymentFilter,
+    statusFilter,
     tab,
   ]);
 
@@ -433,6 +506,27 @@ const loadDashboard = async () => {
         .filter(Boolean)
     )
   ).sort();
+
+  const sections = Array.from(
+    new Set(
+      students
+        .filter(
+          (s) => !classFilter || s?.class_name === classFilter
+        )
+        .map((s) => s?.section_name ?? s?.section)
+        .filter(Boolean)
+    )
+  ).sort();
+
+  const displayedFeeStatus = (student) => {
+    if (feeComponentFilter !== "all") {
+      const component = (student?.fee_components ?? []).find(
+        (item) => item.component_uuid === feeComponentFilter
+      );
+      if (component?.fee_status) return component.fee_status;
+    }
+    return student?.fee_status;
+  };
 
   /* =======================================================
      Select Search Suggestion
@@ -1247,9 +1341,11 @@ const loadDashboard = async () => {
                 <DropdownMenuContent>
                   <DropdownMenuItem
                     onClick={() =>
-                      setClassFilter(
-                        null
-                      )
+                      {
+                        setClassFilter(null);
+                        setSectionFilter("all");
+                        setPage(1);
+                      }
                     }
                   >
                     All classes
@@ -1262,9 +1358,11 @@ const loadDashboard = async () => {
                       <DropdownMenuItem
                         key={c}
                         onClick={() =>
-                          setClassFilter(
-                            c
-                          )
+                          {
+                            setClassFilter(c);
+                            setSectionFilter("all");
+                            setPage(1);
+                          }
                         }
                       >
                         Class {c}
@@ -1273,6 +1371,86 @@ const loadDashboard = async () => {
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              <Select
+                value={sectionFilter}
+                onValueChange={(value) => {
+                  setSectionFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 w-[130px] text-xs">
+                  <SelectValue placeholder="Section" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sections</SelectItem>
+                  {sections.map((section) => (
+                    <SelectItem key={section} value={section}>
+                      Section {section}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={feeComponentFilter}
+                onValueChange={(value) => {
+                  setFeeComponentFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 w-[145px] text-xs">
+                  <SelectValue placeholder="Fee Component" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All fee components</SelectItem>
+                  {feeComponents.map((component) => (
+                    <SelectItem
+                      key={component.component_uuid}
+                      value={component.component_uuid}
+                    >
+                      {component.component_name}
+                      {component.category
+                        ? ` · ${String(component.category).replace(/_/g, " ")}`
+                        : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={feePaymentFilter}
+                onValueChange={(value) => {
+                  setFeePaymentFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 w-[125px] text-xs">
+                  <SelectValue placeholder="Fee Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All fee statuses</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="unpaid">Unpaid</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={statusFilter}
+                onValueChange={(value) => {
+                  setStatusFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 w-[115px] text-xs">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -1313,6 +1491,10 @@ const loadDashboard = async () => {
                   </TableHead>
 
                   <TableHead>
+                    Fee Status
+                  </TableHead>
+
+                  <TableHead>
                     Status
                   </TableHead>
 
@@ -1330,7 +1512,7 @@ const loadDashboard = async () => {
                   0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={10}
                       className="text-center text-sm text-muted-foreground py-10"
                     >
                       No students match your
@@ -1406,6 +1588,21 @@ const loadDashboard = async () => {
                         {
                           s.father_name
                         }
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            String(displayedFeeStatus(s) ?? "").toLowerCase() === "paid"
+                              ? "bg-success/10 text-success border-success/20"
+                              : "bg-warning/15 text-warning border-warning/30"
+                          }
+                        >
+                          {String(displayedFeeStatus(s) ?? "").toLowerCase() === "paid"
+                            ? "PAID"
+                            : "UNPAID"}
+                        </Badge>
                       </TableCell>
 
                       {/* ---------------------------------

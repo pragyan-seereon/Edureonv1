@@ -1694,6 +1694,65 @@ export default function StudentDetails() {
     { key: "certificate", label: "Certificate", icon: <FileText className="h-3.5 w-3.5" />, onClick: () => window.print() },
   ];
 
+  const printProfile = () => {
+    window.print();
+  };
+
+  const printIdCard = () => {
+    const escapeHtml = (value) => String(value ?? "").replace(
+      /[&<>'"]/g,
+      (character) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;",
+        "'": "&#39;", '"': "&quot;",
+      }[character])
+    );
+    const initials = String(s.full_name || "Student")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((name) => name[0])
+      .join("")
+      .toUpperCase();
+    const cardWindow = window.open("", "_blank", "width=760,height=540");
+
+    if (!cardWindow) {
+      toast.error("Please allow pop-ups to print the ID card.");
+      return;
+    }
+
+    cardWindow.document.write(`<!doctype html>
+      <html><head><title>Student ID Card</title><style>
+        @page { size: 85.6mm 54mm; margin: 0; }
+        body { min-height: 100vh; margin: 0; font-family: Arial, sans-serif; background: #f8fafc; display: grid; place-items: center; }
+        .card { width: 85.6mm; height: 54mm; box-sizing: border-box; padding: 6mm; color: #0f2747; border: 1px solid #cbd5e1; border-radius: 4mm; position: relative; overflow: hidden; }
+        .card:before { content: ''; position: absolute; inset: 0 0 auto 0; height: 12mm; background: #123d73; }
+        .title { position: relative; color: #fff; font-size: 12px; font-weight: 700; text-align: center; }
+        .body { position: relative; display: flex; gap: 5mm; margin-top: 7mm; align-items: center; }
+        .photo { width: 21mm; height: 21mm; border-radius: 50%; background: #1d5c9f; color: #fff; display: grid; place-items: center; font-size: 20px; font-weight: 700; flex: none; overflow: hidden; }
+        .photo img { width: 100%; height: 100%; object-fit: cover; }
+        .name { font-size: 14px; font-weight: 700; margin-bottom: 3mm; }
+        .row { font-size: 10px; margin: 1.5mm 0; } .label { color: #64748b; display: inline-block; min-width: 24mm; }
+        @media print { body { min-height: auto; display: block; background: #fff; } .card { margin: 0; } }
+      </style></head><body><div class="card">
+        <div class="title">STUDENT ID CARD</div>
+        <div class="body"><div class="photo">${s.passport_photo_file
+          ? `<img src="${escapeHtml(s.passport_photo_file)}" alt="${escapeHtml(s.full_name)}" onerror="this.remove()" />`
+          : escapeHtml(initials)}</div><div>
+          <div class="name">${escapeHtml(s.full_name)}</div>
+          <div class="row"><span class="label">Student ID</span>${escapeHtml(s.student_no)}</div>
+          <div class="row"><span class="label">Admission No.</span>${escapeHtml(s.admission_no)}</div>
+          <div class="row"><span class="label">Class / Section</span>${escapeHtml(s.class_name)} ${escapeHtml(s.section_name || s.section || "")}</div>
+          <div class="row"><span class="label">Contact</span>${escapeHtml(s.primary_phone)}</div>
+        </div></div></div></body></html>`);
+    cardWindow.document.close();
+    cardWindow.onload = () => {
+      window.setTimeout(() => {
+        cardWindow.focus();
+        cardWindow.print();
+      }, 300);
+    };
+  };
+
   return (
     <PageContainer>
       <PageHeader
@@ -1712,12 +1771,12 @@ export default function StudentDetails() {
               Edit
             </Button>
 
-            <Button size="sm" variant="outline" onClick={() => toast.success("Profile sent to printer")}>
+            <Button size="sm" variant="outline" onClick={printProfile}>
               <Printer className="h-4 w-4" />
               Print
             </Button>
 
-            <Button size="sm" variant="outline" onClick={() => toast.success("ID Card sent to printer")}>
+            <Button size="sm" variant="outline" onClick={printIdCard}>
               <IdCard className="h-4 w-4" />
               ID Card
             </Button>

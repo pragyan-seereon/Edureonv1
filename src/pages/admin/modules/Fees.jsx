@@ -1297,6 +1297,8 @@ function StudentDiscountsPanel({
   const [q, setQ] = useState("");
   const [cls, setCls] = useState("");
   const [sec, setSec] = useState("");
+  const [studentType, setStudentType] = useState("all");
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [open, setOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null); // student row when editing one student's set
 
@@ -1312,15 +1314,45 @@ function StudentDiscountsPanel({
     return m;
   }, [studentDiscounts]);
 
+  const studentSuggestions = useMemo(() => {
+    const search = q.trim().toLowerCase();
+    if (!search) return [];
+
+    return students
+      .filter((student) =>
+        student.full_name?.toLowerCase().includes(search) ||
+        student.father_name?.toLowerCase().includes(search) ||
+        student.student_no?.toLowerCase().includes(search) ||
+        student.admission_no?.toLowerCase().includes(search)
+      )
+      .slice(0, 20);
+  }, [students, q]);
+
   const rows = useMemo(() => {
     return students
       .filter(
-        (s) =>
-          (!cls || s.class_name === cls) &&
-          (!sec || s.section_name === sec) &&
-          (!q ||
-            s.full_name?.toLowerCase().includes(q.toLowerCase()) ||
-            s.student_no?.toLowerCase().includes(q.toLowerCase()))
+        (s) => {
+          const isStaffStudent = Boolean(s.employee_uuid);
+          const isSiblingStudent = Number(s.siblings || 0) > 0;
+          const isRteStudent = Boolean(s.is_rte_student);
+          const matchesStudentType =
+            studentType === "all" ||
+            (studentType === "staff" && isStaffStudent) ||
+            (studentType === "sibling" && isSiblingStudent) ||
+            (studentType === "rte" && isRteStudent) ||
+            (studentType === "normal" && !isStaffStudent && !isSiblingStudent && !isRteStudent);
+
+          return (
+            (!cls || s.class_name === cls) &&
+            (!sec || s.section_name === sec) &&
+            matchesStudentType &&
+            (!q ||
+              s.full_name?.toLowerCase().includes(q.toLowerCase()) ||
+              s.father_name?.toLowerCase().includes(q.toLowerCase()) ||
+              s.student_no?.toLowerCase().includes(q.toLowerCase()) ||
+              s.admission_no?.toLowerCase().includes(q.toLowerCase()))
+          );
+        }
       )
       .map((s) => {
         const match = byStudentUuid.get(s.student_uuid);
@@ -1328,12 +1360,13 @@ function StudentDiscountsPanel({
           student_uuid: s.student_uuid,
           student_name: s.full_name,
           student_no: s.student_no,
+          father_name: s.father_name,
           class_name: s.class_name,
           section_name: s.section_name,
           discounts: match?.discounts || [],
         };
       });
-  }, [students, studentDiscounts, byStudentUuid, cls, sec, q]);
+  }, [students, studentDiscounts, byStudentUuid, cls, sec, q, studentType]);
 
   return (
     <Card className="border-border/60">
@@ -1351,7 +1384,56 @@ function StudentDiscountsPanel({
             <SelectTrigger className="w-28 h-9"><SelectValue placeholder="Section" /></SelectTrigger>
             <SelectContent>{sectionsFor.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
           </Select>
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search student..." className="h-9 w-48" />
+          <Select value={studentType} onValueChange={setStudentType}>
+            <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Student type" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Students</SelectItem>
+              <SelectItem value="staff">Staff Students</SelectItem>
+              <SelectItem value="sibling">Sibling Students</SelectItem>
+              <SelectItem value="rte">RTE Students</SelectItem>
+              <SelectItem value="normal">Normal Students</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="relative w-56">
+            <Input
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              placeholder="Search student or father..."
+              className="h-9 w-full"
+              autoComplete="off"
+            />
+            {showSuggestions && studentSuggestions.length > 0 && (
+              <div className="absolute z-50 top-full left-0 mt-1 w-[360px] max-h-72 overflow-y-auto rounded-md border bg-popover shadow-md">
+                {studentSuggestions.map((student) => (
+                  <button
+                    key={student.student_uuid}
+                    type="button"
+                    className="block w-full border-b px-3 py-2 text-left last:border-b-0 hover:bg-muted/60"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setQ(student.full_name || "");
+                      setShowSuggestions(false);
+                    }}
+                  >
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-medium truncate">{student.full_name}</span>
+                      <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
+                        {student.admission_no || student.student_no || "-"}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                      Father: {student.father_name || "-"} · Class: {student.class_name || "-"} · Section: {student.section_name || "-"}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <Button size="sm" className="gradient-primary border-0" onClick={() => { setEditingStudent(null); setOpen(true); }}>
             <Plus className="h-4 w-4" />Assign Discount
           </Button>
@@ -1362,7 +1444,8 @@ function StudentDiscountsPanel({
           <TableHeader>
             <TableRow>
               <TableHead>Student</TableHead>
-              <TableHead>Class</TableHead>
+              <TableHead>Father's Name</TableHead>
+              <TableHead>Class / Section</TableHead>
               <TableHead>Discounts</TableHead>
               <TableHead className="w-32"></TableHead>
             </TableRow>
@@ -1373,6 +1456,7 @@ function StudentDiscountsPanel({
                 <TableCell className="text-sm font-medium">
                   {r.student_name} <span className="text-xs text-muted-foreground">· {r.student_no}</span>
                 </TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.father_name || "-"}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{r.class_name}{r.section_name ? `-${r.section_name}` : ""}</TableCell>
                 <TableCell>
                   {r.discounts.length === 0 && <span className="text-xs text-muted-foreground">None</span>}
@@ -1396,10 +1480,10 @@ function StudentDiscountsPanel({
               </TableRow>
             ))}
             {!loading && rows.length === 0 && (
-              <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">No students found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">No students found.</TableCell></TableRow>
             )}
             {loading && (
-              <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">Loading student discounts…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">Loading student discounts…</TableCell></TableRow>
             )}
           </TableBody>
         </Table>

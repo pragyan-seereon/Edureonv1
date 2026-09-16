@@ -234,14 +234,6 @@ function validatePersonal(f) {
   if (!f.category) e.category = "Category is required";
   else if (!CATEGORIES.includes(f.category)) e.category = "Invalid category";
 
-  // const today = new Date().toISOString().split("T")[0];
-  // if (f.admissionDate && f.admissionDate > today) {
-  //   e.admissionDate = "Future admission date not allowed";
-  // }
-  // if (f.joiningDate && f.joiningDate > today) {
-  //   e.joiningDate = "Future joining date not allowed";
-  // }
-
   return e;
 }
 
@@ -383,41 +375,73 @@ function formatIsoToDisplay(iso) {
 
 function formatDigitsToDisplay(digits) {
   if (digits.length > 4) {
-    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
+    return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4, 8)}`;
   }
   if (digits.length > 2) {
-    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}`;
+    return `${digits.slice(0, 2)}-${digits.slice(2, 4)}`;
   }
   return digits;
 }
 
 function displayToIso(display) {
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(display);
+  const match = /^(\d{2})[-/](\d{2})[-/](\d{4})$/.exec(display);
   if (!match) return null;
   const [, d, m, y] = match;
   return `${y}-${m}-${d}`;
 }
 
-function DateInputDDMMYYYY({ value, onChange, disabled, max, min, className = "" }) {
+function DateInputDDMMYYYY({ value, onChange, disabled, max, min, manual = false, className = "" }) {
+  const [displayValue, setDisplayValue] = useState(
+    formatIsoToDisplay(value).replaceAll("/", "-")
+  );
+
+  useEffect(() => {
+    setDisplayValue(formatIsoToDisplay(value).replaceAll("/", "-"));
+  }, [value]);
+
+  const isCalendarDate = (iso) => {
+    const [year, month, day] = iso.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+  };
+
+  if (!manual) {
+    return (
+      <Input
+        type="date"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        min={min}
+        max={max}
+        disabled={disabled}
+        className={`w-full ${className}`}
+      />
+    );
+  }
+
   return (
     <Input
-      type="date"
-      value={value || ""}
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      placeholder="DD-MM-YYYY"
+      value={displayValue}
       onChange={(e) => {
-        const nextValue = e.target.value;
+        const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
+        const nextDisplay = formatDigitsToDisplay(digits);
+        setDisplayValue(nextDisplay);
 
-        if (!nextValue) {
+        if (!digits) {
           onChange("");
           return;
         }
 
+        const nextValue = displayToIso(nextDisplay);
+        if (!nextValue || !isCalendarDate(nextValue)) return;
         if (max && nextValue > max) return;
         if (min && nextValue < min) return;
-
         onChange(nextValue);
       }}
-      min={min}
-      max={max}
       disabled={disabled}
       className={`w-full ${className}`}
     />
@@ -517,6 +541,7 @@ function mapRecordToForm(record) {
     feeStatus: FEE_STATUSES.includes(record.fee_status) ? record.fee_status : "Pending",
     transportRequired: record.transport_required ? "Yes" : "No",
     hostelRequired: record.hostel_required ? "Yes" : "No",
+    isRteStudent: record.is_rte_student ? "Yes" : "No",
 
     // Medical
     medicalNotes: record.medical_notes || "",
@@ -582,6 +607,7 @@ const empty = {
   feeStatus: "Pending",
   transportRequired: "No",
   hostelRequired: "No",
+  isRteStudent: "No",
   // medical
   medicalNotes: "",
 };
@@ -1046,6 +1072,7 @@ export function StudentDialog({ open, onOpenChange, student }) {
       formData.append("fee_status", f.feeStatus);
       formData.append("transport_required", f.transportRequired === "Yes");
       formData.append("hostel_required", f.hostelRequired === "Yes");
+      formData.append("is_rte_student", f.isRteStudent === "Yes");
       formData.append("current_step", "services");
 
       await updateStudentStep4(uuid, formData, instituteUUID);
@@ -1356,6 +1383,11 @@ export function StudentDialog({ open, onOpenChange, student }) {
       );
 
       formData.append(
+        "is_rte_student",
+        f.isRteStudent === "Yes"
+      );
+
+      formData.append(
         "medical_notes",
         f.medicalNotes
       );
@@ -1630,7 +1662,7 @@ export function StudentDialog({ open, onOpenChange, student }) {
               <DateInputDDMMYYYY
                 value={f.admissionDate}
                 onChange={(v) => set("admissionDate", v)}
-                max={new Date().toISOString().split("T")[0]}
+                manual
               />
             </F>
 
@@ -1638,7 +1670,7 @@ export function StudentDialog({ open, onOpenChange, student }) {
               <DateInputDDMMYYYY
                 value={f.joiningDate}
                 onChange={(v) => set("joiningDate", v)}
-                max={new Date().toISOString().split("T")[0]}
+                manual
               />
             </F>
           </TabsContent>
@@ -2118,6 +2150,17 @@ export function StudentDialog({ open, onOpenChange, student }) {
                 </SelectContent>
               </Select>
             </F>
+            <F label="RTE Student">
+              <Select value={f.isRteStudent} onValueChange={(v) => set("isRteStudent", v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="No">No</SelectItem>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                </SelectContent>
+              </Select>
+            </F>
           </TabsContent>
 
           {/* ── MEDICAL ── */}
@@ -2246,6 +2289,7 @@ export function StudentDialog({ open, onOpenChange, student }) {
               <ReviewRow label="Fee Status" value={f.feeStatus} />
               <ReviewRow label="Transport Required" value={f.transportRequired} />
               <ReviewRow label="Hostel Required" value={f.hostelRequired} />
+              <ReviewRow label="RTE Student" value={f.isRteStudent} />
             </ReviewSection>
 
             <ReviewSection title="Medical" onEdit={() => setTab("medical")}>

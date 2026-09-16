@@ -60,8 +60,6 @@ import {
   Upload,
   MoreHorizontal,
   GraduationCap,
-  UserCheck,
-  IndianRupee,
   AlertCircle,
   Pencil,
   Trash2,
@@ -1118,7 +1116,7 @@ const loadDashboard = async () => {
           KPI CARDS
       ================================================= */}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <KpiCard
           label="Total Students"
           value={
@@ -1132,21 +1130,6 @@ const loadDashboard = async () => {
             <GraduationCap className="h-5 w-5" />
           }
           tone="primary"
-        />
-
-        <KpiCard
-          label="Present Today"
-          value={
-            dashboard?.present_today ?? 0
-          }
-          delta={
-            dashboard?.present_today_growth ??
-            0
-          }
-          icon={
-            <UserCheck className="h-5 w-5" />
-          }
-          tone="success"
         />
 
         <KpiCard
@@ -1164,20 +1147,6 @@ const loadDashboard = async () => {
           tone="warning"
         />
 
-        <KpiCard
-          label="New (MTD)"
-          value={
-            dashboard?.new_students_mtd ?? 0
-          }
-          delta={
-            dashboard?.new_students_growth ??
-            0
-          }
-          icon={
-            <IndianRupee className="h-5 w-5" />
-          }
-          tone="info"
-        />
       </div>
 
       {/* =================================================

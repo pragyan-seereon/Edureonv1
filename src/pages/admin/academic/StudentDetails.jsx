@@ -2007,6 +2007,7 @@ export default function StudentDetails() {
               ["Transport Required", s.transport_required ? "Yes" : "No"],
               ["Mode of Conveyance", s.mode_of_conveyance],
               ["Hostel Required", s.hostel_required ? "Yes" : "No"],
+              ["RTE Student", s.is_rte_student ? "Yes" : "No"],
             ]} />
           </SectionCard>
 

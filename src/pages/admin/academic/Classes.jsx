@@ -351,6 +351,8 @@ useEffect(() => {
   const [secEdit, setSecEdit] = useState(null);
   const [subOpen, setSubOpen] = useState(false);
   const [subEdit, setSubEdit] = useState(null);
+  const [subQ, setSubQ] = useState("");
+  const [showSubSuggest, setShowSubSuggest] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [mapEdit, setMapEdit] = useState(null);
   const [calOpen, setCalOpen] = useState(false);
@@ -515,8 +517,28 @@ const performAssign = async () => {
     }
   };
 
+    // Subjects filtered by the search box (matches name or code)
+  const filteredSubjects = useMemo(
+    () =>
+      subjects.filter((s) => {
+        if (!subQ.trim()) return true;
+        const q = subQ.trim().toLowerCase();
+        return (
+          (s.subject_name || "").toLowerCase().includes(q) ||
+          (s.subject_code || "").toLowerCase().includes(q)
+        );
+      }),
+    [subjects, subQ],
+  );
+
+  // Suggestion dropdown shown while typing
+  const subjectSuggestions = useMemo(() => {
+    if (!subQ.trim()) return [];
+    return filteredSubjects.slice(0, 8);
+  }, [filteredSubjects, subQ]);
+
   // pagination for the Subjects table
-  const subjectsPage = usePagination(subjects, 10);
+  const subjectsPage = usePagination(filteredSubjects, 10);
   // pagination for the Sections grid
   const sectionsPage = usePagination(sections, 9);
 
@@ -719,14 +741,26 @@ const performAssign = async () => {
           <DepartmentsTab />
         </TabsContent>
 
-        <TabsContent value="subjects" className="mt-4">
+                <TabsContent value="subjects" className="mt-4">
           <Card className="border-border/60">
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
               <div>
                 <CardTitle className="text-base">Subjects</CardTitle>
                 {/* <CardDescription>Catalog of subjects offered across classes.</CardDescription> */}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                                <div className="relative">
+                  <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+                  <Input
+                    value={subQ}
+                    onChange={(e) => setSubQ(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setSubQ("");
+                    }}
+                    placeholder="Search subject name / code…"
+                    className="pl-8 h-9 w-64"
+                  />
+                </div>
                 <RowsPerPageSelect {...subjectsPage} />
                 <Button
                   size="sm"
@@ -753,8 +787,18 @@ const performAssign = async () => {
                     <TableHead>Faculty</TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
-                </TableHeader>
+                 </TableHeader>
                 <TableBody>
+                  {filteredSubjects.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="text-center text-sm text-muted-foreground py-10"
+                      >
+                        No subjects match "{subQ}".
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {subjectsPage.pageItems.map((s) => (
                     <TableRow
                       key={s.id}
@@ -1704,6 +1748,8 @@ function ClassesTab({
 }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [classQ, setClassQ] = useState("");
+  const [classStream, setClassStream] = useState("all");
 
   const fetchClasses = async () => {
     try {
@@ -1724,7 +1770,22 @@ function ClassesTab({
     fetchClasses();
   }, []);
 
-  const classesPage = usePagination(list, 10);
+  const filteredClasses = useMemo(
+    () =>
+      list.filter((c) => {
+        if (classStream !== "all" && c.stream !== classStream) return false;
+        if (
+          classQ &&
+          !(c.class_name || "").toLowerCase().includes(classQ.toLowerCase())
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    [list, classQ, classStream],
+  );
+
+  const classesPage = usePagination(filteredClasses, 10);
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(null);
@@ -1848,6 +1909,24 @@ function ClassesTab({
         idx === i ? { ...s, ...patch } : s,
       ),
     }));
+  const toggleSubjectFaculty = (subjectIndex, facultyId, checked) =>
+    setForm((currentForm) => ({
+      ...currentForm,
+      subjectsOffered: (currentForm.subjectsOffered ?? []).map(
+        (subject, index) => {
+          if (index !== subjectIndex) return subject;
+
+          const assignedFaculty = subject.faculty_user_ids ?? [];
+          return {
+            ...subject,
+            faculty_user_ids:
+              checked === true
+                ? Array.from(new Set([...assignedFaculty, facultyId]))
+                : assignedFaculty.filter((id) => id !== facultyId),
+          };
+        },
+      ),
+    }));
   const removeSubjectRow = (i) =>
     setForm((f) => ({
       ...f,
@@ -1856,11 +1935,36 @@ function ClassesTab({
 
   return (
     <Card className="border-border/60">
-      <CardHeader className="flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
+           <CardHeader className="flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
         <div>
           <CardTitle className="text-base">Classes</CardTitle>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+            <Input
+              value={classQ}
+              onChange={(e) => setClassQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setClassQ("");
+              }}
+              placeholder="Search class name…"
+              className="pl-8 h-9 w-56"
+            />
+          </div>
+          {/* <Select value={classStream} onValueChange={setClassStream}>
+            <SelectTrigger className="h-9 w-36">
+              <SelectValue placeholder="Stream" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All streams</SelectItem>
+              {STREAMS.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select> */}
           <RowsPerPageSelect {...classesPage} />
           <Button
             size="sm"
@@ -1883,6 +1987,16 @@ function ClassesTab({
             </TableRow>
           </TableHeader>
           <TableBody>
+                        {filteredClasses.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="text-center text-sm text-muted-foreground py-10"
+                >
+                  No classes match "{classQ}".
+                </TableCell>
+              </TableRow>
+            )}
             {classesPage.pageItems.map((c) => (
               <TableRow key={c.id}>
                 <TableCell className="font-medium">{c.class_name}</TableCell>
@@ -1952,7 +2066,7 @@ function ClassesTab({
       </CardContent>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{edit ? "Edit Class" : "Add New Class"}</DialogTitle>
           </DialogHeader>
@@ -2107,32 +2221,38 @@ function ClassesTab({
                                 No faculty for this subject.
                               </div>
                             )}
-                           {selectedSubject?.faculty?.map((faculty) => (
-                              <label
-                                key={faculty.employee_uuid}
-                                className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1"
-                              >
-                                <Checkbox
-                                  checked={row.faculty_user_ids.includes(
-                                    faculty.employee_uuid,
-                                  )}
-                                  onCheckedChange={(checked) => {
-                                    const next = checked
-                                      ? [
-                                          ...row.faculty_user_ids,
-                                          faculty.employee_uuid,
-                                        ]
-                                      : row.faculty_user_ids.filter(
-                                          (id) => id !== faculty.employee_uuid,
-                                        );
-                                    updateSubjectRow(i, {
-                                      faculty_user_ids: next,
-                                    });
-                                  }}
-                                />
-                                <span>{faculty.name}</span>
-                              </label>
-                            ))}
+                           {selectedSubject?.faculty?.map((faculty) => {
+                             const isSelected = row.faculty_user_ids.includes(
+                               faculty.employee_uuid,
+                             );
+
+                             return (
+                               <div
+                                 key={faculty.employee_uuid}
+                                 className="flex items-center gap-2 rounded px-1.5 py-1 text-sm cursor-pointer select-none hover:bg-muted/50"
+                                 onClick={() =>
+                                   toggleSubjectFaculty(
+                                     i,
+                                     faculty.employee_uuid,
+                                     !isSelected,
+                                   )
+                                 }
+                               >
+                                 <Checkbox
+                                   checked={isSelected}
+                                   onClick={(event) => event.stopPropagation()}
+                                   onCheckedChange={(checked) =>
+                                     toggleSubjectFaculty(
+                                       i,
+                                       faculty.employee_uuid,
+                                       checked,
+                                     )
+                                   }
+                                 />
+                                 <span>{faculty.name}</span>
+                               </div>
+                             );
+                           })}
                           </div>
                         </PopoverContent>
                       </Popover>

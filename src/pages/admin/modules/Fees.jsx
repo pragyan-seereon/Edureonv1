@@ -112,6 +112,7 @@ import { toast } from "sonner";
 
 import {
   getFeeComponents,
+  importFeeComponentsExcel,
   createFeeComponent,
   updateFeeComponent,
   deleteFeeComponent,
@@ -143,6 +144,7 @@ import {
 import { getAllStudents } from "../../../api/students";
 import { getClasses } from "../../../api/Class";
 import { getSections } from "../../../api/section";
+import { ExcelUpload } from "../../../components/excel-upload";
 
 import {
   getFeeAssignments,
@@ -2783,6 +2785,20 @@ const fetchDashboard = async () => {
     }
   };
 
+  const importComponentsExcel = async (file) => {
+    try {
+      const response = await importFeeComponentsExcel(file);
+      const importedCount = response?.data?.data?.imported_count ?? 0;
+      toast.success(
+        `${importedCount} fee component${importedCount === 1 ? "" : "s"} imported`
+      );
+      await fetchFeeComponents();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to import fee components"));
+      throw err;
+    }
+  };
+
   const removeComponent = async (componentUuid) => {
     try {
       await deleteFeeComponent(componentUuid);
@@ -3441,6 +3457,7 @@ const activateAssignment = async (uuid) => {
   onArchiveStructure={archiveStructure}
   onActivateStructure={activateStructure}
   onSaveComponent={saveComponent}
+  onImportComponents={importComponentsExcel}
   onCloneComponent={cloneComponent}
   onArchiveComponent={archiveComponent}
   onActivateComponent={activateComponent}
@@ -3629,6 +3646,7 @@ function StructuresPanel({
   onArchiveStructure,
   onActivateStructure,
   onSaveComponent,
+  onImportComponents,
   onCloneComponent,
   onArchiveComponent,
   onActivateComponent,
@@ -3671,6 +3689,7 @@ function StructuresPanel({
           components={components}
           loading={loadingComponents}
           onSave={onSaveComponent}
+          onImport={onImportComponents}
           onClone={onCloneComponent}
           onArchive={onArchiveComponent}
           onActivate={onActivateComponent}
@@ -4045,7 +4064,7 @@ function StructuresPanel({
   );
 }
 
-function ComponentsLibrary({ components, loading, onSave, onClone, onArchive, onActivate, onRemove }) {
+function ComponentsLibrary({ components, loading, onSave, onImport, onClone, onArchive, onActivate, onRemove }) {
   const [q, setQ] = useState("");
   const [edit, setEdit] = useState(null);
   const [open, setOpen] = useState(false);
@@ -4060,6 +4079,12 @@ function ComponentsLibrary({ components, loading, onSave, onClone, onArchive, on
         </div>
         <div className="flex gap-2">
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search components..." className="h-9 w-56" />
+          <ExcelUpload
+            label="Import Excel"
+            onFile={onImport}
+            templateHeaders={["name", "category", "type", "default_amount", "is_mandatory", "new_admission_only", "is_active", "description"]}
+            templateName="fee-components-template.xlsx"
+          />
           <Button size="sm" className="gradient-primary border-0" onClick={() => { setEdit(null); setOpen(true); }}><Plus className="h-4 w-4" />Add Component</Button>
         </div>
       </CardHeader>

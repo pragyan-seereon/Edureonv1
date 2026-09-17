@@ -24,3 +24,17 @@ export const downloadLessonPlan = async (lesson_plan_uuid) => {
   });
   return data;
 };
+
+export const getLessonPlanDetail = async (lesson_plan_uuid) => {
+  const { data } = await api.get(`/lesson-plans/${lesson_plan_uuid}`, {
+    headers: getHeaders(),
+  });
+  return data;
+};
+
+export const updateLessonPlan = async (lesson_plan_uuid, formData) => {
+  const { data } = await api.put(`/lesson-plans/${lesson_plan_uuid}`, formData, {
+    headers: { ...getHeaders(), "Content-Type": "multipart/form-data" },
+  });
+  return data;
+};

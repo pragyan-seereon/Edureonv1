@@ -108,6 +108,25 @@ export const getNotices = async () => {
   return data;
 };
 
+// Notices visible to the currently logged-in teacher.  The backend applies
+// the teacher audience rules; optional filters match the student portal API.
+export const getTeacherPortalNotices = async ({
+  category,
+  search,
+  page = 1,
+  pageSize = 100,
+} = {}) => {
+  const params = { page, page_size: pageSize };
+  if (category) params.category = category;
+  if (search) params.search = search;
+
+  const { data } = await api.get("/teacher-portal/notices", {
+    headers: getHeaders(),
+    params,
+  });
+  return data;
+};
+
 export const saveNoticeDraft = async (formData) => {
   const { data } = await api.post("/communications/save-draft", formData, {
     // The axios instance defaults Content-Type to application/json; unset it

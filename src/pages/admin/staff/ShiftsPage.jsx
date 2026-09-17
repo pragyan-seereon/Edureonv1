@@ -10,15 +10,16 @@ import {
   TableHeader,
   TableRow,
 } from "../../../components/ui/table";
-import { Plus, Pencil, Trash2, Search, Clock, CalendarClock, CheckCircle2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Clock, CalendarClock, CheckCircle2, Upload } from "lucide-react";
 import { KpiCard } from "../../../components/kpi-card";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ShiftDialog } from "../../../components/shift-dialog";
 import {
   getShifts,
   getShiftByUUID,
   deleteShift,
+  importShiftExcel,
 } from "../../../api/employee";
 
 // Safely extracts a human-readable error message from an API error object.
@@ -78,6 +79,8 @@ export default function ShiftsPage() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [selectedShift, setSelectedShift] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const importInputRef = useRef(null);
 
   const loadShifts = async () => {
     try {
@@ -131,6 +134,48 @@ export default function ShiftsPage() {
     }
   };
 
+  const handleImportExcel = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) return;
+    if (!file.name.toLowerCase().match(/\.(xlsx|xls)$/)) {
+      toast.error("Please select an Excel file (.xlsx or .xls)");
+      return;
+    }
+
+    try {
+      setImporting(true);
+      const data = await importShiftExcel(file);
+
+      if (!data?.success) {
+        const firstError = data?.errors?.[0];
+        toast.error(
+          firstError?.reason
+            ? `Row ${firstError.row ?? "?"}: ${firstError.reason}`
+            : data?.message || "No shifts were imported."
+        );
+        return;
+      }
+
+      toast.success(
+        `${data.imported ?? 0} shift${data.imported === 1 ? "" : "s"} imported successfully.${
+          data.skipped ? ` ${data.skipped} row(s) skipped.` : ""
+        }`
+      );
+      await loadShifts();
+
+      if (data.skipped && data.errors?.[0]?.reason) {
+        toast.error(`Row ${data.errors[0].row ?? "?"}: ${data.errors[0].reason}`);
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(getErrorMessage(error, "Failed to import shifts"));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <PageContainer>
       <PageHeader
@@ -138,17 +183,35 @@ export default function ShiftsPage() {
         title="Shift List"
         description="Define from, to and late times for each day of the week."
         actions={
-          <Button
-            size="sm"
-            className="gradient-primary border-0"
-            onClick={() => {
-              setSelectedShift(null);
-              setOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4" />
-            Add shift
-          </Button>
+          <>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={handleImportExcel}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={importing}
+              onClick={() => importInputRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" />
+              {importing ? "Importing..." : "Import Excel"}
+            </Button>
+            <Button
+              size="sm"
+              className="gradient-primary border-0"
+              onClick={() => {
+                setSelectedShift(null);
+                setOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              Add shift
+            </Button>
+          </>
         }
       />
 

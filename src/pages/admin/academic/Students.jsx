@@ -184,7 +184,35 @@ const { sessionYear } = useSessionStore();
 
   const [page, setPage] = useState(1);
 
-  const PAGE = 12;
+const PAGE = 12;
+
+  const classOrder = (className) => {
+    const normalized = String(className || "").trim().toUpperCase();
+    const order = {
+      NURSERY: -3,
+      LKG: -2,
+      UKG: -1,
+      I: 1,
+      II: 2,
+      III: 3,
+      IV: 4,
+      V: 5,
+      VI: 6,
+      VII: 7,
+      VIII: 8,
+      IX: 9,
+      X: 10,
+      XI: 11,
+      XII: 12,
+    };
+    const grade = normalized.replace(/^CLASS\s+/, "").split(/\s|-/)[0];
+    return order[grade] ?? Number.MAX_SAFE_INTEGER;
+  };
+
+  const compareClasses = (left, right) => {
+    const orderDifference = classOrder(left) - classOrder(right);
+    return orderDifference || String(left || "").localeCompare(String(right || ""));
+  };
 
   /* =======================================================
      Search Suggestions
@@ -428,6 +456,16 @@ const loadDashboard = async () => {
       }
 
       return true;
+    }).sort((left, right) => {
+      const classDifference = compareClasses(left?.class_name, right?.class_name);
+      if (classDifference) return classDifference;
+
+      const sectionDifference = String(left?.section_name ?? left?.section ?? "").localeCompare(
+        String(right?.section_name ?? right?.section ?? "")
+      );
+      if (sectionDifference) return sectionDifference;
+
+      return String(left?.full_name ?? "").localeCompare(String(right?.full_name ?? ""));
     });
   }, [
     students,
@@ -503,7 +541,7 @@ const loadDashboard = async () => {
         .map((s) => s?.class_name)
         .filter(Boolean)
     )
-  ).sort();
+  ).sort(compareClasses);
 
   const sections = Array.from(
     new Set(

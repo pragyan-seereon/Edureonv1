@@ -513,10 +513,13 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "./ui/dialog";
 import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { ScrollArea } from "./ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
 
 import { getClasses } from "../api/Class";
 import useAuthStore from "../store/authStore";
@@ -534,6 +537,22 @@ const FREQ = [
 ];
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
+
+// The academic session runs from April through March. Deriving it from the
+// effective-from date avoids manually entered or invalid year values.
+const academicYearFor = (dateValue = todayISO()) => {
+  const date = new Date(`${dateValue}T00:00:00`);
+  const year = Number.isNaN(date.getTime()) ? new Date().getFullYear() : date.getFullYear();
+  const month = Number.isNaN(date.getTime()) ? new Date().getMonth() + 1 : date.getMonth() + 1;
+  const startYear = month >= 4 ? year : year - 1;
+
+  return `${startYear}-${String(startYear + 1).slice(-2)}`;
+};
+
+const formatAmount = (amount) =>
+  `₹${Number(amount || 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
 
 // FastAPI can send `detail` as: a plain string, a single validation-error
 // object ({type, loc, msg, input}), an array of those objects, or (rarely)
@@ -564,8 +583,8 @@ const getErrorMessage = (err) => {
 };
 
 const emptyForm = () => ({
-  academic_year: "2025-26",
-  class_uuid: "",
+  academic_year: academicYearFor(),
+  class_uuids: [],
   category: "GENERAL",
   structure_name: "",
   description: "",
@@ -594,7 +613,7 @@ useEffect(() => {
 
     setF({
       academic_year: structure.academic_year,
-      class_uuid: structure.class_uuid,
+      class_uuids: structure.class_uuid ? [structure.class_uuid] : [],
       category: structure.category || "GENERAL",
       structure_name: structure.structure_name,
       description: structure.description || "",
@@ -705,8 +724,8 @@ useEffect(() => {
     return toast.error("Academic year required");
   }
 
-  if (!f.class_uuid) {
-    return toast.error("Please select a class");
+  if (!f.class_uuids.length) {
+    return toast.error("Please select at least one class");
   }
 
   if (!f.effective_from) {
@@ -739,7 +758,7 @@ useEffect(() => {
 
           academic_year: f.academic_year,
 
-          class_uuid: f.class_uuid,
+          class_uuids: f.class_uuids,
 
           category: f.category,
 
@@ -798,6 +817,10 @@ onOpenChange(false);
     .filter((c) => c.collection_type === "MONTHLY")
     .reduce((a, c) => a + Number(c.amount || 0), 0);
 
+  const selectedClassNames = classes
+    .filter((item) => f.class_uuids.includes(item.class_uuid))
+    .map((item) => item.class_name);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -827,42 +850,78 @@ onOpenChange(false);
           <Field label="Academic year">
             <Input
               value={f.academic_year}
-              onChange={(e) => setF({ ...f, academic_year: e.target.value })}
-              placeholder="2025-26"
+              readOnly
+              aria-readonly="true"
+              className="bg-muted/40"
             />
           </Field>
 
-          <Field label="Class">
-            <Select
-              value={f.class_uuid}
-              onValueChange={(value) =>
-                setF({
-                  ...f,
-                  class_uuid: value,
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select Class" />
-              </SelectTrigger>
-              <SelectContent>
-                {classes.map((item) => (
-                  <SelectItem
-                    key={item.class_uuid}
-                    value={item.class_uuid}
-                  >
-                    {item.class_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <Field label={structure ? "Class" : "Classes"}>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={Boolean(structure) || !classes.length}
+                  className="w-full justify-between font-normal"
+                >
+                  <span className="truncate">
+                    {selectedClassNames.length
+                      ? selectedClassNames.join(", ")
+                      : "Select classes"}
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-2">
+                <ScrollArea
+                  className="h-56 pr-2"
+                  onWheelCapture={(event) => event.stopPropagation()}
+                  onTouchMoveCapture={(event) => event.stopPropagation()}
+                >
+                  <div className="space-y-1">
+                  {classes.map((item) => {
+                    const selected = f.class_uuids.includes(item.class_uuid);
+                    return (
+                      <label
+                        key={item.class_uuid}
+                        className="flex items-center gap-2 rounded px-2 py-2 text-sm cursor-pointer hover:bg-muted"
+                      >
+                        <Checkbox
+                          checked={selected}
+                          onCheckedChange={() =>
+                            setF((prev) => ({
+                              ...prev,
+                              class_uuids: selected
+                                ? prev.class_uuids.filter((uuid) => uuid !== item.class_uuid)
+                                : [...prev.class_uuids, item.class_uuid],
+                            }))
+                          }
+                        />
+                        {item.class_name}
+                      </label>
+                    );
+                  })}
+                  </div>
+                </ScrollArea>
+              </PopoverContent>
+            </Popover>
+            {!structure && (
+              <p className="text-xs text-muted-foreground">Select one or more classes. A structure will be created for each class.</p>
+            )}
           </Field>
 
           <Field label="Effective from">
             <Input
               type="date"
               value={f.effective_from}
-              onChange={(e) => setF({ ...f, effective_from: e.target.value })}
+              onChange={(e) =>
+                setF((prev) => ({
+                  ...prev,
+                  effective_from: e.target.value,
+                  academic_year: academicYearFor(e.target.value),
+                }))
+              }
             />
           </Field>
 
@@ -943,7 +1002,7 @@ onOpenChange(false);
                       key={item.component_uuid}
                       value={item.component_uuid}
                     >
-                      {item.name}
+                      {item.name} — {formatAmount(item.default_amount)}
                     </SelectItem>
                   ))}
                 </SelectContent>

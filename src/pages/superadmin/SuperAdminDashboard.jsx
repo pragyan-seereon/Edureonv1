@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageContainer, PageHeader } from "../../components/page-shell";
 import { KpiCard } from "../../components/kpi-card";
@@ -34,6 +35,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useInstitutes } from "../../lib/store";
+import { getSuperAdminDashboard } from "../../api/superadmindashboard";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -50,20 +52,34 @@ const inr = (n) =>
     : n >= 1e5
       ? (n / 1e5).toFixed(2) + " L"
       : n.toLocaleString("en-IN"));
-const mrrTrend = [
-  { m: "Apr", v: 320000 },
-  { m: "May", v: 358000 },
-  { m: "Jun", v: 384000 },
-  { m: "Jul", v: 412000 },
-  { m: "Aug", v: 442000 },
-  { m: "Sep", v: 470000 },
-  { m: "Oct", v: 498000 },
-  { m: "Nov", v: 519000 },
-];
 export default function Dashboard() {
   const institutes = useInstitutes();
   const navigate = useNavigate();
-  const mrr = institutes.reduce((s, i) => s + i.mrr, 0);
+  const [dashboard, setDashboard] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    getSuperAdminDashboard()
+      .then((data) => {
+        if (isMounted) setDashboard(data);
+      })
+      .catch((error) => {
+        console.error("Unable to load Super Admin dashboard", error);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const mrr = Number(dashboard?.mrr?.amount ?? 0);
+  const mrrTrend = (dashboard?.mrr_growth ?? []).map((item) => ({
+    m: new Date(`${item.month}-01T00:00:00`).toLocaleString("en-IN", {
+      month: "short",
+    }),
+    v: Number(item.amount ?? 0),
+  }));
+  const planMix = dashboard?.plan_mix ?? [];
   return (
     <PageContainer>
       <PageHeader
@@ -81,28 +97,26 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <KpiCard
           label="Total Institutes"
-          value={String(institutes.length)}
+          value={String(dashboard?.total_institutes ?? 0)}
           icon={<Building2 className="h-5 w-5" />}
           tone="primary"
         />
         <KpiCard
           label="Active Students"
-          value={institutes
-            .reduce((s, i) => s + i.students, 0)
-            .toLocaleString("en-IN")}
+          value={Number(dashboard?.active_students ?? 0).toLocaleString("en-IN")}
           icon={<Users className="h-5 w-5" />}
           tone="info"
         />
         <KpiCard
           label="MRR"
           value={inr(mrr)}
-          delta={6.4}
+          delta={dashboard?.mrr?.change_percentage ?? 0}
           icon={<IndianRupee className="h-5 w-5" />}
           tone="success"
         />
         <KpiCard
           label="Trials"
-          value={String(institutes.filter((i) => i.status === "Trial").length)}
+          value={String(dashboard?.trials ?? 0)}
           icon={<Sparkles className="h-5 w-5" />}
           tone="warning"
         />
@@ -158,13 +172,13 @@ export default function Dashboard() {
             <CardTitle className="text-base">Plan Mix</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {["Enterprise", "Business", "Growth"].map((p) => {
-              const c = institutes.filter((i) => i.plan === p).length;
-              const pct = Math.round((c / institutes.length) * 100);
+            {planMix.map((plan) => {
+              const c = plan.count;
+              const pct = plan.percentage;
               return (
-                <div key={p}>
+                <div key={plan.plan}>
                   <div className="flex justify-between text-xs mb-1">
-                    <span>{p}</span>
+                    <span>{plan.plan}</span>
                     <span className="font-semibold">
                       {c} · {pct}%
                     </span>
@@ -179,7 +193,8 @@ export default function Dashboard() {
               );
             })}
             <div className="pt-3 border-t flex items-center gap-2 text-xs text-muted-foreground">
-              <TrendingUp className="h-3.5 w-3.5 text-success" />2 enterprise
+              <TrendingUp className="h-3.5 w-3.5 text-success" />
+              {dashboard?.enterprise_upgrades_this_month ?? 0} enterprise
               upgrades this month
             </div>
           </CardContent>

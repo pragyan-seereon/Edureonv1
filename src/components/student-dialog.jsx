@@ -62,14 +62,12 @@ const AADHAAR_REGEX = /^\d{12}$/; // aadhaar_no / father_aadhaar_no / mother_aad
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const CATEGORIES = ["General", "OBC", "SC", "ST", "EWS"];
 const GENDERS = ["Male", "Female", "Other"];
-// backend StudentDraftStep4Update.fee_status only allows these three
-const FEE_STATUSES = ["Pending", "Partial", "Paid"];
 
 // localStorage key used to remember an in-progress draft across sessions
 const DRAFT_STORAGE_KEY = "studentAdmissionDraftUuid";
 // how long (ms) to wait after the user stops typing before auto-saving
 const AUTOSAVE_DELAY_MS = 1500;
-const CITY_STATE_OPTIONS = [
+export const CITY_STATE_OPTIONS = [
   { city: "Delhi", state: "Delhi" },
   { city: "Mumbai", state: "Maharashtra" },
   { city: "Pune", state: "Maharashtra" },
@@ -159,10 +157,16 @@ const CITY_STATE_OPTIONS = [
   { city: "Jabalpur", state: "Madhya Pradesh" },
   { city: "Ujjain", state: "Madhya Pradesh" },
 
+  { city: "Raipur", state: "Chhattisgarh" },
+  { city: "Bhilai", state: "Chhattisgarh" },
+
   { city: "Chandigarh", state: "Chandigarh" },
   { city: "Ludhiana", state: "Punjab" },
   { city: "Amritsar", state: "Punjab" },
   { city: "Jalandhar", state: "Punjab" },
+  { city: "Gurugram", state: "Haryana" },
+  { city: "Faridabad", state: "Haryana" },
+  { city: "Panipat", state: "Haryana" },
 
   { city: "Dehradun", state: "Uttarakhand" },
   { city: "Haridwar", state: "Uttarakhand" },
@@ -317,10 +321,7 @@ function validateGuardian(f) {
 
 // Services tab -> StudentDraftStep4Update
 function validateServices(f) {
-  const e = {};
-  if (!f.feeStatus) e.feeStatus = "Fee status is required";
-  else if (!FEE_STATUSES.includes(f.feeStatus)) e.feeStatus = "Invalid fee status";
-  return e;
+  return {};
 }
 
 function firstErrorMessage(errObj) {
@@ -538,9 +539,6 @@ function mapRecordToForm(record) {
     pin: record.pin_code || "",
 
     // Services
-    feeStatus: FEE_STATUSES.includes(record.fee_status) ? record.fee_status : "Pending",
-    transportRequired: record.transport_required ? "Yes" : "No",
-    hostelRequired: record.hostel_required ? "Yes" : "No",
     isRteStudent: record.is_rte_student ? "Yes" : "No",
 
     // Medical
@@ -604,9 +602,6 @@ const empty = {
   pin: "",
 
   // services
-  feeStatus: "Pending",
-  transportRequired: "No",
-  hostelRequired: "No",
   isRteStudent: "No",
   // medical
   medicalNotes: "",
@@ -1069,9 +1064,6 @@ export function StudentDialog({ open, onOpenChange, student }) {
 
     try {
       const formData = new FormData();
-      formData.append("fee_status", f.feeStatus);
-      formData.append("transport_required", f.transportRequired === "Yes");
-      formData.append("hostel_required", f.hostelRequired === "Yes");
       formData.append("is_rte_student", f.isRteStudent === "Yes");
       formData.append("current_step", "services");
 
@@ -1365,21 +1357,6 @@ export function StudentDialog({ open, onOpenChange, student }) {
       formData.append(
         "birth_certificate_no",
         f.birthCertificateNo
-      );
-
-      formData.append(
-        "fee_status",
-        f.feeStatus
-      );
-
-      formData.append(
-        "transport_required",
-        f.transportRequired === "Yes"
-      );
-
-      formData.append(
-        "hostel_required",
-        f.hostelRequired === "Yes"
       );
 
       formData.append(
@@ -2115,41 +2092,6 @@ export function StudentDialog({ open, onOpenChange, student }) {
 
           {/* ── SERVICES ── */}
           <TabsContent value="services" className="grid sm:grid-cols-2 gap-3 mt-4">
-            <F label="Fee Status *" error={errors.feeStatus}>
-              <Select value={f.feeStatus} onValueChange={(v) => set("feeStatus", v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {/* backend only accepts these three values */}
-                  <SelectItem value="Paid">Paid</SelectItem>
-                  <SelectItem value="Pending">Pending</SelectItem>
-                  <SelectItem value="Partial">Partial</SelectItem>
-                </SelectContent>
-              </Select>
-            </F>
-            <F label="Transport Required">
-              <Select value={f.transportRequired} onValueChange={(v) => set("transportRequired", v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="No">No</SelectItem>
-                  <SelectItem value="Yes">Yes</SelectItem>
-                </SelectContent>
-              </Select>
-            </F>
-            <F label="Hostel Required">
-              <Select value={f.hostelRequired} onValueChange={(v) => set("hostelRequired", v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="No">No</SelectItem>
-                  <SelectItem value="Yes">Yes</SelectItem>
-                </SelectContent>
-              </Select>
-            </F>
             <F label="RTE Student">
               <Select value={f.isRteStudent} onValueChange={(v) => set("isRteStudent", v)}>
                 <SelectTrigger>
@@ -2286,9 +2228,6 @@ export function StudentDialog({ open, onOpenChange, student }) {
             </ReviewSection>
 
             <ReviewSection title="Services" onEdit={() => setTab("services")}>
-              <ReviewRow label="Fee Status" value={f.feeStatus} />
-              <ReviewRow label="Transport Required" value={f.transportRequired} />
-              <ReviewRow label="Hostel Required" value={f.hostelRequired} />
               <ReviewRow label="RTE Student" value={f.isRteStudent} />
             </ReviewSection>
 

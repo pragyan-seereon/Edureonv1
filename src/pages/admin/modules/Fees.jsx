@@ -112,6 +112,7 @@ import { toast } from "sonner";
 
 import {
   getFeeComponents,
+  importFeeComponentsExcel,
   createFeeComponent,
   updateFeeComponent,
   deleteFeeComponent,
@@ -143,6 +144,7 @@ import {
 import { getAllStudents } from "../../../api/students";
 import { getClasses } from "../../../api/Class";
 import { getSections } from "../../../api/section";
+import { ExcelUpload } from "../../../components/excel-upload";
 
 import {
   getFeeAssignments,
@@ -151,6 +153,7 @@ import {
   deleteFeeAssignment,
   archiveFeeAssignment,
   activateFeeAssignment,
+  importFeeDemandExcel,
   getStudentFeeDues,
   getStudentDues
   
@@ -1034,7 +1037,18 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
   }, [open, editing]);
 
   const scope = f.discountScope;
-  const special = scope === "SIBLING" || scope === "EARLY_FULL_YEAR";
+  const special = scope === "SIBLING";
+  // A single chip represents every component with the same display name.
+  // Selecting it adds all matching UUIDs, so a rule applies to every version
+  // of that component without showing indistinguishable duplicate chips.
+  const componentSelectionKey = (component) => String(component?.name || "")
+    .trim()
+    .toUpperCase();
+  const visibleComponents = (components || []).filter(
+    (component, index, allComponents) => index === allComponents.findIndex(
+      (candidate) => componentSelectionKey(candidate) === componentSelectionKey(component)
+    )
+  );
 
   // IMPORTANT: this ONLY sets the TYPE and auto-picks a sensible default
   // component (Admission for Sibling, Tuition for Early-Full-Year). It
@@ -1054,14 +1068,11 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
           : prev.appliesTo,
       }));
     } else if (scope === "EARLY_FULL_YEAR") {
-      const tuition = components.find((c) => String(c.category).toUpperCase() === "TUITION");
       setF((prev) => ({
         ...prev,
         type: "Percent",
         requiresFullYearPayment: true,
-        appliesTo: tuition && (!prev.appliesTo.length || prev.appliesTo.includes("*"))
-          ? [tuition.component_uuid]
-          : prev.appliesTo,
+        appliesTo: prev.appliesTo.includes("*") ? [] : prev.appliesTo,
       }));
     } else if (scope === "STAFF_STUDENT") {
       setF((prev) => ({ ...prev, requiresFullYearPayment: false, earlyPaymentMonth: null, earlyPaymentDay: null }));
@@ -1069,12 +1080,22 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
   }, [scope, components]);
 
   const toggleComponent = (uuid) => {
-    if (special) return;
+    if (scope === "SIBLING") return;
     setF((prev) => {
       if (uuid === "*") return { ...prev, appliesTo: ["*"] };
       const current = prev.appliesTo.includes("*") ? [] : prev.appliesTo;
-      const next = current.includes(uuid) ? current.filter((x) => x !== uuid) : [...current, uuid];
-      return { ...prev, appliesTo: next.length ? next : ["*"] };
+      const selectedComponent = components.find((component) => component.component_uuid === uuid);
+      const groupedUuids = (components || [])
+        .filter((component) => componentSelectionKey(component) === componentSelectionKey(selectedComponent))
+        .map((component) => component.component_uuid);
+      const isSelected = current.some((componentUuid) => groupedUuids.includes(componentUuid));
+      const next = isSelected
+        ? current.filter((componentUuid) => !groupedUuids.includes(componentUuid))
+        : [...current.filter((componentUuid) => !groupedUuids.includes(componentUuid)), ...groupedUuids];
+      return {
+        ...prev,
+        appliesTo: next.length ? next : scope === "EARLY_FULL_YEAR" ? [] : ["*"],
+      };
     });
   };
 
@@ -1091,8 +1112,8 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
     if (scope === "SIBLING" && !components.some((c) => f.appliesTo.includes(c.component_uuid) && String(c.category).toUpperCase() === "ADMISSION")) {
       toast.error("Sibling discount must apply to an Admission component"); return;
     }
-    if (scope === "EARLY_FULL_YEAR" && !components.some((c) => f.appliesTo.includes(c.component_uuid) && String(c.category).toUpperCase() === "TUITION")) {
-      toast.error("Early full-year discount must apply to Tuition"); return;
+    if (scope === "EARLY_FULL_YEAR" && !f.appliesTo.some((uuid) => uuid !== "*")) {
+      toast.error("Select at least one fee component for the early full-year discount"); return;
     }
     if (scope === "EARLY_FULL_YEAR" && (!f.earlyPaymentMonth || !f.earlyPaymentDay)) {
       toast.error("Early full-year discount needs a deadline month and day"); return;
@@ -1134,7 +1155,7 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
                 <SelectItem value="NORMAL">Normal Discount</SelectItem>
                 <SelectItem value="SIBLING">Sibling — Fixed, Admission only, 2nd child</SelectItem>
                 <SelectItem value="STAFF_STUDENT">Staff Student — requires active employee link</SelectItem>
-                <SelectItem value="EARLY_FULL_YEAR">Early Full Year — Percent, Tuition only</SelectItem>
+                <SelectItem value="EARLY_FULL_YEAR">Early Full Year — Percent, selected components</SelectItem>
               </SelectContent>
             </Select>
           </FF>
@@ -1159,7 +1180,7 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
           {scope === "EARLY_FULL_YEAR" && (
             <div className="rounded-lg border p-3 bg-muted/20 text-sm space-y-1">
               <div className="font-medium">Early full-year discount</div>
-              <div>Type is locked to <b>Percent</b> and must apply only to a <b>TUITION</b> component.</div>
+              <div>Type is locked to <b>Percent</b>. Select one or more fee components below.</div>
               <div>Requires the parent to pay the full academic year up front, by the deadline below.</div>
             </div>
           )}
@@ -1200,12 +1221,16 @@ function DiscountDrawer({ open, onOpenChange, editing, components, onSave }) {
               {scope === "NORMAL" && (
                 <Badge variant={f.appliesTo.includes("*") ? "default" : "outline"} className="cursor-pointer" onClick={() => toggleComponent("*")}>All components</Badge>
               )}
-              {components.map((c) => {
+              {visibleComponents.map((c) => {
                 const category = String(c.category || "").toUpperCase();
-                const required = scope === "SIBLING" ? category === "ADMISSION" : scope === "EARLY_FULL_YEAR" ? category === "TUITION" : true;
+                const required = scope === "SIBLING" ? category === "ADMISSION" : true;
                 if (special && !required) return null;
+                const groupedUuids = (components || [])
+                  .filter((component) => componentSelectionKey(component) === componentSelectionKey(c))
+                  .map((component) => component.component_uuid);
+                const isSelected = f.appliesTo.some((componentUuid) => groupedUuids.includes(componentUuid));
                 return (
-                  <Badge key={c.component_uuid} variant={f.appliesTo.includes(c.component_uuid) ? "default" : "outline"} className="cursor-pointer" onClick={() => toggleComponent(c.component_uuid)}>
+                  <Badge key={c.component_uuid} variant={isSelected ? "default" : "outline"} className="cursor-pointer" onClick={() => toggleComponent(c.component_uuid)}>
                     {c.name}
                   </Badge>
                 );
@@ -1724,9 +1749,7 @@ function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editin
   const toggleSelectAllStudents = () => {
     if (isEditingOne) return;
 
-    const visibleStudentUuids = filtered
-      .slice(0, 200)
-      .map((s) => s.student_uuid);
+    const visibleStudentUuids = filtered.map((s) => s.student_uuid);
 
     const allSelected =
       visibleStudentUuids.length > 0 &&
@@ -1761,7 +1784,7 @@ function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editin
   };
 
   // Calculate if all visible students are selected
-  const visibleStudentUuids = filtered.slice(0, 200).map((s) => s.student_uuid);
+  const visibleStudentUuids = filtered.map((s) => s.student_uuid);
   const allVisibleSelected = visibleStudentUuids.length > 0 && 
     visibleStudentUuids.every((uuid) => picked.has(uuid));
 
@@ -1787,7 +1810,7 @@ function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editin
                     checked={allVisibleSelected}
                     onCheckedChange={toggleSelectAllStudents}
                   />
-                  Select All ({filtered.slice(0, 200).length} visible)
+                  Select All ({filtered.length})
                 </label>
               )}
             </div>
@@ -1812,7 +1835,7 @@ function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editin
             <div className="border rounded-md max-h-72 overflow-y-auto">
               <Table>
                 <TableBody>
-                  {(isEditingOne ? students.filter((s) => s.student_uuid === editingStudent.student_uuid) : filtered.slice(0, 200)).map((s) => (
+                  {(isEditingOne ? students.filter((s) => s.student_uuid === editingStudent.student_uuid) : filtered).map((s) => (
                     <TableRow
                       key={s.student_uuid}
                       className={isEditingOne ? "" : "cursor-pointer hover:bg-muted/50"}
@@ -1844,7 +1867,6 @@ function StudentDiscountDrawer({ open, onOpenChange, students, discounts, editin
             {!isEditingOne && (
               <div className="text-xs text-muted-foreground">
                 {picked.size} student{picked.size === 1 ? "" : "s"} selected
-                {filtered.length > 200 && ` (showing first 200 of ${filtered.length})`}
               </div>
             )}
           </div>
@@ -2642,7 +2664,20 @@ export default function FeesPage() {
   })();
   const navigate = useNavigate();
 
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTab] = useState(() =>
+    window.sessionStorage.getItem("fees-active-tab") || "dashboard"
+  );
+  const [structuresSubTab, setStructuresSubTab] = useState(() =>
+    window.sessionStorage.getItem("fees-structures-sub-tab") || "library"
+  );
+  const selectTab = (value) => {
+    window.sessionStorage.setItem("fees-active-tab", value);
+    setTab(value);
+  };
+  const selectStructuresSubTab = (value) => {
+    window.sessionStorage.setItem("fees-structures-sub-tab", value);
+    setStructuresSubTab(value);
+  };
 
   
   const [ledger, setLedger] = useState([]);
@@ -2677,6 +2712,7 @@ const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [uploadingFeeDemand, setUploadingFeeDemand] = useState(false);
   const [paidMonths, setPaidMonths] = useState(
     () => new Set(["stu-001:2026-04", "stu-001:2026-05", "stu-004:2026-04", "stu-004:2026-05", "stu-004:2026-06", "stu-008:2026-04", "stu-008:2026-05", "stu-008:2026-06", "stu-008:2026-07"])
   );
@@ -2686,6 +2722,43 @@ const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const [customOpen, setCustomOpen] = useState(false);
 
+  const handleFeeDemandUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!/\.(xlsx|xls)$/i.test(file.name)) {
+      toast.error("Please select an Excel file (.xlsx or .xls).");
+      return;
+    }
+
+    setUploadingFeeDemand(true);
+    try {
+      const response = await importFeeDemandExcel(file);
+      const result = response?.data ?? {};
+      toast.success(
+        `${result.imported || 0} fee demands imported${result.updated ? `, ${result.updated} updated` : ""}.`
+      );
+      if (result.skipped) {
+        const reasons = (result.errors || [])
+          .slice(0, 3)
+          .map((item) => `Row ${item.row}: ${item.reason}`)
+          .join(" • ");
+        console.warn("Fee-demand import skipped rows:", result.errors || []);
+        toast.warning(`${result.skipped} rows were skipped.`, {
+          description: reasons || "No row-level reason was returned by the server.",
+          duration: 12000,
+        });
+      }
+      await Promise.all([fetchDashboard(), fetchAssignments()]);
+      selectTab("dues");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Fee-demand Excel upload failed."));
+    } finally {
+      setUploadingFeeDemand(false);
+    }
+  };
+
   /* ---------------------------------------------------------------- */
   /*  Fee Components — API integration                                 */
   /* ---------------------------------------------------------------- */
@@ -2694,11 +2767,22 @@ const [loadingDashboard, setLoadingDashboard] = useState(false);
     setLoadingComponents(true);
 
     try {
-      const res = await getFeeComponents();
+      const pageSize = 100;
+      const allComponents = [];
+      let page = 1;
+      let total = 0;
 
-      const list = extractList(res);
+      do {
+        const res = await getFeeComponents({ page, limit: pageSize });
+        const list = extractList(res);
+        const pageData = res?.data?.data ?? {};
 
-      setComponents(list.map(componentFromApi));
+        allComponents.push(...list);
+        total = Number(pageData.total ?? allComponents.length);
+        page += 1;
+      } while (allComponents.length < total);
+
+      setComponents(allComponents.map(componentFromApi));
     } catch (err) {
       console.error(err);
       toast.error(getErrorMessage(err, "Failed to load fee components"));
@@ -2783,6 +2867,20 @@ const fetchDashboard = async () => {
     }
   };
 
+  const importComponentsExcel = async (file) => {
+    try {
+      const response = await importFeeComponentsExcel(file);
+      const importedCount = response?.data?.data?.imported_count ?? 0;
+      toast.success(
+        `${importedCount} fee component${importedCount === 1 ? "" : "s"} imported`
+      );
+      await fetchFeeComponents();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to import fee components"));
+      throw err;
+    }
+  };
+
   const removeComponent = async (componentUuid) => {
     try {
       await deleteFeeComponent(componentUuid);
@@ -2846,13 +2944,25 @@ const fetchDashboard = async () => {
 
   const saveStructure = async (formValues, editing) => {
     try {
-      const payload = structureToApi(formValues);
       if (editing) {
+        const payload = structureToApi({
+          ...formValues,
+          class_uuid: formValues.class_uuids?.[0],
+        });
         await updateFeeStructure(editing.fee_structure_uuid, payload);
         toast.success("Updated");
       } else {
-        await createFeeStructure(payload);
-        toast.success("Created");
+        const selectedClassUuids = formValues.class_uuids || [];
+        await Promise.all(
+          selectedClassUuids.map((class_uuid) =>
+            createFeeStructure(
+              structureToApi({ ...formValues, class_uuid })
+            )
+          )
+        );
+        toast.success(
+          `${selectedClassUuids.length} fee structure${selectedClassUuids.length === 1 ? "" : "s"} created`
+        );
       }
       await fetchFeeStructures();
     } catch (err) {
@@ -3337,6 +3447,19 @@ const activateAssignment = async (uuid) => {
               Export
             </Button>
 
+            <Button variant="outline" size="sm" disabled={uploadingFeeDemand} asChild>
+              <label className="cursor-pointer">
+                <FileText className="h-4 w-4" />
+                {uploadingFeeDemand ? "Uploading..." : "Upload Fee Excel"}
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleFeeDemandUpload}
+                />
+              </label>
+            </Button>
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
@@ -3392,7 +3515,7 @@ const activateAssignment = async (uuid) => {
         }
       />
 
-      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+      <Tabs value={tab} onValueChange={selectTab} className="space-y-4">
         {/* Desktop tabs */}
         <TabsList className="hidden md:flex flex-wrap h-auto">
           {TAB_META.map(({ value, label, icon: Icon }) => (
@@ -3404,7 +3527,7 @@ const activateAssignment = async (uuid) => {
         </TabsList>
         {/* Mobile dropdown */}
         <div className="md:hidden">
-          <Select value={tab} onValueChange={setTab}>
+          <Select value={tab} onValueChange={selectTab}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               {TAB_META.map((t) => (
@@ -3419,13 +3542,15 @@ const activateAssignment = async (uuid) => {
             kpis={kpis}
             ledger={dashboardLedger}
             loading={loadingDashboard}
-            onQuick={setTab}
+            onQuick={selectTab}
             onCollect={() => setCustomOpen(true)}
             />
         </TabsContent>
 
         <TabsContent value="structures">
 <StructuresPanel
+  sub={structuresSubTab}
+  onSubChange={selectStructuresSubTab}
   structures={enrichedStructures}
   students={students}
   components={components}
@@ -3441,6 +3566,7 @@ const activateAssignment = async (uuid) => {
   onArchiveStructure={archiveStructure}
   onActivateStructure={activateStructure}
   onSaveComponent={saveComponent}
+  onImportComponents={importComponentsExcel}
   onCloneComponent={cloneComponent}
   onArchiveComponent={archiveComponent}
   onActivateComponent={activateComponent}
@@ -3617,6 +3743,8 @@ function DashboardPanel({ kpis, ledger, onQuick, onCollect }) {
 /* ================================================================== */
 
 function StructuresPanel({
+  sub,
+  onSubChange,
   structures,
   students,
   components,
@@ -3629,12 +3757,12 @@ function StructuresPanel({
   onArchiveStructure,
   onActivateStructure,
   onSaveComponent,
+  onImportComponents,
   onCloneComponent,
   onArchiveComponent,
   onActivateComponent,
   onRemoveComponent,
 }) {
-  const [sub, setSub] = useState("library");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewStructure, setPreviewStructure] = useState(null);
 
@@ -3660,7 +3788,7 @@ function StructuresPanel({
 
   return (
     <>
-      <Tabs value={sub} onValueChange={setSub} className="space-y-3">
+      <Tabs value={sub} onValueChange={onSubChange} className="space-y-3">
       <TabsList>
         <TabsTrigger value="library">Components Library</TabsTrigger>
         <TabsTrigger value="builder">Structure Builder</TabsTrigger>
@@ -3671,6 +3799,7 @@ function StructuresPanel({
           components={components}
           loading={loadingComponents}
           onSave={onSaveComponent}
+          onImport={onImportComponents}
           onClone={onCloneComponent}
           onArchive={onArchiveComponent}
           onActivate={onActivateComponent}
@@ -4045,7 +4174,7 @@ function StructuresPanel({
   );
 }
 
-function ComponentsLibrary({ components, loading, onSave, onClone, onArchive, onActivate, onRemove }) {
+function ComponentsLibrary({ components, loading, onSave, onImport, onClone, onArchive, onActivate, onRemove }) {
   const [q, setQ] = useState("");
   const [edit, setEdit] = useState(null);
   const [open, setOpen] = useState(false);
@@ -4060,6 +4189,12 @@ function ComponentsLibrary({ components, loading, onSave, onClone, onArchive, on
         </div>
         <div className="flex gap-2">
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search components..." className="h-9 w-56" />
+          <ExcelUpload
+            label="Import Excel"
+            onFile={onImport}
+            templateHeaders={["name", "category", "type", "default_amount", "is_mandatory", "new_admission_only", "is_active", "description"]}
+            templateName="fee-components-template.xlsx"
+          />
           <Button size="sm" className="gradient-primary border-0" onClick={() => { setEdit(null); setOpen(true); }}><Plus className="h-4 w-4" />Add Component</Button>
         </div>
       </CardHeader>

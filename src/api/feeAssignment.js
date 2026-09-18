@@ -89,6 +89,19 @@ export const getFeeAssignmentDropdown = () =>
     }
   );
 
+// Import the legacy fee-demand worksheet from the Fees page.
+export const importFeeDemandExcel = (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return api.post("/fees/collection/import-excel", formData, {
+    headers: {
+      ...getHeaders(),
+      "Content-Type": "multipart/form-data",
+    },
+  });
+};
+
   export const getStudentFeeDues = (studentUUID) =>
   api.get(`/fee-assignments/student/${studentUUID}`, {
     headers: getHeaders(),

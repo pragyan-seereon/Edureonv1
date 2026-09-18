@@ -1010,7 +1010,7 @@ const pageIds = paginated.map((u) => u.id);
               </Select>
             </Field>
 
-            <Field label="Institute">
+            {/* <Field label="Institute">
               <Select
                 value={filterInst}
                 onValueChange={(v) => {
@@ -1030,7 +1030,7 @@ const pageIds = paginated.map((u) => u.id);
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
+            </Field> */}
 
             <Field label="Status">
               <Select

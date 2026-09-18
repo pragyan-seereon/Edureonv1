@@ -1438,6 +1438,29 @@ const ARCHIVE_STATUS_OPTIONS = [
 
 const ARCHIVED_LIKE_STATUSES = ["INACTIVE", "PASSED_OUT", "TRANSFERRED", "LEFT"];
 
+function getStudentImageUrl(student) {
+  const image =
+    student?.passport_photo_file ||
+    student?.passport_photo ||
+    student?.profile_image ||
+    student?.photo_url;
+
+  if (!image) return null;
+  if (
+    image.startsWith("http://") ||
+    image.startsWith("https://") ||
+    image.startsWith("data:image/")
+  ) {
+    return image;
+  }
+
+  const baseUrl = import.meta.env.VITE_API_URL || "";
+  if (image.startsWith("/")) {
+    return `${baseUrl}${image}`;
+  }
+  return `${baseUrl}/uploads/${image}`;
+}
+
 /* ---------- deterministic helper for demo-only sections ---------- */
 function seedFrom(str) {
   let h = 0;
@@ -1471,6 +1494,7 @@ export default function StudentDetails() {
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const studentImageUrl = getStudentImageUrl(s);
 
   useEffect(() => {
     loadStudent();
@@ -1824,8 +1848,8 @@ export default function StudentDetails() {
         <Card className={`lg:col-span-2 ${isStaffChild ? "border-chart-3/40" : "border-border/60"}`}>
           <CardContent className="p-5 flex items-center gap-5">
             <Avatar className="h-24 w-24">
-              {s.passport_photo_file ? (
-                <AvatarImage src={s.passport_photo_file} alt={s.full_name} className="object-cover" />
+              {studentImageUrl ? (
+                <AvatarImage src={studentImageUrl} alt={s.full_name} className="object-cover" />
               ) : (
                 <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground text-2xl">
                   {s.full_name?.split(" ").map((n) => n[0]).join("").slice(0, 2)}

@@ -278,7 +278,29 @@ export const getEmployeeByUUID = async (employeeUUID) => {
     headers: getHeaders(),
   });
 
-  return response.data;
+  // Detail responses have existed in a few shapes while employee drafts are
+  // promoted to employees.  Always give callers the employee record itself,
+  // and retain documents whether the API calls that collection `documents` or
+  // `employee_documents`.
+  const payload = response.data;
+  const employee = payload?.data?.employee ?? payload?.employee ?? payload?.data ?? payload;
+
+  if (!employee || typeof employee !== "object" || Array.isArray(employee)) {
+    return employee;
+  }
+
+  const documents =
+    employee.documents ??
+    employee.employee_documents ??
+    payload?.documents ??
+    payload?.employee_documents ??
+    payload?.data?.documents ??
+    [];
+
+  return {
+    ...employee,
+    documents: Array.isArray(documents) ? documents : [],
+  };
 };
 
 // ===================================

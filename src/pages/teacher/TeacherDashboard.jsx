@@ -1,4 +1,6 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { Link } from "react-router-dom";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { PageContainer, PageHeader } from "../../components/page-shell";
 import {
   Card,
@@ -11,8 +13,6 @@ import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { KpiCard } from "../../components/kpi-card";
 import {
-  // eslint-disable-next-line no-unused-vars
-  CalendarCheck,
   ClipboardList,
   BookOpen,
   Users,
@@ -21,144 +21,124 @@ import {
   ArrowRight,
   Megaphone,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
-import { useAuth } from "../../lib/auth";
-import {
-  useAssignments,
-  useSubmissions,
-  useLessonPlans,
-  useExams,
-  useNotices,
-  lessonPlansApi,
-} from "../../lib/store";
-import { useMemo } from "react";
-const TEACHER = "A. Mehta";
+import { getTeacherDashboard } from "../../api/teacherclass"; // adjust path to your service file
+
+const ACADEMIC_YEAR = "2026-27";
+
 export default function TeacherDashboard() {
-  const { user } = useAuth();
-  const name = user?.name?.split(" ")[0] ?? "Teacher";
-  const assignments = useAssignments();
-  const subs = useSubmissions();
-  useLessonPlans(); // reactivity
-  const plans = lessonPlansApi.forTeacher(TEACHER);
-  const exams = useExams();
-  const notices = useNotices();
-  const myAssignments = useMemo(
+  const [dashboard, setDashboard] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const fetchDashboard = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getTeacherDashboard(ACADEMIC_YEAR);
+      if (res?.success) {
+        setDashboard(res.data);
+      } else {
+        setError(res?.message || "Failed to load dashboard.");
+      }
+    } catch (err) {
+      setError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load dashboard.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDashboard();
+  }, [fetchDashboard]);
+
+  const name = dashboard?.teacher?.full_name?.split(" ")[0] ?? "Teacher";
+
+  const summary = dashboard?.summary ?? {
+    active_assignments: 0,
+    pending_grading: 0,
+    open_lesson_plans: 0,
+    upcoming_exams: 0,
+  };
+
+  const todayPeriods = dashboard?.today_schedule ?? [];
+  const draftPlans = dashboard?.pending_lesson_plans ?? [];
+  const weakAlert = dashboard?.weak_student_alerts ?? [];
+
+  const recentNotices = useMemo(
     () =>
-      assignments.filter(
-        (a) => a.teacher === TEACHER && a.status === "Published",
-      ),
-    [assignments],
+      (dashboard?.notices ?? [])
+        .filter(
+          (n) =>
+            n.status === "PUBLISHED" &&
+            (n.audience === "TEACHERS" ||
+              n.audience === "ALL" ||
+              n.audience === "STAFF"),
+        )
+        .slice(0, 4),
+    [dashboard],
   );
-  const pendingGrading = useMemo(
-    () =>
-      subs.filter(
-        (s) =>
-          myAssignments.some((a) => a.id === s.assignmentId) &&
-          (s.status === "Submitted" || s.status === "Late"),
-      ).length,
-    [subs, myAssignments],
-  );
-  const draftPlans = plans.filter(
-    (p) => p.status === "Draft" || p.status === "Changes Requested",
-  );
-  const upcomingExams = exams.filter(
-    (e) => e.status === "Scheduled" || e.status === "In Progress",
-  );
-  const weakAlert = useMemo(() => {
-    // simple weak-student heuristic: graded submissions with marks < 50%
-    return subs
-      .filter(
-        (s) =>
-          myAssignments.some((a) => a.id === s.assignmentId) &&
-          s.status === "Graded" &&
-          s.marks != null &&
-          s.marks <
-            (myAssignments.find((a) => a.id === s.assignmentId)?.maxMarks ||
-              20) *
-              0.5,
-      )
-      .slice(0, 4);
-  }, [subs, myAssignments]);
-  const recentNotices = notices
-    .filter(
-      (n) =>
-        n.status === "Published" &&
-        (n.audience === "Teachers" ||
-          n.audience === "All" ||
-          n.audience === "Staff"),
-    )
-    .slice(0, 4);
-  const todayPeriods = [
-    {
-      time: "08:00 – 08:45",
-      subject: "Mathematics",
-      section: "X-B",
-      room: "F-11",
-    },
-    {
-      time: "08:45 – 09:30",
-      subject: "Mathematics",
-      section: "IX-A",
-      room: "G-02",
-    },
-    {
-      time: "10:00 – 10:45",
-      subject: "Mathematics",
-      section: "X-A",
-      room: "F-12",
-    },
-    {
-      time: "11:30 – 12:15",
-      subject: "Class Mentor",
-      section: "X-B",
-      room: "F-11",
-    },
-  ];
+
+  if (loading) {
+    return (
+      <PageContainer>
+        <div className="flex items-center justify-center h-64 gap-2 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Loading dashboard…
+        </div>
+      </PageContainer>
+    );
+  }
+
+  if (error) {
+    return (
+      <PageContainer>
+        <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
+          <AlertTriangle className="h-6 w-6 text-destructive" />
+          <div className="text-sm text-muted-foreground">{error}</div>
+          <Button size="sm" variant="outline" onClick={fetchDashboard}>
+            Retry
+          </Button>
+        </div>
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer>
       <PageHeader
         title={`Good morning, ${name}`}
         description={`${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · ${todayPeriods.length} periods today.`}
-        actions={
-          <>
-            {/* <Button variant="outline" size="sm" asChild>
-              <Link to="/teacher/attendance">
-                <CalendarCheck className="h-4 w-4" />
-                Take Attendance
-              </Link>
-            </Button>
-            <Button size="sm" className="gradient-primary border-0" asChild>
-              <Link to="/assignments">
-                <ClipboardList className="h-4 w-4" />
-                Assignments
-              </Link>
-            </Button> */}
-          </>
-        }
+        actions={<></>}
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <KpiCard
           label="My Active Assignments"
-          value={myAssignments.length}
+          value={summary.active_assignments}
           icon={<ClipboardList className="h-5 w-5" />}
           tone="primary"
         />
         <KpiCard
           label="Pending Grading"
-          value={pendingGrading}
+          value={summary.pending_grading}
           icon={<Users className="h-5 w-5" />}
           tone="warning"
         />
         <KpiCard
           label="Lesson Plans (Open)"
-          value={draftPlans.length}
+          value={summary.open_lesson_plans}
           icon={<NotebookPen className="h-5 w-5" />}
           tone="info"
         />
         <KpiCard
           label="Upcoming Exams"
-          value={upcomingExams.length}
+          value={summary.upcoming_exams}
           icon={<BookOpen className="h-5 w-5" />}
           tone="success"
         />
@@ -181,9 +161,14 @@ export default function TeacherDashboard() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
+            {todayPeriods.length === 0 && (
+              <div className="text-xs text-muted-foreground p-4 text-center">
+                No periods scheduled today.
+              </div>
+            )}
             {todayPeriods.map((p, i) => (
               <div
-                key={i}
+                key={p.id ?? i}
                 className="flex items-center gap-3 p-2.5 rounded-md border hover:bg-muted/40"
               >
                 <div className="text-xs font-mono text-muted-foreground w-28 shrink-0">
@@ -212,12 +197,6 @@ export default function TeacherDashboard() {
               <NotebookPen className="h-4 w-4" />
               Pending Lesson Plans
             </CardTitle>
-            {/* <Button variant="ghost" size="sm" asChild>
-              <Link to="/teacher/lesson-plans">
-                All
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </Button> */}
           </CardHeader>
           <CardContent className="space-y-2">
             {draftPlans.length === 0 && (
@@ -257,23 +236,20 @@ export default function TeacherDashboard() {
                 No alerts in recent gradings.
               </div>
             )}
-            {weakAlert.map((s) => {
-              const a = myAssignments.find((x) => x.id === s.assignmentId);
-              return (
-                <div
-                  key={s.id}
-                  className="flex items-center gap-3 p-2 rounded-md border"
-                >
-                  <div className="flex-1 text-sm">{s.studentName}</div>
-                  <Badge variant="destructive" className="text-[10px]">
-                    {s.marks}/{a?.maxMarks}
-                  </Badge>
-                  <div className="text-[10px] text-muted-foreground">
-                    {a?.subject}
-                  </div>
+            {weakAlert.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center gap-3 p-2 rounded-md border"
+              >
+                <div className="flex-1 text-sm">{s.studentName}</div>
+                <Badge variant="destructive" className="text-[10px]">
+                  {s.marks}/{s.maxMarks}
+                </Badge>
+                <div className="text-[10px] text-muted-foreground">
+                  {s.subject}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </CardContent>
         </Card>
 
@@ -291,9 +267,14 @@ export default function TeacherDashboard() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
+            {recentNotices.length === 0 && (
+              <div className="text-xs text-muted-foreground p-4 text-center">
+                No notices right now.
+              </div>
+            )}
             {recentNotices.map((n) => (
               <div
-                key={n.id}
+                key={n.notes_uuid}
                 className="flex items-start gap-3 p-2.5 rounded-md hover:bg-muted/40 border"
               >
                 <div className="h-8 w-8 rounded-md flex items-center justify-center bg-info/10 text-info shrink-0">
@@ -302,14 +283,11 @@ export default function TeacherDashboard() {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{n.title}</div>
                   <div className="text-[11px] text-muted-foreground">
-                    {n.by} ·{" "}
-                    {new Date(n.publishedAt || n.createdAt).toLocaleDateString(
-                      "en-IN",
-                    )}
+                    {new Date(n.start_date).toLocaleDateString("en-IN")}
                   </div>
                 </div>
                 <Badge variant="outline" className="text-[10px]">
-                  {n.category}
+                  {n.category?.name}
                 </Badge>
               </div>
             ))}

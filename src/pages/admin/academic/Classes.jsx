@@ -2002,8 +2002,8 @@ function ClassesTab({
       </CardContent>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
             <DialogTitle>{edit ? "Edit Class" : "Add New Class"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">

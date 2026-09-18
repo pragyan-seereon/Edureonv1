@@ -28,6 +28,7 @@ import {
   Network,
   // eslint-disable-next-line no-unused-vars
   NotebookPen,
+  // eslint-disable-next-line no-unused-vars
   Plane,
   CalendarCheck,
   Trophy,
@@ -234,16 +235,16 @@ const teacherGroups = [
       { title: "Timetable", url: "/teacher/timetable", icon: CalendarDays },
     ],
   },
-  {
-    label: "Personal",
-    items: [
-      { title: "Leave Application", url: "/teacher/leave", icon: Plane },
-      { title: "My Documents", url: "/teacher/documents", icon: FolderArchive },
-      // { title: "Communication", url: "/communication", icon: MessageSquare },
-      { title: "Notifications", url: "/notifications", icon: Bell },
-      { title: "My Profile", url: "/profile", icon: UserIcon },
-    ],
-  },
+  // {
+  //   label: "Personal",
+  //   items: [
+  //     { title: "Leave Application", url: "/teacher/leave", icon: Plane },
+  //     { title: "My Documents", url: "/teacher/documents", icon: FolderArchive },
+  //     // { title: "Communication", url: "/communication", icon: MessageSquare },
+  //     { title: "Notifications", url: "/notifications", icon: Bell },
+  //     { title: "My Profile", url: "/profile", icon: UserIcon },
+  //   ],
+  // },
 ];
 // const studentGroups = [
 //   {

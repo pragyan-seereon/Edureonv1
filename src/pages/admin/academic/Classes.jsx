@@ -178,7 +178,7 @@ export default function Classes() {
   const [teacherOptions, setTeacherOptions] = useState([]);
   const [subLoading, setSubLoading] = useState(false);
   const [rooms, setRooms] = useState([]);
-
+  const [subjectQ, setSubjectQ] = useState("");
   const fetchRooms = async () => {
     try {
       const res = await getRooms();
@@ -347,6 +347,7 @@ useEffect(() => {
 // }, []);
 
   const [secOpen, setSecOpen] = useState(false);
+  const [sectionQ, setSectionQ] = useState("");
 
   const [secEdit, setSecEdit] = useState(null);
   const [subOpen, setSubOpen] = useState(false);
@@ -515,10 +516,24 @@ const performAssign = async () => {
     }
   };
 
-  // pagination for the Subjects table
-  const subjectsPage = usePagination(subjects, 10);
-  // pagination for the Sections grid
-  const sectionsPage = usePagination(sections, 9);
+    // pagination for the Subjects table
+  const filteredSubjects = useMemo(
+    () =>
+      subjects.filter((s) =>
+        (s.subject_name ?? "").toLowerCase().includes(subjectQ.toLowerCase()),
+      ),
+    [subjects, subjectQ],
+  );
+  const subjectsPage = usePagination(filteredSubjects, 10);
+   // pagination for the Sections grid
+  const filteredSections = useMemo(
+    () =>
+      sections.filter((s) =>
+        (s.name ?? "").toLowerCase().includes(sectionQ.toLowerCase()),
+      ),
+    [sections, sectionQ],
+  );
+  const sectionsPage = usePagination(filteredSections, 9);
 
   return (
     <PageContainer>
@@ -586,7 +601,16 @@ const performAssign = async () => {
                 Manage class sections, capacity and class teachers.
               </p> */}
             </div>
-            <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+                <Input
+                  value={sectionQ}
+                  onChange={(e) => setSectionQ(e.target.value)}
+                  placeholder="Search section..."
+                  className="pl-8 h-9 w-56"
+                />
+              </div>
               <RowsPerPageSelect {...sectionsPage} />
               <Button
                 size="sm"
@@ -726,7 +750,16 @@ const performAssign = async () => {
                 <CardTitle className="text-base">Subjects</CardTitle>
                 {/* <CardDescription>Catalog of subjects offered across classes.</CardDescription> */}
               </div>
-              <div className="flex items-center gap-2">
+                           <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+                  <Input
+                    value={subjectQ}
+                    onChange={(e) => setSubjectQ(e.target.value)}
+                    placeholder="Search subject..."
+                    className="pl-8 h-9 w-56"
+                  />
+                </div>
                 <RowsPerPageSelect {...subjectsPage} />
                 <Button
                   size="sm"
@@ -1704,6 +1737,7 @@ function ClassesTab({
 }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [classQ, setClassQ] = useState("");
 
   const fetchClasses = async () => {
     try {
@@ -1724,7 +1758,14 @@ function ClassesTab({
     fetchClasses();
   }, []);
 
-  const classesPage = usePagination(list, 10);
+  const filteredList = useMemo(
+    () =>
+      list.filter((c) =>
+        (c.class_name ?? "").toLowerCase().includes(classQ.toLowerCase()),
+      ),
+    [list, classQ],
+  );
+  const classesPage = usePagination(filteredList, 10);
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(null);
@@ -1860,7 +1901,16 @@ function ClassesTab({
         <div>
           <CardTitle className="text-base">Classes</CardTitle>
         </div>
-        <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+            <Input
+              value={classQ}
+              onChange={(e) => setClassQ(e.target.value)}
+              placeholder="Search class..."
+              className="pl-8 h-9 w-56"
+            />
+          </div>
           <RowsPerPageSelect {...classesPage} />
           <Button
             size="sm"
@@ -3437,6 +3487,7 @@ const handleSecNewClassChange = (v) => {
 function DepartmentsTab() {
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(false);
+    const [deptQ, setDeptQ] = useState("");
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(null);
@@ -3468,8 +3519,14 @@ function DepartmentsTab() {
       .catch((err) => console.error(err));
   }, []);
 
-  const departmentsPage = usePagination(departments, 10);
-
+  const filteredDepartments = useMemo(
+    () =>
+      departments.filter((d) =>
+        (d.department_name ?? "").toLowerCase().includes(deptQ.toLowerCase()),
+      ),
+    [departments, deptQ],
+  );
+  const departmentsPage = usePagination(filteredDepartments, 10);
   const reset = () => {
     setName("");
     setDescription("");
@@ -3570,7 +3627,16 @@ function DepartmentsTab() {
             <CardTitle className="text-base">Departments</CardTitle>
            
           </div>
-          <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+              <Input
+                value={deptQ}
+                onChange={(e) => setDeptQ(e.target.value)}
+                placeholder="Search department..."
+                className="pl-8 h-9 w-56"
+              />
+            </div>
             <RowsPerPageSelect {...departmentsPage} />
             <Button size="sm" className="gradient-primary border-0" onClick={openNew}>
               <Plus className="h-4 w-4" /> New Department

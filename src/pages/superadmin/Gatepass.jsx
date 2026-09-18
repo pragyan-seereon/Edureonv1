@@ -75,7 +75,7 @@ function downloadPassPdf(pass) {
   pdf.rect(15, 15, 180, 27, "F");
   pdf.setTextColor(255, 255, 255);
   pdf.setFontSize(18);
-  pdf.text("Edureon School", 21, 27);
+  pdf.text("Mother's public School", 21, 27);
   pdf.setFontSize(10);
   pdf.text(`GATE PASS · ${pass.type.toUpperCase()}`, 21, 35);
   pdf.text(pass.number, 188, 31, { align: "right" });
@@ -496,7 +496,7 @@ placeholder={form.passType === "STUDENT" ? "Type a student name" : form.passType
           <DialogHeader><DialogTitle>Gate Pass · {previewPass?.number}</DialogTitle></DialogHeader>
           {previewPass && <div className="overflow-hidden rounded-xl border border-border/60">
             <div className="gradient-primary flex items-center justify-between px-5 py-4 text-primary-foreground">
-              <div><div className="font-display text-lg font-semibold">Edureon School</div><div className="text-[11px] font-medium uppercase tracking-wide opacity-85">Gate Pass · {previewPass.type}</div></div>
+              <div><div className="font-display text-lg font-semibold">Mother's public School</div><div className="text-[11px] font-medium uppercase tracking-wide opacity-85">Gate Pass · {previewPass.type}</div></div>
               <div className="font-mono text-sm font-semibold">{previewPass.number}</div>
             </div>
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 p-5 text-sm">

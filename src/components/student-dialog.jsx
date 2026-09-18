@@ -46,7 +46,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Textarea } from "./ui/textarea";
 import { Badge } from "./ui/badge";
 import { Switch } from "./ui/switch";
-import { Briefcase, Eye, EyeOff, FileCheck2, FileUp, Pencil, Trash2, X } from "lucide-react";
+import { Calendar } from "./ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Briefcase, CalendarDays, Eye, EyeOff, FileCheck2, FileUp, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 /* ============================================================
@@ -395,6 +397,7 @@ function DateInputDDMMYYYY({ value, onChange, disabled, max, min, manual = false
   const [displayValue, setDisplayValue] = useState(
     formatIsoToDisplay(value).replaceAll("/", "-")
   );
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   useEffect(() => {
     setDisplayValue(formatIsoToDisplay(value).replaceAll("/", "-"));
@@ -404,6 +407,19 @@ function DateInputDDMMYYYY({ value, onChange, disabled, max, min, manual = false
     const [year, month, day] = iso.split("-").map(Number);
     const date = new Date(year, month - 1, day);
     return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+  };
+
+  const isoToDate = (iso) => {
+    if (!iso || !isCalendarDate(iso)) return undefined;
+    const [year, month, day] = iso.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  const dateToIso = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   };
 
   if (!manual) {
@@ -421,31 +437,62 @@ function DateInputDDMMYYYY({ value, onChange, disabled, max, min, manual = false
   }
 
   return (
-    <Input
-      type="text"
-      inputMode="numeric"
-      autoComplete="off"
-      placeholder="DD-MM-YYYY"
-      value={displayValue}
-      onChange={(e) => {
-        const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
-        const nextDisplay = formatDigitsToDisplay(digits);
-        setDisplayValue(nextDisplay);
+    <div className={`relative ${className}`}>
+      <Input
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder="DD-MM-YYYY"
+        value={displayValue}
+        onChange={(e) => {
+          const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
+          const nextDisplay = formatDigitsToDisplay(digits);
+          setDisplayValue(nextDisplay);
 
-        if (!digits) {
-          onChange("");
-          return;
-        }
+          if (!digits) {
+            onChange("");
+            return;
+          }
 
-        const nextValue = displayToIso(nextDisplay);
-        if (!nextValue || !isCalendarDate(nextValue)) return;
-        if (max && nextValue > max) return;
-        if (min && nextValue < min) return;
-        onChange(nextValue);
-      }}
-      disabled={disabled}
-      className={`w-full ${className}`}
-    />
+          const nextValue = displayToIso(nextDisplay);
+          if (!nextValue || !isCalendarDate(nextValue)) return;
+          if (max && nextValue > max) return;
+          if (min && nextValue < min) return;
+          onChange(nextValue);
+        }}
+        disabled={disabled}
+        className="w-full pr-10"
+      />
+      <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label="Choose date from calendar"
+            disabled={disabled}
+            className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          >
+            <CalendarDays className="h-4 w-4" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-auto p-0">
+          <Calendar
+            mode="single"
+            selected={isoToDate(value)}
+            defaultMonth={isoToDate(value)}
+            disabled={(date) => {
+              const iso = dateToIso(date);
+              return Boolean((min && iso < min) || (max && iso > max));
+            }}
+            onSelect={(date) => {
+              if (!date) return;
+              onChange(dateToIso(date));
+              setCalendarOpen(false);
+            }}
+            initialFocus
+          />
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
 

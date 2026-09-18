@@ -67,7 +67,7 @@ const GENDERS = ["Male", "Female", "Other"];
 const DRAFT_STORAGE_KEY = "studentAdmissionDraftUuid";
 // how long (ms) to wait after the user stops typing before auto-saving
 const AUTOSAVE_DELAY_MS = 1500;
-const CITY_STATE_OPTIONS = [
+export const CITY_STATE_OPTIONS = [
   { city: "Delhi", state: "Delhi" },
   { city: "Mumbai", state: "Maharashtra" },
   { city: "Pune", state: "Maharashtra" },
@@ -157,10 +157,16 @@ const CITY_STATE_OPTIONS = [
   { city: "Jabalpur", state: "Madhya Pradesh" },
   { city: "Ujjain", state: "Madhya Pradesh" },
 
+  { city: "Raipur", state: "Chhattisgarh" },
+  { city: "Bhilai", state: "Chhattisgarh" },
+
   { city: "Chandigarh", state: "Chandigarh" },
   { city: "Ludhiana", state: "Punjab" },
   { city: "Amritsar", state: "Punjab" },
   { city: "Jalandhar", state: "Punjab" },
+  { city: "Gurugram", state: "Haryana" },
+  { city: "Faridabad", state: "Haryana" },
+  { city: "Panipat", state: "Haryana" },
 
   { city: "Dehradun", state: "Uttarakhand" },
   { city: "Haridwar", state: "Uttarakhand" },

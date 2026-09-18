@@ -3608,6 +3608,7 @@ import {
   getEmployeeByUUID,
 } from "../api/employee";
 import { toast } from "sonner";
+import { CITY_STATE_OPTIONS } from "./student-dialog";
 
 
 // Wraps a lookup-endpoint call so that ANY failure - including the call
@@ -3643,6 +3644,7 @@ const EMPLOYMENT_TYPE = [
   "Intern",
 ];
 const EMPLOYEE_STATUS = ["Active", "Inactive", "Probation", "Resigned"];
+const STATES = [...new Set(CITY_STATE_OPTIONS.map((item) => item.state))];
 
 // Document types shown in the UI. `type` is the display-facing document
 // type used by the DRAFT upload endpoint (EmployeeDraftDocumentService,
@@ -3810,7 +3812,7 @@ const empty = {
   city: "",
   state: "",
   pin: "",
-  nationality: "",
+  nationality: "India",
   passport_number: "",
   visa_status: "Active",
 
@@ -4779,6 +4781,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
     setF({
       ...empty,
       ...record,
+      nationality: record.nationality || "India",
       // Never resurrect a password from a fetched draft.
       password: "",
       role_uuid: roleUuid,
@@ -4867,6 +4870,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
           setF({
             ...empty,
             ...fullEmployeeData,
+            nationality: fullEmployeeData.nationality || "India",
             password: "",
             role_uuid: roleUuid,
             employee_status: EMPLOYEE_STATUS.includes(savedStatus)
@@ -5972,17 +5976,42 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 />
               </div>
             </Field>
-            <Field label="City *" error={errors.city}>
-              <Input
-                value={f.city}
-                onChange={(e) => setF({ ...f, city: e.target.value })}
-              />
-            </Field>
             <Field label="State *" error={errors.state}>
-              <Input
+              <select
                 value={f.state}
-                onChange={(e) => setF({ ...f, state: e.target.value })}
-              />
+                onChange={(e) =>
+                  setF({ ...f, state: e.target.value, city: "" })
+                }
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">Select state</option>
+                {STATES.map((state) => (
+                  <option key={state} value={state}>
+                    {state}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="City *" error={errors.city}>
+              <select
+                value={f.city}
+                onChange={(e) =>
+                  setF({ ...f, city: e.target.value })
+                }
+                disabled={!f.state}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">
+                  {f.state ? "Select city" : "Select state first"}
+                </option>
+                {CITY_STATE_OPTIONS.filter((item) => item.state === f.state).map(
+                  (item) => (
+                    <option key={item.city} value={item.city}>
+                      {item.city}
+                    </option>
+                  ),
+                )}
+              </select>
             </Field>
             <Field label="PIN *" error={errors.pin}>
               <Input
@@ -5997,7 +6026,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
             <Field label="Nationality" error={errors.nationality}>
               <Input
                 value={f.nationality}
-                onChange={(e) => setF({ ...f, nationality: e.target.value })}
+                readOnly
               />
             </Field>
             <Field label="Passport number" error={errors.passport_number}>

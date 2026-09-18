@@ -320,6 +320,28 @@ const loadDashboard = async () => {
     [students]
   );
 
+  const kpiStudents = useMemo(
+    () => students.filter((student) => !student?.isDraft),
+    [students]
+  );
+
+  const calculatedFeeDefaulters = useMemo(
+    () =>
+      kpiStudents.filter((student) => {
+        const components = Array.isArray(student?.fee_components)
+          ? student.fee_components
+          : [];
+        if (components.length > 0) {
+          return components.some(
+            (component) =>
+              String(component?.fee_status ?? "").toLowerCase() !== "paid"
+          );
+        }
+        return String(student?.fee_status ?? "").toLowerCase() !== "paid";
+      }).length,
+    [kpiStudents]
+  );
+
   const feeComponents = useMemo(() => {
     const uniqueComponents = new Map();
 
@@ -1158,7 +1180,7 @@ const loadDashboard = async () => {
         <KpiCard
           label="Total Students"
           value={
-            dashboard?.total_students ?? 0
+            dashboard?.total_students ?? kpiStudents.length
           }
           delta={
             dashboard?.total_students_growth ??
@@ -1173,7 +1195,7 @@ const loadDashboard = async () => {
         <KpiCard
           label="Fee Defaulters"
           value={
-            dashboard?.fee_defaulters ?? 0
+            dashboard?.fee_defaulters ?? calculatedFeeDefaulters
           }
           delta={
             dashboard?.fee_defaulters_growth ??

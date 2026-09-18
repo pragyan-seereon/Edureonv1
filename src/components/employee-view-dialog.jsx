@@ -65,6 +65,7 @@ import {
 import { toast } from "sonner";
 
 import { updateEmployee } from "../api/employee";
+import { getEmployeeImageUrl, getMediaUrl } from "../lib/media-url";
 
 // ===================================
 // Field list used for the edit form.
@@ -284,30 +285,7 @@ function EmployeeViewDialogContent({
 
   // Get profile image from documents or direct profile_image field
   const getProfileImageUrl = () => {
-    if (employee.profile_image) {
-      if (employee.profile_image.startsWith("http://") || employee.profile_image.startsWith("https://")) {
-        return employee.profile_image;
-      }
-      if (employee.profile_image.startsWith("data:image/")) {
-        return employee.profile_image;
-      }
-      const baseUrl = import.meta.env.VITE_API_URL || "";
-      return `${baseUrl}/uploads/${employee.profile_image}`;
-    }
-
-    if (employee.documents && employee.documents.length > 0) {
-      const photoDoc = employee.documents.find(
-        (doc) =>
-          doc.document_type === "PHOTO" ||
-          doc.document_type?.toUpperCase() === "PHOTO" ||
-          doc.document_name?.toUpperCase() === "PHOTO"
-      );
-      if (photoDoc && photoDoc.file_path) {
-        return photoDoc.file_path;
-      }
-    }
-
-    return null;
+    return getEmployeeImageUrl(employee);
   };
 
   const profileImageUrl = getProfileImageUrl();
@@ -945,8 +923,12 @@ function EmployeeViewDialogContent({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {employee.documents.map((doc) => (
-                    <TableRow key={doc.document_uuid}>
+                  {employee.documents.map((doc, index) => {
+                    const fileUrl = getMediaUrl(doc);
+                    const fileName = doc.file_name || doc.original_file_name || doc.document_name || "Document";
+
+                    return (
+                    <TableRow key={doc.document_uuid || doc.uuid || `${doc.document_type || "document"}-${index}`}>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {doc.document_type === "PHOTO" || doc.document_type?.toUpperCase() === "PHOTO" ? (
@@ -954,7 +936,7 @@ function EmployeeViewDialogContent({
                           ) : (
                             <FileText className="h-4 w-4 text-blue-500" />
                           )}
-                          <span className="font-medium">{doc.document_name || doc.file_name}</span>
+                          <span className="font-medium">{doc.document_name || fileName}</span>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -962,7 +944,7 @@ function EmployeeViewDialogContent({
                           {doc.document_type || "General"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{doc.file_name}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{fileName}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {doc.file_size ? `${(doc.file_size / 1024).toFixed(2)} KB` : "N/A"}
                       </TableCell>
@@ -980,19 +962,19 @@ function EmployeeViewDialogContent({
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          {doc.file_path && (
+                          {fileUrl && (
                             <>
-                              <Button size="sm" variant="ghost" onClick={() => window.open(doc.file_path, "_blank")}>
+                              <Button size="sm" variant="ghost" onClick={() => window.open(fileUrl, "_blank", "noopener,noreferrer")}>
                                 <Eye className="h-4 w-4" />
                               </Button>
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => {
-                                  if (doc.file_path) {
+                                  if (fileUrl) {
                                     const link = document.createElement("a");
-                                    link.href = doc.file_path;
-                                    link.download = doc.file_name || "document";
+                                    link.href = fileUrl;
+                                    link.download = fileName;
                                     document.body.appendChild(link);
                                     link.click();
                                     document.body.removeChild(link);
@@ -1006,7 +988,8 @@ function EmployeeViewDialogContent({
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>

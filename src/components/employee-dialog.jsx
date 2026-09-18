@@ -3608,6 +3608,7 @@ import {
   getEmployeeByUUID,
 } from "../api/employee";
 import { toast } from "sonner";
+import { CITY_STATE_OPTIONS } from "./student-dialog";
 
 
 // Wraps a lookup-endpoint call so that ANY failure - including the call
@@ -3643,6 +3644,7 @@ const EMPLOYMENT_TYPE = [
   "Intern",
 ];
 const EMPLOYEE_STATUS = ["Active", "Inactive", "Probation", "Resigned"];
+const STATES = [...new Set(CITY_STATE_OPTIONS.map((item) => item.state))];
 
 // Document types shown in the UI. `type` is the display-facing document
 // type used by the DRAFT upload endpoint (EmployeeDraftDocumentService,
@@ -3806,10 +3808,11 @@ const empty = {
   child_contact: "",
   current_address: "",
   permanent_address: "",
+  residential_same_as_permanent: false,
   city: "",
   state: "",
   pin: "",
-  nationality: "",
+  nationality: "India",
   passport_number: "",
   visa_status: "Active",
 
@@ -4778,6 +4781,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
     setF({
       ...empty,
       ...record,
+      nationality: record.nationality || "India",
       // Never resurrect a password from a fetched draft.
       password: "",
       role_uuid: roleUuid,
@@ -4846,6 +4850,11 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
     if (!open) return;
 
     if (employee) {
+      // Files picked while creating a draft are only local browser state. They
+      // must never carry into an edit session and masquerade as files waiting
+      // to be uploaded again.
+      setDocFiles({});
+
       const loadEmployeeData = async () => {
         try {
           const fullEmployeeData = await getEmployeeByUUID(employee.employee_uuid);
@@ -4866,6 +4875,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
           setF({
             ...empty,
             ...fullEmployeeData,
+            nationality: fullEmployeeData.nationality || "India",
             password: "",
             role_uuid: roleUuid,
             employee_status: EMPLOYEE_STATUS.includes(savedStatus)
@@ -4885,12 +4895,12 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
 
           setExistingDocuments(
             (fullEmployeeData.documents || []).map((d) => ({
-              document_uuid: d.document_uuid,
-              document_type: d.document_type,
-              document_name: d.document_name,
-              file_name: d.file_name,
+              document_uuid: d.document_uuid ?? d.uuid,
+              document_type: String(d.document_type ?? d.type ?? "").toUpperCase(),
+              document_name: d.document_name ?? d.name,
+              file_name: d.file_name ?? d.original_file_name ?? d.document_name ?? d.name,
               // Display-only. Never sent back to the server.
-              display_path: d.file_path ?? d.file_key,
+              display_path: d.file_path ?? d.file_url ?? d.url ?? d.file_key,
               mime_type: d.mime_type,
               file_size: d.file_size,
               verification_status: d.verification_status || "Pending",
@@ -5921,39 +5931,92 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 }
               />
             </Field>
-            <Field label="Current address *" wide error={errors.current_address}>
-              <Textarea
-                rows={2}
-                value={f.current_address}
-                onChange={(e) =>
-                  setF({ ...f, current_address: e.target.value })
-                }
-              />
-            </Field>
             <Field
-              label="Permanent address *"
+              label="Permanent Address *"
               wide
               error={errors.permanent_address}
             >
               <Textarea
                 rows={2}
                 value={f.permanent_address}
-                onChange={(e) =>
-                  setF({ ...f, permanent_address: e.target.value })
-                }
+                onChange={(e) => {
+                  const permanentAddress = e.target.value;
+                  setF({
+                    ...f,
+                    permanent_address: permanentAddress,
+                    current_address: f.residential_same_as_permanent
+                      ? permanentAddress
+                      : f.current_address,
+                  });
+                }}
               />
             </Field>
-            <Field label="City *" error={errors.city}>
-              <Input
-                value={f.city}
-                onChange={(e) => setF({ ...f, city: e.target.value })}
-              />
+            <Field label="Residential Address *" wide error={errors.current_address}>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={f.residential_same_as_permanent}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setF({
+                        ...f,
+                        residential_same_as_permanent: checked,
+                        current_address: checked
+                          ? f.permanent_address
+                          : f.current_address,
+                      });
+                    }}
+                  />
+                  <span>Same as Permanent Address</span>
+                </label>
+                <Textarea
+                  rows={2}
+                  value={f.current_address}
+                  onChange={(e) =>
+                    setF({ ...f, current_address: e.target.value })
+                  }
+                  disabled={f.residential_same_as_permanent}
+                  placeholder="House no, street, locality"
+                />
+              </div>
             </Field>
             <Field label="State *" error={errors.state}>
-              <Input
+              <select
                 value={f.state}
-                onChange={(e) => setF({ ...f, state: e.target.value })}
-              />
+                onChange={(e) =>
+                  setF({ ...f, state: e.target.value, city: "" })
+                }
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">Select state</option>
+                {STATES.map((state) => (
+                  <option key={state} value={state}>
+                    {state}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="City *" error={errors.city}>
+              <select
+                value={f.city}
+                onChange={(e) =>
+                  setF({ ...f, city: e.target.value })
+                }
+                disabled={!f.state}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">
+                  {f.state ? "Select city" : "Select state first"}
+                </option>
+                {CITY_STATE_OPTIONS.filter((item) => item.state === f.state).map(
+                  (item) => (
+                    <option key={item.city} value={item.city}>
+                      {item.city}
+                    </option>
+                  ),
+                )}
+              </select>
             </Field>
             <Field label="PIN *" error={errors.pin}>
               <Input
@@ -5968,7 +6031,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
             <Field label="Nationality" error={errors.nationality}>
               <Input
                 value={f.nationality}
-                onChange={(e) => setF({ ...f, nationality: e.target.value })}
+                readOnly
               />
             </Field>
             <Field label="Passport number" error={errors.passport_number}>
@@ -6759,7 +6822,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                     <ReviewRow label="Spouse name" value={f.spouse_name} />
                   )}
                   <ReviewRow
-                    label="Current address"
+                    label="Residential address"
                     value={f.current_address}
                   />
                   <ReviewRow

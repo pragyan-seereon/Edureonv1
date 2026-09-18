@@ -1797,11 +1797,8 @@ const initialState = {
   pin_code: "",
   birth_certificate_no: "",
 
-  // Fee & Services
-  fee_status: "",
-  transport_required: "",
-  mode_of_conveyance: "",
-  hostel_required: "",
+  // Services
+  is_rte_student: "No",
 
   // Medical Details
   medical_notes: "",
@@ -1859,10 +1856,7 @@ const TAB_OF_FIELD = {
   pin_code: "guardian",
   birth_certificate_no: "guardian",
 
-  fee_status: "services",
-  transport_required: "services",
-  mode_of_conveyance: "services",
-  hostel_required: "services",
+  is_rte_student: "services",
 
   medical_notes: "medical",
 };
@@ -1999,11 +1993,6 @@ function validateAdmission(d) {
   // category validation
   if (d.category && !["General", "OBC", "SC", "ST", "EWS"].includes(d.category)) {
     errs.category = "Invalid category";
-  }
-
-  // fee_status validation
-  if (d.fee_status && !["PAID", "PARTIAL", "PENDING"].includes(d.fee_status)) {
-    errs.fee_status = "Invalid fee status";
   }
 
   // profession validations
@@ -2310,20 +2299,14 @@ export function NewInquiryDialog({ trigger, onCreate }) {
         session_year: sessionYear,
       }).forEach(([key, value]) => {
         // Boolean fields are appended below in their final boolean form.
-        if (key === "transport_required" || key === "hostel_required") return;
+        if (key === "is_rte_student") return;
 
         if (value !== null && value !== undefined && value !== "") {
           formData.append(key, value);
         }
       });
 
-      // Backend expects actual boolean values for these fields.
-      if (d.transport_required) {
-        formData.append("transport_required", d.transport_required === "Yes");
-      }
-      if (d.hostel_required) {
-        formData.append("hostel_required", d.hostel_required === "Yes");
-      }
+      formData.append("is_rte_student", d.is_rte_student === "Yes");
 
       // Documents
       Object.entries(uploaded).forEach(([key, file]) => {
@@ -2475,7 +2458,6 @@ export function NewInquiryDialog({ trigger, onCreate }) {
                 type="date"
                 value={d.admission_date}
                 onChange={(e) => set("admission_date", e.target.value)}
-                max={new Date().toISOString().split("T")[0]}
               />
             </F>
 
@@ -2484,7 +2466,6 @@ export function NewInquiryDialog({ trigger, onCreate }) {
                 type="date"
                 value={d.joining_date}
                 onChange={(e) => set("joining_date", e.target.value)}
-                max={new Date().toISOString().split("T")[0]}
               />
             </F>
 
@@ -2989,41 +2970,8 @@ export function NewInquiryDialog({ trigger, onCreate }) {
 
           {/* ── SERVICES ── */}
           <TabsContent value="services" className="grid sm:grid-cols-2 gap-3 mt-4">
-            <F label="Fee Status" error={fieldErrors.fee_status}>
-              <Select value={d.fee_status} onValueChange={(v) => set("fee_status", v)}>
-                <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="PAID">Paid</SelectItem>
-                  <SelectItem value="PARTIAL">Partial</SelectItem>
-                  <SelectItem value="PENDING">Pending</SelectItem>
-                </SelectContent>
-              </Select>
-            </F>
-
-            <F label="Transport Required">
-              <Select value={d.transport_required} onValueChange={(v) => set("transport_required", v)}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="No">No</SelectItem>
-                  <SelectItem value="Yes">Yes</SelectItem>
-                </SelectContent>
-              </Select>
-            </F>
-
-            <F label="Mode of Conveyance">
-              <Select value={d.mode_of_conveyance} onValueChange={(v) => set("mode_of_conveyance", v)}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="School Bus">School Bus</SelectItem>
-                  <SelectItem value="Personal Vehicle">Personal Vehicle</SelectItem>
-                  <SelectItem value="Public Transport">Public Transport</SelectItem>
-                  <SelectItem value="Walking">Walking</SelectItem>
-                </SelectContent>
-              </Select>
-            </F>
-
-            <F label="Hostel Required">
-              <Select value={d.hostel_required} onValueChange={(v) => set("hostel_required", v)}>
+            <F label="RTE Student">
+              <Select value={d.is_rte_student} onValueChange={(v) => set("is_rte_student", v)}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="No">No</SelectItem>

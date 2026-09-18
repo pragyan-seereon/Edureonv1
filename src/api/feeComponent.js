@@ -29,6 +29,20 @@ export const createFeeComponent = (data) =>
     headers: getHeaders(),
   });
 
+export const importFeeComponentsExcel = (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return api.post("/fee-components/import-excel", formData, {
+    headers: {
+      ...getHeaders(),
+      // Override the API client's JSON default so Axios/browser creates the
+      // multipart boundary required by FastAPI's UploadFile parser.
+      "Content-Type": undefined,
+    },
+  });
+};
+
 export const updateFeeComponent = (componentUUID, data) =>
   api.put(`/fee-components/${componentUUID}`, data, {
     headers: getHeaders(),

@@ -3806,6 +3806,7 @@ const empty = {
   child_contact: "",
   current_address: "",
   permanent_address: "",
+  residential_same_as_permanent: false,
   city: "",
   state: "",
   pin: "",
@@ -5921,27 +5922,55 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                 }
               />
             </Field>
-            <Field label="Current address *" wide error={errors.current_address}>
-              <Textarea
-                rows={2}
-                value={f.current_address}
-                onChange={(e) =>
-                  setF({ ...f, current_address: e.target.value })
-                }
-              />
-            </Field>
             <Field
-              label="Permanent address *"
+              label="Permanent Address *"
               wide
               error={errors.permanent_address}
             >
               <Textarea
                 rows={2}
                 value={f.permanent_address}
-                onChange={(e) =>
-                  setF({ ...f, permanent_address: e.target.value })
-                }
+                onChange={(e) => {
+                  const permanentAddress = e.target.value;
+                  setF({
+                    ...f,
+                    permanent_address: permanentAddress,
+                    current_address: f.residential_same_as_permanent
+                      ? permanentAddress
+                      : f.current_address,
+                  });
+                }}
               />
+            </Field>
+            <Field label="Residential Address *" wide error={errors.current_address}>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={f.residential_same_as_permanent}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setF({
+                        ...f,
+                        residential_same_as_permanent: checked,
+                        current_address: checked
+                          ? f.permanent_address
+                          : f.current_address,
+                      });
+                    }}
+                  />
+                  <span>Same as Permanent Address</span>
+                </label>
+                <Textarea
+                  rows={2}
+                  value={f.current_address}
+                  onChange={(e) =>
+                    setF({ ...f, current_address: e.target.value })
+                  }
+                  disabled={f.residential_same_as_permanent}
+                  placeholder="House no, street, locality"
+                />
+              </div>
             </Field>
             <Field label="City *" error={errors.city}>
               <Input
@@ -6759,7 +6788,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
                     <ReviewRow label="Spouse name" value={f.spouse_name} />
                   )}
                   <ReviewRow
-                    label="Current address"
+                    label="Residential address"
                     value={f.current_address}
                   />
                   <ReviewRow

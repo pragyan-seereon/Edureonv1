@@ -153,6 +153,7 @@ import {
   deleteFeeAssignment,
   archiveFeeAssignment,
   activateFeeAssignment,
+  importFeeDemandExcel,
   getStudentFeeDues,
   getStudentDues
   
@@ -2711,6 +2712,7 @@ const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [uploadingFeeDemand, setUploadingFeeDemand] = useState(false);
   const [paidMonths, setPaidMonths] = useState(
     () => new Set(["stu-001:2026-04", "stu-001:2026-05", "stu-004:2026-04", "stu-004:2026-05", "stu-004:2026-06", "stu-008:2026-04", "stu-008:2026-05", "stu-008:2026-06", "stu-008:2026-07"])
   );
@@ -2719,6 +2721,43 @@ const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [editingStruct, setEditingStruct] = useState(null);
 
   const [customOpen, setCustomOpen] = useState(false);
+
+  const handleFeeDemandUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!/\.(xlsx|xls)$/i.test(file.name)) {
+      toast.error("Please select an Excel file (.xlsx or .xls).");
+      return;
+    }
+
+    setUploadingFeeDemand(true);
+    try {
+      const response = await importFeeDemandExcel(file);
+      const result = response?.data ?? {};
+      toast.success(
+        `${result.imported || 0} fee demands imported${result.updated ? `, ${result.updated} updated` : ""}.`
+      );
+      if (result.skipped) {
+        const reasons = (result.errors || [])
+          .slice(0, 3)
+          .map((item) => `Row ${item.row}: ${item.reason}`)
+          .join(" • ");
+        console.warn("Fee-demand import skipped rows:", result.errors || []);
+        toast.warning(`${result.skipped} rows were skipped.`, {
+          description: reasons || "No row-level reason was returned by the server.",
+          duration: 12000,
+        });
+      }
+      await Promise.all([fetchDashboard(), fetchAssignments()]);
+      selectTab("dues");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Fee-demand Excel upload failed."));
+    } finally {
+      setUploadingFeeDemand(false);
+    }
+  };
 
   /* ---------------------------------------------------------------- */
   /*  Fee Components — API integration                                 */
@@ -3406,6 +3445,19 @@ const activateAssignment = async (uuid) => {
             <Button variant="outline" size="sm" onClick={handleExportLedger}>
               <Download className="h-4 w-4" />
               Export
+            </Button>
+
+            <Button variant="outline" size="sm" disabled={uploadingFeeDemand} asChild>
+              <label className="cursor-pointer">
+                <FileText className="h-4 w-4" />
+                {uploadingFeeDemand ? "Uploading..." : "Upload Fee Excel"}
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleFeeDemandUpload}
+                />
+              </label>
             </Button>
 
             <DropdownMenu>

@@ -1541,7 +1541,7 @@ const handleToggleHolidayPublish = async (item) => {
     events: "Event",
     academic: "Academic Calendar",
     holidays: "Holiday Calendar",
-  }[activeTab] ?? "Notice";
+  }[activeTab] ?? "Communication";
 
   const isAcademicTab = activeTab === "academic";
 const isEventsTab = activeTab === "events";
@@ -1648,7 +1648,7 @@ const savingCurrent = isAcademicTab? savingCalendar: isEventsTab? savingEvent: i
 {loadingNoticeDetail || loadingEventDetail || loadingHolidayDetail || loadingCalendarDetail ? (
                       <div className="p-8 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading notice…
+                  Loading communication…
                 </div>
               ) : (
               <div className="space-y-3">

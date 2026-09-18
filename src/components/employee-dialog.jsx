@@ -1,3 +1,10 @@
+
+
+
+
+
+
+
 // import { useEffect, useState } from "react";
 // import { createPortal } from "react-dom";
 // import {
@@ -45,7 +52,7 @@
 //   getEmployeeByUUID,
 // } from "../api/employee";
 // import { toast } from "sonner";
-// import useSessionStore from "../store/sessionStore";
+// import { CITY_STATE_OPTIONS } from "./student-dialog";
 
 
 // // Wraps a lookup-endpoint call so that ANY failure - including the call
@@ -81,6 +88,7 @@
 //   "Intern",
 // ];
 // const EMPLOYEE_STATUS = ["Active", "Inactive", "Probation", "Resigned"];
+// const STATES = [...new Set(CITY_STATE_OPTIONS.map((item) => item.state))];
 
 // // Document types shown in the UI. `type` is the display-facing document
 // // type used by the DRAFT upload endpoint (EmployeeDraftDocumentService,
@@ -228,7 +236,6 @@
 // const empty = {
 //   // Step 1 - Personal (EmployeeDraftCreate)
 //   id_number: "",
-//   session_year: "",
 //   full_name: "",
 //   gender: "Male",
 //   dob: "",
@@ -245,10 +252,11 @@
 //   child_contact: "",
 //   current_address: "",
 //   permanent_address: "",
+//   residential_same_as_permanent: false,
 //   city: "",
 //   state: "",
 //   pin: "",
-//   nationality: "",
+//   nationality: "India",
 //   passport_number: "",
 //   visa_status: "Active",
 
@@ -375,11 +383,6 @@
 // // ==========================================================
 // function validatePersonal(f, isEditMode, passwordMode) {
 //   const e = {};
-
-//   const session = String(f.session_year || "").trim();
-//   if (!/^\d{4}-\d{2}$/.test(session)) {
-//     e.session_year = "Session year must be in YYYY-YY format.";
-//   }
 
 //   const name = (f.full_name || "").trim();
 //   if (name.length < 3 || name.length > 150) {
@@ -1043,7 +1046,6 @@
 // }
 
 // export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
-//   const { sessionYear } = useSessionStore();
 //   const [f, setF] = useState(empty);
 //   const [tab, setTab] = useState("personal");
 //   const [errors, setErrors] = useState({});
@@ -1078,20 +1080,6 @@
 //   // employee-drafts/* endpoint) - it only reads/writes the real
 //   // /employees/{uuid} resource via updateEmployee.
 //   const isEditMode = Boolean(employee);
-
-//   // Session year is supplied automatically by the global session store.
-//   // New employee onboarding never asks the user to select/type it.
-//   useEffect(() => {
-//     if (!open || isEditMode || !sessionYear) return;
-
-//     const currentSessionYear = String(sessionYear).trim();
-//     if (!/^\d{4}-\d{2}$/.test(currentSessionYear)) return;
-
-//     setF((prev) => {
-//       if (prev.session_year === currentSessionYear) return prev;
-//       return { ...prev, session_year: currentSessionYear };
-//     });
-//   }, [open, isEditMode, sessionYear]);
 
 //   // The draft this dialog session is bound to. Only relevant in
 //   // "onboard new employee" mode. Once set, Step 1 uses
@@ -1205,10 +1193,7 @@
 //   // employee" form. Used both when there's no draft to resume and after
 //   // the user explicitly chooses to discard/start over.
 //   const resetToBlankEmployeeForm = () => {
-//     setF({
-//       ...empty,
-//       session_year: String(sessionYear || ""),
-//     });
+//     setF(empty);
 //     setAssignments([]);
 //     setDocFiles({});
 //     setExistingDocuments([]);
@@ -1240,7 +1225,7 @@
 //     setF({
 //       ...empty,
 //       ...record,
-//       session_year: String(record.session_year || sessionYear || ""),
+//       nationality: record.nationality || "India",
 //       // Never resurrect a password from a fetched draft.
 //       password: "",
 //       role_uuid: roleUuid,
@@ -1309,6 +1294,11 @@
 //     if (!open) return;
 
 //     if (employee) {
+//       // Files picked while creating a draft are only local browser state. They
+//       // must never carry into an edit session and masquerade as files waiting
+//       // to be uploaded again.
+//       setDocFiles({});
+
 //       const loadEmployeeData = async () => {
 //         try {
 //           const fullEmployeeData = await getEmployeeByUUID(employee.employee_uuid);
@@ -1329,9 +1319,7 @@
 //           setF({
 //             ...empty,
 //             ...fullEmployeeData,
-//             session_year: String(
-//               fullEmployeeData.session_year || sessionYear || ""
-//             ),
+//             nationality: fullEmployeeData.nationality || "India",
 //             password: "",
 //             role_uuid: roleUuid,
 //             employee_status: EMPLOYEE_STATUS.includes(savedStatus)
@@ -1351,12 +1339,12 @@
 
 //           setExistingDocuments(
 //             (fullEmployeeData.documents || []).map((d) => ({
-//               document_uuid: d.document_uuid,
-//               document_type: d.document_type,
-//               document_name: d.document_name,
-//               file_name: d.file_name,
+//               document_uuid: d.document_uuid ?? d.uuid,
+//               document_type: String(d.document_type ?? d.type ?? "").toUpperCase(),
+//               document_name: d.document_name ?? d.name,
+//               file_name: d.file_name ?? d.original_file_name ?? d.document_name ?? d.name,
 //               // Display-only. Never sent back to the server.
-//               display_path: d.file_path ?? d.file_key,
+//               display_path: d.file_path ?? d.file_url ?? d.url ?? d.file_key,
 //               mime_type: d.mime_type,
 //               file_size: d.file_size,
 //               verification_status: d.verification_status || "Pending",
@@ -1496,7 +1484,6 @@
 //     try {
 //       const personalPayload = cleanOptional({
 //     id_number: f.id_number,
-//     session_year: String(f.session_year || sessionYear || "").trim(),
 //     full_name: f.full_name.trim(),
 //     gender: f.gender,
 //     dob: f.dob,
@@ -2113,15 +2100,6 @@
 //                 onChange={(e) => setF({ ...f, id_number: e.target.value })}
 //               />
 //             </Field>
-
-//             <Field label="Session Year" error={errors.session_year}>
-//               <Input
-//                 value={f.session_year || sessionYear || ""}
-//                 readOnly
-//                 disabled
-//               />
-//             </Field>
-
 //             <Field label="Full name *" error={errors.full_name}>
 //               <Input
 //                 value={f.full_name}
@@ -2397,39 +2375,92 @@
 //                 }
 //               />
 //             </Field>
-//             <Field label="Current address *" wide error={errors.current_address}>
-//               <Textarea
-//                 rows={2}
-//                 value={f.current_address}
-//                 onChange={(e) =>
-//                   setF({ ...f, current_address: e.target.value })
-//                 }
-//               />
-//             </Field>
 //             <Field
-//               label="Permanent address *"
+//               label="Permanent Address *"
 //               wide
 //               error={errors.permanent_address}
 //             >
 //               <Textarea
 //                 rows={2}
 //                 value={f.permanent_address}
-//                 onChange={(e) =>
-//                   setF({ ...f, permanent_address: e.target.value })
-//                 }
+//                 onChange={(e) => {
+//                   const permanentAddress = e.target.value;
+//                   setF({
+//                     ...f,
+//                     permanent_address: permanentAddress,
+//                     current_address: f.residential_same_as_permanent
+//                       ? permanentAddress
+//                       : f.current_address,
+//                   });
+//                 }}
 //               />
 //             </Field>
-//             <Field label="City *" error={errors.city}>
-//               <Input
-//                 value={f.city}
-//                 onChange={(e) => setF({ ...f, city: e.target.value })}
-//               />
+//             <Field label="Residential Address *" wide error={errors.current_address}>
+//               <div className="space-y-2">
+//                 <label className="flex items-center gap-2 text-sm cursor-pointer">
+//                   <input
+//                     type="checkbox"
+//                     checked={f.residential_same_as_permanent}
+//                     onChange={(e) => {
+//                       const checked = e.target.checked;
+//                       setF({
+//                         ...f,
+//                         residential_same_as_permanent: checked,
+//                         current_address: checked
+//                           ? f.permanent_address
+//                           : f.current_address,
+//                       });
+//                     }}
+//                   />
+//                   <span>Same as Permanent Address</span>
+//                 </label>
+//                 <Textarea
+//                   rows={2}
+//                   value={f.current_address}
+//                   onChange={(e) =>
+//                     setF({ ...f, current_address: e.target.value })
+//                   }
+//                   disabled={f.residential_same_as_permanent}
+//                   placeholder="House no, street, locality"
+//                 />
+//               </div>
 //             </Field>
 //             <Field label="State *" error={errors.state}>
-//               <Input
+//               <select
 //                 value={f.state}
-//                 onChange={(e) => setF({ ...f, state: e.target.value })}
-//               />
+//                 onChange={(e) =>
+//                   setF({ ...f, state: e.target.value, city: "" })
+//                 }
+//                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-ring"
+//               >
+//                 <option value="">Select state</option>
+//                 {STATES.map((state) => (
+//                   <option key={state} value={state}>
+//                     {state}
+//                   </option>
+//                 ))}
+//               </select>
+//             </Field>
+//             <Field label="City *" error={errors.city}>
+//               <select
+//                 value={f.city}
+//                 onChange={(e) =>
+//                   setF({ ...f, city: e.target.value })
+//                 }
+//                 disabled={!f.state}
+//                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+//               >
+//                 <option value="">
+//                   {f.state ? "Select city" : "Select state first"}
+//                 </option>
+//                 {CITY_STATE_OPTIONS.filter((item) => item.state === f.state).map(
+//                   (item) => (
+//                     <option key={item.city} value={item.city}>
+//                       {item.city}
+//                     </option>
+//                   ),
+//                 )}
+//               </select>
 //             </Field>
 //             <Field label="PIN *" error={errors.pin}>
 //               <Input
@@ -2444,7 +2475,7 @@
 //             <Field label="Nationality" error={errors.nationality}>
 //               <Input
 //                 value={f.nationality}
-//                 onChange={(e) => setF({ ...f, nationality: e.target.value })}
+//                 readOnly
 //               />
 //             </Field>
 //             <Field label="Passport number" error={errors.passport_number}>
@@ -3207,7 +3238,6 @@
 //                   )}
 
 //                 <ReviewSection title="Personal" tabName="personal" onEdit={setTab}>
-//                   <ReviewRow label="Session Year" value={f.session_year || sessionYear} />
 //                   <ReviewRow label="Full name" value={f.full_name} />
 //                   <ReviewRow label="Gender" value={f.gender} />
 //                   <ReviewRow label="Date of birth" value={f.dob} />
@@ -3236,7 +3266,7 @@
 //                     <ReviewRow label="Spouse name" value={f.spouse_name} />
 //                   )}
 //                   <ReviewRow
-//                     label="Current address"
+//                     label="Residential address"
 //                     value={f.current_address}
 //                   />
 //                   <ReviewRow
@@ -3558,9 +3588,6 @@
 
 
 
-
-
-
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -3751,28 +3778,6 @@ const asOptions = (list, valueKeys, labelKeys) =>
       label: firstOf(item, labelKeys),
     }))
     .filter((opt) => opt.value !== "");
-
-const isEmployeeRole = (role) => {
-  const roleName = firstOf(role, [
-    "role_name",
-    "name",
-    "display_name",
-    "role",
-    "title",
-  ]);
-
-  const roleType = firstOf(role, [
-    "role_type",
-    "type",
-    "category",
-    "role_category",
-  ]);
-
-  return (
-    String(roleName || "").trim().toLowerCase() === "employee" ||
-    String(roleType || "").trim().toLowerCase() === "employee"
-  );
-};
 
 const getRoleUuid = (role) =>
   firstOf(role, ["role_uuid", "uuid", "role_id", "id"]);
@@ -4672,7 +4677,9 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
 
     Promise.all([
       safeFetch(getDepartments),
-      safeFetch(getRoles, { active_only: true, limit: 100 }),
+      // The roles API permits a maximum page size of 100. A larger value
+      // returns a validation error and would leave this dropdown empty.
+      safeFetch(getRoles, { active_only: false, limit: 100 }),
       safeFetch(getShifts),
       safeFetch(getClasses),
       safeFetch(getSubjects, { status: "Active" }),
@@ -4710,35 +4717,10 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
     };
   }, [open]);
 
-  // Auto-select the Employee role.
-  // The UI intentionally displays Role as read-only, but the backend still
-  // requires role_uuid. Resolve the UUID from the roles endpoint and keep it
-  // synchronized whenever the role list or form state changes.
-  useEffect(() => {
-    if (!Array.isArray(ref.roles) || ref.roles.length === 0) return;
-    if (f.role_uuid) return;
+  // Roles are loaded dynamically from the roles endpoint.
+  // The Role field is a normal dropdown so every role returned by the
+  // backend can be selected (not only the Employee role).
 
-    const employeeRole = ref.roles.find(isEmployeeRole);
-    const employeeRoleUuid = getRoleUuid(employeeRole);
-
-    if (!employeeRoleUuid) {
-      console.warn("Employee role was not found or has no UUID:", ref.roles);
-      return;
-    }
-
-    setF((prev) => ({
-      ...prev,
-      role_uuid: String(employeeRoleUuid),
-      employee_status: EMPLOYEE_STATUS.includes(prev.employee_status)
-        ? prev.employee_status
-        : "Active",
-    }));
-  }, [ref.roles, f.role_uuid]);
-
-  // Whenever we have a real draft_uuid backing the form in new-employee
-  // mode, remember it so the draft can be resumed later (see the
-  // load-effect below) or explicitly discarded via handleDiscardDraft /
-  // handleStartNewFromPrompt.
   useEffect(() => {
     if (draftUuid && !isEditMode) {
       localStorage.setItem(DRAFT_STORAGE_KEY, draftUuid);
@@ -5090,15 +5072,8 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
 
   // Step 2 - Job
   const saveJobStep = async () => {
-    // Resolve the Employee role UUID immediately before validation/save.
-    // This protects against a timing race where the form renders before
-    // getRoles() finishes, or a draft reset clears role_uuid.
-    let roleUuid = f.role_uuid;
-
-    if (!roleUuid && Array.isArray(ref.roles) && ref.roles.length > 0) {
-      const employeeRole = ref.roles.find(isEmployeeRole);
-      roleUuid = getRoleUuid(employeeRole) || "";
-    }
+    // Role is selected directly from the dynamic Role dropdown.
+    const roleUuid = f.role_uuid;
 
     const employeeStatus = EMPLOYEE_STATUS.includes(f.employee_status)
       ? f.employee_status
@@ -5110,8 +5085,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
       employee_status: employeeStatus,
     };
 
-    // Keep state synchronized so the read-only Role field and status select
-    // represent exactly what is sent to the backend.
+    // Keep the normalized status synchronized with the form state.
     if (f.role_uuid !== roleUuid || f.employee_status !== employeeStatus) {
       setF((prev) => ({
         ...prev,
@@ -5433,11 +5407,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
       try {
         const employeeData = await getEmployeeByUUID(employee.employee_uuid);
 
-        let roleUuid = f.role_uuid;
-        if (!roleUuid && Array.isArray(ref.roles) && ref.roles.length > 0) {
-          const employeeRole = ref.roles.find(isEmployeeRole);
-          roleUuid = getRoleUuid(employeeRole) || "";
-        }
+        const roleUuid = f.role_uuid;
 
         const normalizedEmployeeStatus = EMPLOYEE_STATUS.includes(f.employee_status)
           ? f.employee_status
@@ -6145,10 +6115,45 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
             </Field>
 
             <Field label="Role *" error={errors.role_uuid}>
-              <Input
-                value={f.role_uuid ? "Employee" : refLoading ? "Loading..." : "Employee"}
-                readOnly
-              />
+              <Select
+                value={f.role_uuid || ""}
+                onValueChange={(v) =>
+                  setF((prev) => ({
+                    ...prev,
+                    role_uuid: v,
+                  }))
+                }
+                disabled={refLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={refLoading ? "Loading roles..." : "Select role"}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {ref.roles.map((role) => {
+                    const roleUuid = getRoleUuid(role);
+                    const roleName = firstOf(role, [
+                      "role_name",
+                      "name",
+                      "display_name",
+                      "role",
+                      "title",
+                    ]);
+
+                    if (!roleUuid) return null;
+
+                    return (
+                      <SelectItem
+                        key={String(roleUuid)}
+                        value={String(roleUuid)}
+                      >
+                        {roleName || String(roleUuid)}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
             </Field>
 
             <Field label="Designation *" error={errors.designation}>

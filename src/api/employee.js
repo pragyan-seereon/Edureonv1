@@ -374,12 +374,17 @@ export const deactivateEmployee = async (employeeUUID) => {
 // Roles API
 // ===============================
 export const getRoles = async (params = {}) => {
-  const response = await api.get("/super/roles", {
+  const instituteUUID = useAuthStore.getState().instituteUUID;
+  const endpoint = instituteUUID
+    ? `/super/roles/institute/${instituteUUID}`
+    : "/super/roles";
+
+  const response = await api.get(endpoint, {
     params: {
-      institute_uuid: useAuthStore.getState().instituteUUID,
-      active_only: params.active_only || false,
+      active_only: params.active_only ?? false,
       page: params.page || 1,
       limit: params.limit || 100,
+      ...(instituteUUID ? { include_global_roles: true } : {}),
       ...params
     },
     headers: getHeaders(),

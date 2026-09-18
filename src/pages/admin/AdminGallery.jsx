@@ -884,6 +884,16 @@ import {
   getAlbumDetail,
   updateAlbum,
 } from "../../api/gallery";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../components/ui/alert-dialog";
 
 // UI label <-> API enum for the "audience" field
 const AUDIENCE_TO_API = {
@@ -945,6 +955,8 @@ export default function AdminGallery() {
   const [openMenu, setOpenMenu] = useState(null);
   const [previewAlbum, setPreviewAlbum] = useState(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [albumToDelete, setAlbumToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [form, setForm] = useState({
     title: "",
@@ -1072,24 +1084,28 @@ export default function AdminGallery() {
     }
   };
 
-  const handleDelete = async (albumUuid) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this album?"
-    );
-
-    if (!confirmed) return;
-
+  const requestDelete = (album) => {
     setOpenMenu(null);
+    setAlbumToDelete(album);
+  };
+
+  const handleDelete = async () => {
+    if (!albumToDelete) return;
+
+    setIsDeleting(true);
 
     try {
-      await deleteAlbum(albumUuid);
-      setAlbums((prev) => prev.filter((album) => album.uuid !== albumUuid));
+      await deleteAlbum(albumToDelete.uuid);
+      setAlbums((prev) => prev.filter((album) => album.uuid !== albumToDelete.uuid));
       setStats((prev) => ({
         ...prev,
         albums: Math.max(0, (prev.albums || 0) - 1),
       }));
+      setAlbumToDelete(null);
     } catch (err) {
       alert(err?.response?.data?.detail || "Couldn't delete the album. Please try again.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -1198,7 +1214,7 @@ export default function AdminGallery() {
               setOpenMenu={setOpenMenu}
               onPreview={() => handlePreview(album)}
               onEdit={() => handleEdit(album)}
-              onDelete={() => handleDelete(album.uuid)}
+              onDelete={() => requestDelete(album)}
               onTogglePublish={() => handleTogglePublish(album)}
             />
           ))}
@@ -1229,6 +1245,39 @@ export default function AdminGallery() {
           onClose={() => setPreviewAlbum(null)}
         />
       )}
+
+      <AlertDialog
+        open={Boolean(albumToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setAlbumToDelete(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-[575px] gap-5 rounded-xl border border-slate-200 bg-[#f8fbfd] p-7 shadow-2xl">
+          <AlertDialogHeader className="space-y-2">
+            <AlertDialogTitle className="text-xl font-semibold text-slate-900">
+              Delete album
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-[15px] leading-6 text-slate-500">
+              Delete the &quot;{albumToDelete?.title}&quot; album? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:space-x-0">
+            <AlertDialogCancel
+              disabled={isDeleting}
+              className="mt-0 border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

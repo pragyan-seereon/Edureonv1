@@ -132,7 +132,7 @@ const VIEWS = [
 const TIMETABLE_TYPES = [
   { id: "regular", label: "Regular Timetable" },
   { id: "summer", label: "Summer Timetable" },
-  { id: "examination", label: "Examination Timetable" },
+  // { id: "examination", label: "Examination Timetable" },
   { id: "additional", label: "Additional Timetable" },
 ];
 

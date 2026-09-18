@@ -75,7 +75,7 @@ import {
 } from "../../components/pagination-controls";
 
 const cats = ["Academic", "Events", "Fees", "Holiday", "Exam", "General"];
-const auds = ["All", "Teachers", "Students", "Parents", "Staff", "Class"];
+const auds = ["All", "Teachers", "Students", "Staff", "Class"];
 
 // The /communications (Notices) backend schema (NoteCreateRequest /
 // NoteUpdateRequest) has NO class_uuid / section_uuid fields at all, so a
@@ -83,7 +83,7 @@ const auds = ["All", "Teachers", "Students", "Parents", "Staff", "Class"];
 // class it targets. Only offer the audiences the backend can actually
 // store for this endpoint; "Class" stays available for Academic Calendar /
 // Events / Holidays, which DO collect class_uuid / section_uuid.
-const NOTE_AUDIENCES = ["All", "Teachers", "Students", "Parents", "Staff"];
+const NOTE_AUDIENCES = ["All", "Teachers", "Students",  "Staff"];
 
 const ACCEPTED_TYPES = ["application/pdf", "image/", "video/"];
 const MAX_FILE_SIZE_MB = 25;

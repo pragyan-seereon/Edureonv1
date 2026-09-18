@@ -18,3 +18,12 @@ export const getTeacherClasses = async () => {
 
   return data;
 };
+
+export const getTeacherDashboard = async (academicYear) => {
+  const { data } = await api.get("/teacher-portal/dashboard", {
+    headers: getHeaders(),
+    params: { academic_year: academicYear },
+  });
+
+  return data;
+};

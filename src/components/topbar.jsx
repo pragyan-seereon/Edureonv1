@@ -1,7 +1,8 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Building2, Moon, Search, Sun } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Bell, Building2, GraduationCap, Moon, Search, School, Sun, UserCog } from "lucide-react";
 import { getAuthorizationContext, selectInstitute } from "../api/auth";
 import { getInstitutes } from "../api/Institute";
 import useAuthStore from "../store/authStore";
@@ -14,12 +15,21 @@ import { Input } from "./ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { SidebarTrigger } from "./ui/sidebar";
 import { portalRoleForUser } from "../lib/portal-nav";
+import { getAllStudents } from "../api/students";
+import { getEmployees } from "../api/employee";
+import { getClasses } from "../api/Class";
+import { getSubjects } from "../api/subject";
+import { getUsers } from "../api/user";
 
 const getInstituteId = (institute) => institute?.institute_uuid ?? institute?.uuid ?? institute?.id;
 const getInstituteName = (institute) => institute?.institute_name ?? institute?.name ?? "Institute";
 
 export function Topbar() {
+  const navigate = useNavigate();
   const [dark, setDark] = useState(false);
+  const [globalQuery, setGlobalQuery] = useState("");
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [entityResults, setEntityResults] = useState([]);
   const [superAdminInstitutes, setSuperAdminInstitutes] = useState([]);
   const [loadingInstitutes, setLoadingInstitutes] = useState(false);
   const [switchingInstitute, setSwitchingInstitute] = useState(false);
@@ -44,6 +54,141 @@ export function Topbar() {
     const start = currentYear + 2 - index;
     return { value: `${start}-${String(start + 1).slice(-2)}`, label: `AY ${start}-${String(start + 1).slice(-2)}` };
   });
+  const openSearchResult = (item) => {
+    navigate(item.url);
+    setGlobalQuery("");
+    setShowSearchResults(false);
+  };
+
+  useEffect(() => {
+    const query = globalQuery.trim().toLowerCase();
+    if (query.length < 2) {
+      setEntityResults([]);
+      return undefined;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      const [studentsResponse, employeesResponse, classesResponse, subjectsResponse, usersResponse] =
+        await Promise.allSettled([
+          getAllStudents(sessionYear),
+          getEmployees({ page: 1, limit: 5, search: query }),
+          getClasses(),
+          getSubjects(),
+          getUsers({ page: 1, page_size: 10 }),
+        ]);
+      if (!active) return;
+
+      const responseList = (response) => {
+        const payload = response?.data ?? response;
+        if (Array.isArray(payload?.data)) return payload.data;
+        if (Array.isArray(payload?.items)) return payload.items;
+        if (Array.isArray(payload?.results)) return payload.results;
+        if (Array.isArray(payload?.users)) return payload.users;
+        if (Array.isArray(payload)) return payload;
+        return [];
+      };
+      const students = studentsResponse.status === "fulfilled"
+        ? responseList(studentsResponse.value)
+        : [];
+      const employees = employeesResponse.status === "fulfilled"
+        ? responseList(employeesResponse.value)
+        : [];
+      const classes = classesResponse.status === "fulfilled"
+        ? responseList(classesResponse.value)
+        : [];
+      const subjects = subjectsResponse.status === "fulfilled"
+        ? responseList(subjectsResponse.value)
+        : [];
+      const users = usersResponse.status === "fulfilled"
+        ? responseList(usersResponse.value)
+        : [];
+
+      const matches = [
+        ...students
+          .filter((student) =>
+            `${student.full_name ?? ""} ${student.admission_no ?? ""} ${student.student_no ?? ""}`
+              .toLowerCase()
+              .includes(query),
+          )
+          .slice(0, 4)
+          .map((student) => ({
+            id: `student-${student.student_uuid}`,
+            title: student.full_name || "Student",
+            detail: student.admission_no || student.student_no || "Student",
+            category: "Student",
+            icon: GraduationCap,
+            url: student.student_uuid ? `/students/${student.student_uuid}` : "/students",
+          })),
+        ...employees
+          .filter((employee) =>
+            `${employee.full_name ?? ""} ${employee.employee_no ?? ""} ${employee.email ?? ""}`
+              .toLowerCase()
+              .includes(query),
+          )
+          .slice(0, 4)
+          .map((employee) => ({
+            id: `employee-${employee.employee_uuid}`,
+            title: employee.full_name || "Employee",
+            detail: employee.employee_no || employee.designation || "Employee",
+            category: "Employee",
+            icon: UserCog,
+            url: "/employees",
+          })),
+        ...classes
+          .filter((item) =>
+            `${item.class_name ?? ""} ${item.stream ?? ""}`
+              .toLowerCase()
+              .includes(query),
+          )
+          .slice(0, 4)
+          .map((item) => ({
+            id: `class-${item.class_uuid}`,
+            title: item.class_name || "Class",
+            detail: item.stream || "Class",
+            category: "Class",
+            icon: School,
+            url: "/classes?tab=classes",
+          })),
+        ...subjects
+          .filter((subject) =>
+            `${subject.subject_name ?? ""} ${subject.subject_code ?? ""} ${subject.department ?? ""}`
+              .toLowerCase()
+              .includes(query),
+          )
+          .slice(0, 4)
+          .map((subject) => ({
+            id: `subject-${subject.subject_uuid}`,
+            title: subject.subject_name || "Subject",
+            detail: subject.subject_code || subject.department || "Subject",
+            category: "Subject",
+            icon: School,
+            url: subject.subject_uuid ? `/subjects/${subject.subject_uuid}` : "/classes?tab=subjects",
+          })),
+        ...users
+          .filter((siteUser) =>
+            `${siteUser.full_name ?? siteUser.name ?? ""} ${siteUser.email ?? ""} ${siteUser.user_no ?? ""}`
+              .toLowerCase()
+              .includes(query),
+          )
+          .slice(0, 4)
+          .map((siteUser) => ({
+            id: `user-${siteUser.user_uuid ?? siteUser.uuid ?? siteUser.id}`,
+            title: siteUser.full_name || siteUser.name || "User",
+            detail: siteUser.email || siteUser.user_no || "User",
+            category: "User",
+            icon: UserCog,
+            url: "/super/users",
+          })),
+      ];
+      setEntityResults(matches);
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [globalQuery, sessionYear]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -137,7 +282,62 @@ export function Topbar() {
       <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
       <div className="relative ml-2 hidden max-w-md flex-1 md:flex">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder="Search students, employees, classes..." className="h-9 border-border/60 bg-muted/40 pl-9" />
+        <Input
+          value={globalQuery}
+          onChange={(event) => {
+            setGlobalQuery(event.target.value);
+            setShowSearchResults(true);
+          }}
+          onFocus={() => setShowSearchResults(true)}
+          onBlur={() => window.setTimeout(() => setShowSearchResults(false), 150)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setShowSearchResults(false);
+              event.currentTarget.blur();
+            }
+            if (event.key === "Enter" && entityResults[0]) {
+              event.preventDefault();
+              openSearchResult(entityResults[0]);
+            }
+          }}
+          placeholder="Search pages, students, employees, classes..."
+          className="h-9 border-border/60 bg-muted/40 pl-9"
+          aria-label="Global search"
+          aria-expanded={showSearchResults && globalQuery.trim().length > 0}
+        />
+        {showSearchResults && globalQuery.trim() && (
+          <div className="absolute left-0 top-full z-50 mt-1 w-full overflow-hidden rounded-md border bg-popover p-1 shadow-lg">
+            {entityResults.length > 0 ? (
+              <>
+                {entityResults.length > 0 && (
+                  <p className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Records
+                  </p>
+                )}
+                {entityResults.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-muted"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => openSearchResult(item)}
+                  >
+                    <item.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {item.title}
+                      <span className="ml-1 text-xs text-muted-foreground">{item.detail}</span>
+                    </span>
+                    <span className="text-xs text-muted-foreground">{item.category}</span>
+                  </button>
+                ))}
+              </>
+            ) : (
+              <p className="px-2 py-3 text-sm text-muted-foreground">
+                No matching records found.
+              </p>
+            )}
+          </div>
+        )}
       </div>
       <div className="flex-1 md:hidden" />
       <div className="ml-auto flex items-center gap-1.5">

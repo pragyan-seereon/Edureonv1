@@ -156,7 +156,7 @@ const superGroups = [
     label: "HR & Staff",
     items: [
       { title: "Employees", url: "/employees", icon: UserCog },
-      { title: "Payroll", url: "/payroll", icon: Briefcase },
+      // { title: "Payroll", url: "/payroll", icon: Briefcase },
       { title: "Shift", url: "/shift", icon: Clock3 },
 
     ],

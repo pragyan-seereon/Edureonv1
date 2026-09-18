@@ -4850,6 +4850,11 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
     if (!open) return;
 
     if (employee) {
+      // Files picked while creating a draft are only local browser state. They
+      // must never carry into an edit session and masquerade as files waiting
+      // to be uploaded again.
+      setDocFiles({});
+
       const loadEmployeeData = async () => {
         try {
           const fullEmployeeData = await getEmployeeByUUID(employee.employee_uuid);
@@ -4890,12 +4895,12 @@ export function EmployeeDialog({ open, onOpenChange, employee, onSuccess }) {
 
           setExistingDocuments(
             (fullEmployeeData.documents || []).map((d) => ({
-              document_uuid: d.document_uuid,
-              document_type: d.document_type,
-              document_name: d.document_name,
-              file_name: d.file_name,
+              document_uuid: d.document_uuid ?? d.uuid,
+              document_type: String(d.document_type ?? d.type ?? "").toUpperCase(),
+              document_name: d.document_name ?? d.name,
+              file_name: d.file_name ?? d.original_file_name ?? d.document_name ?? d.name,
               // Display-only. Never sent back to the server.
-              display_path: d.file_path ?? d.file_key,
+              display_path: d.file_path ?? d.file_url ?? d.url ?? d.file_key,
               mime_type: d.mime_type,
               file_size: d.file_size,
               verification_status: d.verification_status || "Pending",

@@ -59,6 +59,7 @@ import {
   importEmployeeExcel,
 } from "../../../api/employee";
 import useAuthStore from "../../../store/authStore";
+import { getEmployeeImageUrl, getMediaUrl } from "../../../lib/media-url";
 
 export default function EmployeesPage() {
   const { instituteUUID } = useAuthStore();
@@ -138,9 +139,12 @@ export default function EmployeesPage() {
         document_count: emp.document_count || 0,
         created_at: emp.created_at,
         updated_at: emp.updated_at,
-        profile_image: emp.profile_image,
+        profile_image: getEmployeeImageUrl({
+          ...emp,
+          documents: emp.documents || emp.employee_documents || [],
+        }),
         assignments: emp.assignments || [],
-        documents: emp.documents || [],
+        documents: emp.documents || emp.employee_documents || [],
         raw_data: emp
       }));
       
@@ -223,7 +227,10 @@ export default function EmployeesPage() {
         fullEmployee = {
           ...employee,
           ...response,
-          documents: response.documents || employee.documents || [],
+          // A newly submitted draft can return its files under
+          // `employee_documents`; prefer the detail response so documents are
+          // visible straight after employee creation.
+          documents: response.documents || response.employee_documents || employee.documents || [],
         };
       } catch (error) {
         console.warn("Could not fetch full employee details, using existing data");
@@ -506,7 +513,7 @@ export default function EmployeesPage() {
                         <div className="flex items-center gap-2.5">
                           {e.profile_image ? (
                             <img 
-                              src={e.profile_image} 
+                              src={getMediaUrl(e.profile_image)}
                               alt={e.full_name}
                               className="h-8 w-8 rounded-full object-cover"
                             />

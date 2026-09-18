@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable react-hooks/set-state-in-effect */
 // /* eslint-disable react-hooks/set-state-in-effect */
 // import { PageContainer, PageHeader } from "../../components/page-shell";
 // import { KpiCard } from "../../components/kpi-card";
@@ -818,25 +820,7 @@ import {
   publishExamMarks,
   updateExamMarks,
 } from "../../api/exam";
-import {
-  examsApi,
-  marksApi,
-  questionsApi,
-  useExams,
-  useMarkEntries,
-  useQuestions,
-} from "../../lib/store";
 import { useTeacherCtx } from "../../lib/teacher-ctx";
-
-const CATEGORIES = [
-  "Unit Test",
-  "Chapter Test",
-  "Term 1",
-  "Half Yearly",
-  "Term 2",
-  "Pre-board",
-  "Annual",
-];
 
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
 
@@ -851,19 +835,10 @@ const emptyQuestionRow = () => ({
 });
 
 export default function TeacherExams() {
-  const { teacherName, classes, subjects } = useTeacherCtx();
-  const exams = useExams();
-  const marks = useMarkEntries();
-  const questions = useQuestions();
-
-  const myClassRoots = useMemo(
-    () => classes.map((c) => c.split("-")[0]),
-    [classes],
-  );
+  const { teacherName } = useTeacherCtx();
   const [teacherExams, setTeacherExams] = useState([]);
-  const [teacherExamsLoaded, setTeacherExamsLoaded] = useState(false);
   const [internalTests, setInternalTests] = useState([]);
-  const [examCategories, setExamCategories] = useState(CATEGORIES);
+  const [examCategories, setExamCategories] = useState([]);
   const [categoryRecords, setCategoryRecords] = useState([]);
   const [teacherScopes, setTeacherScopes] = useState([]);
 
@@ -878,8 +853,8 @@ export default function TeacherExams() {
           setExamCategories(categoryNames);
           setCategoryRecords(response.items);
         }
-      } catch {
-        // The standard categories remain available if the request fails.
+      } catch (error) {
+        toast.error(error?.response?.data?.detail ?? "Unable to load exam categories");
       }
     };
 
@@ -917,7 +892,6 @@ export default function TeacherExams() {
           status: exam.status,
           subject: exam.subject_name,
         })));
-        setTeacherExamsLoaded(true);
       } catch (error) {
         if (active) {
           toast.error(error?.response?.data?.detail ?? "Unable to load your exams");
@@ -945,25 +919,13 @@ export default function TeacherExams() {
     return () => { active = false; };
   }, []);
 
-  const visibleExams = useMemo(
-    () => {
-      // The backend endpoint already applies the logged-in teacher's
-      // class/section/subject scope.  Do not compare its real class names to
-      // the local mock context labels (for example "Class 10" vs "X-B").
-      if (teacherExamsLoaded) return teacherExams;
-
-      return exams.filter(
-        (e) => classes.includes(e.class) || myClassRoots.includes(e.class),
-      );
-    },
-    [teacherExamsLoaded, teacherExams, exams, classes, myClassRoots],
-  );
+  const visibleExams = teacherExams;
 
   const [openTest, setOpenTest] = useState(false);
   const emptyTest = {
-    category: "Unit Test",
-    klass: classes[0] ?? "X-B",
-    subject: subjects[0] ?? "Math",
+    category: "",
+    klass: "",
+    subject: "",
     from: "",
     to: "",
     maxMarks: 25,
@@ -1002,6 +964,14 @@ export default function TeacherExams() {
       subject: subjectName,
     }));
   }, [scopedClasses, teacherScopes]);
+
+  useEffect(() => {
+    if (!examCategories.length) return;
+    setTestForm((form) => ({
+      ...form,
+      category: form.category || examCategories[0],
+    }));
+  }, [examCategories]);
 
   const [markExam, setMarkExam] = useState(visibleExams[0]?.id ?? "");
   const [draft, setDraft] = useState({});
@@ -1174,7 +1144,7 @@ export default function TeacherExams() {
     }));
   };
 
-  const createTest = () => {
+  /* const createTest = () => {
     if (!testForm.name.trim()) return toast.error("Test name required");
     examsApi.add({
       name: `${testForm.category} — ${testForm.name} (${testForm.subject})`,
@@ -1199,7 +1169,7 @@ export default function TeacherExams() {
     setOpenTest(false);
     toast.success(`Internal test assigned to ${testForm.klass}`);
     setTestForm({ ...emptyTest, klass: testForm.klass, subject: testForm.subject });
-  };
+  }; */
 
   const createTestFromBackend = async () => {
     const category = categoryRecords.find(
@@ -1262,7 +1232,6 @@ export default function TeacherExams() {
         section_name: scope.section_name,
         subject_name: testForm.subject,
       }, ...items]);
-      setTeacherExamsLoaded(true);
       setOpenTest(false);
       toast.success("Internal test created and assigned");
       setTestForm({ ...emptyTest, klass: testForm.klass, subject: testForm.subject });
@@ -1274,18 +1243,18 @@ export default function TeacherExams() {
   const grouped = useMemo(() => {
     const map = {};
     visibleExams.forEach((e) => {
-      const cat =
-        e.category ?? CATEGORIES.find((c) => e.name.toLowerCase().includes(c.toLowerCase())) ??
-        "Other";
+      const cat = e.category || "Other";
       (map[cat] ||= []).push(e);
     });
     return map;
   }, [visibleExams]);
 
-  const myQuestions = questions.filter(
-    (q) =>
-      subjects.includes(q.subject) &&
-      (!q.className || classes.includes(q.className) || myClassRoots.includes(q.className)),
+  const classCount = new Set(
+    teacherScopes.map((scope) => `${scope.class_uuid}-${scope.section_uuid}`),
+  ).size;
+  const questionCount = internalTests.reduce(
+    (total, test) => total + Number(test.question_count ?? test.questions?.length ?? 0),
+    0,
   );
 
   return (
@@ -1533,7 +1502,7 @@ export default function TeacherExams() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
         <KpiCard
           label="My Classes"
-          value={String(classes.length)}
+          value={String(classCount)}
           icon={<BookOpen className="h-5 w-5" />}
           tone="primary"
         />
@@ -1551,13 +1520,13 @@ export default function TeacherExams() {
         />
         <KpiCard
           label="My Question Items"
-          value={String(myQuestions.length)}
+          value={String(questionCount)}
           icon={<BookOpen className="h-5 w-5" />}
           tone="warning"
         />
       </div>
 
-      <Tabs defaultValue="schedule">
+      <Tabs defaultValue="categories">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="schedule">Categories & Schedule</TabsTrigger>
@@ -1582,6 +1551,11 @@ export default function TeacherExams() {
                   </Badge>
                 ))}
               </div>
+              {examCategories.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No exam categories are available.
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

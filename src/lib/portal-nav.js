@@ -197,6 +197,7 @@ const superGroups = [
       // { title: "Communication", url: "/communication", icon: MessageSquare },
       // { title: "Class maintenance", url: "/classroom-maintenance", icon: GraduationCap },
       // { title: "Id Cards", url: "/id-cards", icon: IdCard },
+      { title: "Gallery",url: "/Gallery", icon: Images, },
       { title: "Gate Pass", url: "/gate-pass", icon: ShieldCheck },
 
 
@@ -352,11 +353,11 @@ const studentGroups = [
         url: "/notifications",
         icon: Bell,
       },
-      {
-        title: "My Profile",
-        url: "/profile",
-        icon: UserIcon,
-      },
+      // {
+      //   title: "My Profile",
+      //   url: "/profile",
+      //   icon: UserIcon,
+      // },
     ],
   },
 ];

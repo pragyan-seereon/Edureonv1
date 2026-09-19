@@ -1470,7 +1470,9 @@ function seedFrom(str) {
 }
 
 export default function StudentDetails() {
-  const { id } = useParams();
+  // The route is created from the student list's `student_uuid`. Keep that
+  // value as the source of truth for every student-scoped request below.
+  const { id: studentUuid } = useParams();
   const navigate = useNavigate();
 
   const [editOpen, setEditOpen] = useState(false);
@@ -1498,29 +1500,42 @@ export default function StudentDetails() {
 
   useEffect(() => {
     loadStudent();
-  }, [id]);
+  }, [studentUuid]);
 
   const loadStudent = async () => {
+    if (!studentUuid) {
+      setS(null);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      const res = await getStudentByUuid(id);
+      const res = await getStudentByUuid(studentUuid);
 
-      const student = res.data.student;
+      // Support both response envelopes used by the student APIs while
+      // retaining the route UUID for related API calls.
+      const student =
+        res?.data?.student ??
+        res?.data?.data?.student ??
+        res?.data?.data ??
+        res?.data ??
+        null;
 
       setS(student);
 
-      if (student?.student_uuid) {
+      if (student) {
         const activityRes = await getStudentActivity(
-          student.student_uuid
+          studentUuid
         );
         setActivityLogs(activityRes.data || []);
 
         setAcademicLoading(true);
         const unwrap = (response) => response?.data?.data ?? response?.data ?? response;
         const [attendanceResult, assignmentsResult, resultsResult] = await Promise.allSettled([
-          getStudentAttendance(student.student_uuid),
-          getStudentAssignments(student.student_uuid),
-          getStudentResults(student.student_uuid),
+          getStudentAttendance(studentUuid),
+          getStudentAssignments(studentUuid),
+          getStudentResults(studentUuid),
         ]);
 
         setAttendanceData(
@@ -1549,7 +1564,7 @@ export default function StudentDetails() {
           setPaymentsLoading(true);
 
           const paymentRes = await getStudentPayments(
-            student.student_uuid
+            studentUuid
           );
 
           console.log("Student Payments:", paymentRes.data);
@@ -2440,9 +2455,22 @@ function ResultsTab({ results, loading, onPrint }) {
   }));
   const [examId, setExamId] = useState("");
   const activeExam = examTypes.find((exam) => exam.id === examId) || examTypes[0];
-  const rawRows = activeExam?.raw?.subjects || activeExam?.raw?.subject_results || activeExam?.raw?.marks || [];
+  const rawRows =
+    activeExam?.raw?.subjects ||
+    activeExam?.raw?.subject_results ||
+    activeExam?.raw?.subject_marks ||
+    activeExam?.raw?.marks ||
+    [];
   const rows = rawRows.map((row) => {
-    const obtained = Number(row.obtained_marks ?? row.marks_obtained ?? row.obtained ?? row.score ?? 0);
+    // Published result snapshots store the entered score as `marks`.
+    const obtained = Number(
+      row.marks ??
+        row.obtained_marks ??
+        row.marks_obtained ??
+        row.obtained ??
+        row.score ??
+        0
+    );
     const max = Number(row.max_marks ?? row.total_marks ?? row.maximum_marks ?? 0);
     const pct = max ? Math.round((obtained / max) * 100) : 0;
     return {

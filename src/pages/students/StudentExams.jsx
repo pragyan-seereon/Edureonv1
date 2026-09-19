@@ -14,6 +14,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from "recharts";
 import { toast } from "sonner";
 import studentModel from "../../api/studentModel";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 // Route registration (add this in your router file, e.g. router.jsx):
 //   import StudentExamsPage from "./pages/student/Exams";
@@ -99,6 +101,83 @@ export default function StudentExamsPage() {
 
   const radarData = examRows.map((m) => ({ subject: m.subject, score: Math.round(((m.obtained ?? 0) / m.max) * 100), fullMark: 100 }));
   const barData = examRows.map((m) => ({ subject: m.subject, obtained: m.obtained ?? 0, max: m.max }));
+  const selectedExamName = myMarks.find((mark) => mark.examId === selectedExam)?.examName ?? "Exam Report";
+
+  const downloadReportPdf = () => {
+    if (!examRows.length) {
+      toast.error("No marks are available for the selected exam.");
+      return;
+    }
+
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const studentName = me?.name ?? "Student";
+    const classSection = [me?.class, me?.section].filter(Boolean).join(" - ") || myClass;
+
+    doc.setFillColor(20, 58, 105);
+    doc.rect(0, 0, 210, 30, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.text("MOTHER'S PUBLIC SCHOOL", 15, 15);
+    doc.setFontSize(10);
+    doc.text("STUDENT REPORT CARD", 15, 22);
+
+    doc.setTextColor(20, 32, 48);
+    doc.setFontSize(16);
+    doc.text(selectedExamName, 15, 43);
+    doc.setFontSize(10);
+    doc.setTextColor(75, 85, 99);
+    doc.text(`Student: ${studentName}`, 15, 51);
+    doc.text(`Class: ${classSection}`, 15, 57);
+
+    doc.setDrawColor(220, 228, 235);
+    doc.roundedRect(15, 65, 180, 24, 2, 2, "S");
+    doc.setTextColor(75, 85, 99);
+    doc.setFontSize(9);
+    doc.text("TOTAL", 23, 74);
+    doc.text("PERCENTAGE", 70, 74);
+    doc.text("GRADE", 120, 74);
+    doc.text("GPA", 160, 74);
+    doc.setTextColor(20, 32, 48);
+    doc.setFontSize(14);
+    doc.text(`${totalObt}/${totalMax}`, 23, 83);
+    doc.text(`${pct}%`, 70, 83);
+    doc.text(grade(pct), 120, 83);
+    doc.text(`${gpa(pct)}/10`, 160, 83);
+
+    autoTable(doc, {
+      startY: 98,
+      head: [["Subject", "Maximum", "Obtained", "Percentage", "Grade", "Remark"]],
+      body: examRows.map((mark) => {
+        const subjectPct = mark.isAbsent
+          ? 0
+          : Math.round(((mark.obtained ?? 0) / mark.max) * 100);
+        return [
+          mark.subject,
+          String(mark.max),
+          mark.isAbsent ? "Absent" : String(mark.obtained ?? "-"),
+          mark.isAbsent ? "-" : `${subjectPct}%`,
+          mark.isAbsent ? "-" : grade(subjectPct),
+          mark.isAbsent
+            ? "Absent"
+            : subjectPct >= 75
+              ? "Excellent"
+              : subjectPct >= 60
+                ? "Good"
+                : subjectPct >= 40
+                  ? "Needs work"
+                  : "Improvement needed",
+        ];
+      }),
+      theme: "grid",
+      headStyles: { fillColor: [20, 58, 105], textColor: 255 },
+      styles: { fontSize: 9, cellPadding: 3 },
+      columnStyles: { 0: { cellWidth: 55 } },
+    });
+
+    const filename = `report-card-${selectedExamName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "exam"}`.concat(".pdf");
+    doc.save(filename);
+    toast.success("Report card PDF downloaded");
+  };
 
   return (
     <PageContainer>
@@ -242,7 +321,7 @@ export default function StudentExamsPage() {
                   <SelectTrigger className="h-9 w-56"><SelectValue /></SelectTrigger>
                   <SelectContent>{examIds.map((id) => <SelectItem key={id} value={id}>{myMarks.find((mark) => mark.examId === id)?.examName ?? id}</SelectItem>)}</SelectContent>
                 </Select>
-                <Button size="sm" variant="outline" onClick={() => toast.success("Report card PDF downloaded")}><Download className="h-4 w-4" />PDF</Button>
+                <Button size="sm" variant="outline" onClick={downloadReportPdf}><Download className="h-4 w-4" />PDF</Button>
               </div>
             </CardHeader>
             <CardContent>

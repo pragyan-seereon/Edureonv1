@@ -507,7 +507,8 @@ const subjectsForClass = (className) => classSubjectsMap[className] ?? [];
       studentUuid: r.student_uuid,
       sectionUuid: r.section_uuid,
       name: r.student_name,
-      roll: matchedStudent?.rollNo ?? "—",
+      // The results API returns roll_no directly, unlike the student cache.
+      roll: r.roll_no ?? r.roll_number ?? matchedStudent?.rollNo ?? "—",
       admissionNo: matchedStudent?.admissionNo,
       section: r.section_name,
       subjects: (r.subject_marks ?? []).map((sm) => ({

@@ -63,6 +63,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   getLessonPlans,
@@ -238,6 +239,10 @@ const mapLessonPlan = (p) => ({
 });
 
 export default function TeacherAssignmentsPage() {
+  const [searchParams] = useSearchParams();
+  const targetClassUuid = searchParams.get("classUuid");
+  const targetSectionUuid = searchParams.get("sectionUuid");
+  const targetClassFilter = searchParams.get("classFilter");
   const [materials, setMaterials] = useState([]);
   const [materialsLoading, setMaterialsLoading] = useState(false);
 
@@ -363,7 +368,7 @@ export default function TeacherAssignmentsPage() {
   const [openM, setOpenM] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [activeSub, setActiveSub] = useState(null);
-  const [classF, setClassF] = useState("All");
+  const [classF, setClassF] = useState(() => targetClassFilter || "All");
   // This page can remount after a mutation. Keep the selected workspace tab
   // outside component state so a material/plan save never falls back to
   // Assignments.
@@ -381,12 +386,19 @@ export default function TeacherAssignmentsPage() {
 
   const classOptions = useMemo(() => {
     const set = new Set(mine.map((a) => a.klass).filter(Boolean));
+    if (targetClassFilter) set.add(targetClassFilter);
     return [...set].sort();
-  }, [mine]);
+  }, [mine, targetClassFilter]);
 
   const filtered = useMemo(
-    () => mine.filter((a) => classF === "All" || a.klass === classF),
-    [mine, classF],
+    () =>
+      mine.filter((a) => {
+        if (targetClassUuid && a.classUuid !== targetClassUuid) return false;
+        if (targetSectionUuid && a.sectionUuid !== targetSectionUuid)
+          return false;
+        return classF === "All" || a.klass === classF;
+      }),
+    [mine, classF, targetClassUuid, targetSectionUuid],
   );
 
   const [assignPage, setAssignPage] = useState(1);
@@ -462,8 +474,9 @@ export default function TeacherAssignmentsPage() {
   const [filteredSections, setFilteredSections] = useState([]);
   const [students, setStudents] = useState([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [savingDraft] = useState(false);
-  const [publishing, setPublishing] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState(null);
 
   // Edit / delete state
   const [editingUuid, setEditingUuid] = useState(null);
@@ -540,10 +553,17 @@ export default function TeacherAssignmentsPage() {
   useEffect(() => {
     const sec = sectionsList.filter((s) => s.class_uuid === formA.classNum);
     setFilteredSections(sec);
-    if (editingUuid) return;
+    // Picker data loads after the dialog opens. Until it has loaded, retain
+    // the section supplied by the Classes-page link.
+    if (editingUuid || !sectionsList.length) return;
     setFormA((prev) => ({
       ...prev,
-      section: sec.length ? sec[0].section_uuid : "",
+      section:
+        prev.section && sec.some((s) => s.section_uuid === prev.section)
+          ? prev.section
+          : sec.length
+            ? sec[0].section_uuid
+            : "",
     }));
   }, [formA.classNum, sectionsList, editingUuid]);
 
@@ -667,30 +687,36 @@ export default function TeacherAssignmentsPage() {
 
   // eslint-disable-next-line no-unused-vars
 
-  const handlePublish = async () => {
+   const submitAssignment = async (status, key) => {
     if (!validateAssignmentForm())
       return toast.error("Complete the required fields.");
 
     const fd = buildFormData();
-    fd.append("status", "PUBLISHED");
+    fd.append("status", status);
     if (formA.draftUuid) fd.append("draft_uuid", formA.draftUuid);
 
-    setPublishing(true);
+    setSubmitStatus(key);
     try {
       const res = await publishAssignment(fd);
       if (res?.success) {
-        toast.success(res.message || "Published & notified");
+        const successMsg =
+          status === "PUBLISHED"
+            ? "Published & notified"
+            : status === "PENDING_REVIEW"
+              ? "Sent for review"
+              : "Saved as draft";
+        toast.success(res.message || successMsg);
         setOpenA(false);
         setFormA(emptyA);
         loadAssignments();
       } else {
-        toast.error(res?.message || "Failed to publish");
+        toast.error(res?.message || "Failed to save assignment");
       }
     } catch (err) {
       console.log(err);
-      toast.error(err?.response?.data?.message || "Failed to publish");
+      toast.error(err?.response?.data?.message || "Failed to save assignment");
     } finally {
-      setPublishing(false);
+      setSubmitStatus(null);
     }
   };
 
@@ -1448,25 +1474,32 @@ const emptyM = {
           </div>
         </div>
 
-        <DialogFooter>
+               <DialogFooter>
           {editingUuid ? (
             <Button onClick={handleUpdate} disabled={updating}>
               {updating ? "Updating..." : "Update Assignment"}
             </Button>
           ) : (
             <>
-              {/* <Button
-                variant="outline"
-                onClick={handleSaveDraft}
-                disabled={savingDraft || publishing}
-              >
-                {savingDraft ? "Saving..." : "Save draft"}
-              </Button> */}
               <Button
-                onClick={handlePublish}
-                disabled={publishing || savingDraft}
+                variant="outline"
+                onClick={() => submitAssignment("DRAFT", "draft")}
+                disabled={submitStatus !== null}
               >
-                {publishing ? "Publishing..." : "Publish"}
+                {submitStatus === "draft" ? "Saving..." : "Save"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => submitAssignment("PENDING_REVIEW", "review")}
+                disabled={submitStatus !== null}
+              >
+                {submitStatus === "review" ? "Sending..." : "Review"}
+              </Button>
+              <Button
+                onClick={() => submitAssignment("PUBLISHED", "publish")}
+                disabled={submitStatus !== null}
+              >
+                {submitStatus === "publish" ? "Publishing..." : "Publish"}
               </Button>
             </>
           )}
@@ -2089,7 +2122,7 @@ const emptyM = {
         <TabsList>
           <TabsTrigger value="assignments">Assignments</TabsTrigger>
           <TabsTrigger value="materials">Study Materials</TabsTrigger>
-          <TabsTrigger value="plans">Lesson Plans</TabsTrigger>
+          {/* <TabsTrigger value="plans">Lesson Plans</TabsTrigger> */}
         </TabsList>
 
         <TabsContent value="assignments" className="mt-4 space-y-4">
@@ -2472,9 +2505,9 @@ const emptyM = {
           </Card>
         </TabsContent>
 
-        <TabsContent value="plans" className="mt-4">
+        {/* <TabsContent value="plans" className="mt-4">
           <LessonPlansTab setMainTab={handleMainTabChange} />
-        </TabsContent>
+        </TabsContent> */}
       </Tabs>
     </PageContainer>
   );

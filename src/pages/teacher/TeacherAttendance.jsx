@@ -314,8 +314,27 @@ export default function TeacherAttendance() {
       const report = res?.data;
       if (!report) throw new Error("No data returned");
 
-      if (type === "pdf") exportAttendancePDF(report);
-      else exportAttendanceExcel(report);
+      // Some attendance-report responses omit gender, while the roster
+      // already contains it. Merge it in for both export formats.
+      const genderByStudentUuid = new Map(
+        roster.map((student) => [
+          student.student_uuid,
+          student.gender ?? student.student_gender,
+        ]),
+      );
+      const reportWithGender = {
+        ...report,
+        students: (report.students ?? []).map((student) => ({
+          ...student,
+          gender:
+            student.gender ??
+            student.student_gender ??
+            genderByStudentUuid.get(student.student_uuid),
+        })),
+      };
+
+      if (type === "pdf") exportAttendancePDF(reportWithGender);
+      else exportAttendanceExcel(reportWithGender);
     } catch (err) {
       toast.error(`Couldn't generate ${type === "pdf" ? "PDF" : "Excel"}`, {
         description: err?.response?.data?.message ?? "Please try again.",

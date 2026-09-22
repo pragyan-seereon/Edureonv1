@@ -126,13 +126,14 @@ export const deleteAlbum = async (albumUuid) => {
 // ---------------- Student and Parent APIs ----------------
 
 // List published portal albums (audience filtered by logged-in user's role)
-export const getPortalAlbums = async ({ page = 1, pageSize = 20, category, search } = {}) => {
+export const getPortalAlbums = async ({ page = 1, pageSize = 20, category, search, sessionYear } = {}) => {
   const { data } = await api.get("/gallery/portal/albums", {
     params: {
       page,
       page_size: pageSize,
       ...(category ? { category } : {}),
       ...(search ? { search } : {}),
+      ...(sessionYear ? { session_year: sessionYear } : {}),
     },
     headers: getHeaders(),
   });
@@ -147,4 +148,11 @@ export const getPortalAlbumDetail = async (albumUuid) => {
   });
 
   return data.data;
+};
+
+export const updateAlbumMedia = async (albumUuid, mediaUuid, payload) => {
+  const { data } = await api.patch(`/gallery/albums/${albumUuid}/media/${mediaUuid}`, payload, {
+    headers: getHeaders(),
+  });
+  return data;
 };

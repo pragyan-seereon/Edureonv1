@@ -18,6 +18,12 @@ export const getOtherCollectionRoles = () =>
     headers: getHeaders(),
   });
 
+export const getOtherCollectionVisitors = () =>
+  api.get("/other-collections/visitors", { headers: getHeaders() });
+
+export const createOtherCollectionVisitor = (data) =>
+  api.post("/other-collections/visitors", data, { headers: getHeaders() });
+
 export const getOtherCollectionTypes = (params = {}) =>
   api.get("/other-collections/types", {
     headers: getHeaders(),

@@ -883,7 +883,11 @@ import {
   unpublishAlbum,
   getAlbumDetail,
   updateAlbum,
+  addAlbumMedia,
+  deleteAlbumMedia,
+  updateAlbumMedia,
 } from "../../api/gallery";
+import { getClasses, getSections } from "../../api/Class";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -898,6 +902,7 @@ import {
 // UI label <-> API enum for the "audience" field
 const AUDIENCE_TO_API = {
   All: "ALL",
+  Teacher: "TEACHER",
   Students: "STUDENTS",
   Parents: "PARENTS",
   "Students & Parents": "STUDENTS_AND_PARENTS",
@@ -905,6 +910,7 @@ const AUDIENCE_TO_API = {
 
 const AUDIENCE_TO_LABEL = {
   ALL: "All",
+  TEACHER: "Teacher",
   STUDENTS: "Students",
   PARENTS: "Parents",
   STUDENTS_AND_PARENTS: "Students & Parents",
@@ -920,6 +926,9 @@ const normalizeMedia = (media) => ({
       ? "video"
       : "image",
   url: media.file_url,
+  title: media.title || "",
+  description: media.description || "",
+  isDefault: Boolean(media.is_default),
 });
 
 // Normalize an album row coming from GET /gallery/albums (list view,
@@ -928,6 +937,8 @@ const normalizeAlbum = (album) => ({
   uuid: album.album_uuid,
   title: album.title,
   date: album.album_date,
+  endDate: album.end_date,
+  classAudiences: album.class_audiences || [],
   category: album.category,
   audience: AUDIENCE_TO_LABEL[album.audience] || album.audience,
   description: album.description,
@@ -957,15 +968,28 @@ export default function AdminGallery() {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [albumToDelete, setAlbumToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [classes, setClasses] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [existingMedia, setExistingMedia] = useState([]);
 
   const [form, setForm] = useState({
     title: "",
-    date: new Date().toISOString().split("T")[0],
+    date: "",
+    endDate: "",
+    classAudiences: [],
     category: "Events",
     audience: "All",
     description: "",
     files: [],
+    mediaDetails: [],
   });
+
+  useEffect(() => {
+    Promise.all([getClasses(), getSections()]).then(([classRes, sectionRes]) => {
+      setClasses(classRes.data || []);
+      setSections(sectionRes.data || []);
+    }).catch(() => {});
+  }, []);
 
   const loadGallery = useCallback(async () => {
     setIsLoading(true);
@@ -998,11 +1022,14 @@ export default function AdminGallery() {
   const resetForm = () => {
     setForm({
       title: "",
-      date: new Date().toISOString().split("T")[0],
+      date: "",
+      endDate: "",
+      classAudiences: [],
       category: "Events",
       audience: "All",
       description: "",
       files: [],
+      mediaDetails: [],
     });
   };
 
@@ -1015,29 +1042,44 @@ export default function AdminGallery() {
 
   const openCreateModal = () => {
     setEditingAlbum(null);
+    setExistingMedia([]);
     resetForm();
     setShowCreateModal(true);
   };
 
-  const handleEdit = (album) => {
+  const handleEdit = async (album) => {
     setOpenMenu(null);
+    try {
+      const detail = await getAlbumDetail(album.uuid);
+      setExistingMedia((detail.media || []).map(normalizeMedia));
+    } catch (err) {
+      alert(err?.response?.data?.detail || "Couldn't load album photos.");
+      return;
+    }
     setEditingAlbum(album);
     setForm({
       title: album.title || "",
-      date: album.date || new Date().toISOString().split("T")[0],
+      date: album.date || "",
+      endDate: album.endDate || "",
+      classAudiences: album.classAudiences || [],
       category: album.category || "Events",
       audience: album.audience || "All",
       description: album.description || "",
       files: [],
+      mediaDetails: [],
     });
     setShowCreateModal(true);
   };
 
-  const handleCreateAlbum = async (e) => {
+  const handleCreateAlbum = async (e, publish = false) => {
     e.preventDefault();
 
-    if (!form.title.trim()) {
-      alert("Please enter album title.");
+    if (form.date && form.endDate && form.endDate < form.date) {
+      alert("End date must be on or after start date.");
+      return;
+    }
+    if (publish && (!form.title.trim() || !form.date)) {
+      alert("Album title and date are required to publish.");
       return;
     }
 
@@ -1045,12 +1087,34 @@ export default function AdminGallery() {
       setIsSaving(true);
       try {
         await updateAlbum(editingAlbum.uuid, {
-          title: form.title.trim(),
-          album_date: form.date,
+          title: form.title.trim() || null,
+          album_date: form.date || null,
+          end_date: form.endDate || null,
+          class_audiences: form.classAudiences,
           category: form.category,
           audience: AUDIENCE_TO_API[form.audience] || "ALL",
           description: form.description,
         });
+        for (const media of existingMedia) {
+          if (media.deleted) {
+            await deleteAlbumMedia(editingAlbum.uuid, media.uuid);
+          } else {
+            await updateAlbumMedia(editingAlbum.uuid, media.uuid, {
+              title: media.title,
+              description: media.description,
+              is_default: media.isDefault,
+            });
+          }
+        }
+        if (form.files.length) {
+          const mediaForm = new FormData();
+          form.files.forEach((file) => mediaForm.append("files", file));
+          mediaForm.append("media_details", JSON.stringify(form.mediaDetails));
+          await addAlbumMedia(editingAlbum.uuid, mediaForm);
+        }
+        if (publish && !editingAlbum.published) {
+          await publishAlbum(editingAlbum.uuid);
+        }
         closeCreateModal(true);
         await loadGallery();
       } catch (err) {
@@ -1062,12 +1126,15 @@ export default function AdminGallery() {
     }
 
     const formData = new FormData();
-    formData.append("title", form.title);
-    formData.append("album_date", form.date);
+    if (form.title.trim()) formData.append("title", form.title.trim());
+    if (form.date) formData.append("album_date", form.date);
+    if (form.endDate) formData.append("end_date", form.endDate);
+    formData.append("class_audiences", JSON.stringify(form.classAudiences));
+    formData.append("media_details", JSON.stringify(form.mediaDetails));
     formData.append("category", form.category);
     formData.append("audience", AUDIENCE_TO_API[form.audience] || "ALL");
     formData.append("description", form.description);
-    formData.append("is_published", "true");
+    formData.append("is_published", String(publish));
     form.files.forEach((file) => formData.append("files", file));
 
     setIsSaving(true);
@@ -1232,6 +1299,10 @@ export default function AdminGallery() {
           onSubmit={handleCreateAlbum}
           isSaving={isSaving}
           isEditing={Boolean(editingAlbum)}
+          classes={classes}
+          sections={sections}
+          existingMedia={existingMedia}
+          setExistingMedia={setExistingMedia}
         />
       )}
 
@@ -1336,7 +1407,7 @@ function AlbumCard({ album, openMenu, setOpenMenu, onPreview, onEdit, onDelete, 
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-[18px] font-medium text-[#07182d]">
-              {album.title}
+              {album.title || "Untitled draft"}
             </h2>
 
             <p className="mt-[2px] text-[13px] text-[#4e6984]">
@@ -1380,6 +1451,9 @@ function AlbumCard({ album, openMenu, setOpenMenu, onPreview, onEdit, onDelete, 
               Published
             </span>
           )}
+          {!album.published && (
+            <span className="rounded-[8px] bg-amber-100 px-[11px] py-[4px] text-[11px] font-semibold text-amber-900">Draft</span>
+          )}
         </div>
 
         <p className="mt-[14px] line-clamp-2 min-h-[44px] text-[16px] leading-[1.45] text-[#536d88]">
@@ -1413,7 +1487,7 @@ function MenuButton({ icon, label, onClick, danger = false }) {
    CREATE ALBUM MODAL
 ============================================================ */
 
-function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditing }) {
+function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditing, classes, sections, existingMedia, setExistingMedia }) {
   const fileInputRef = useRef(null);
 
   const updateField = (field, value) => {
@@ -1422,12 +1496,35 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
 
   const handleFiles = (e) => {
     const selectedFiles = Array.from(e.target.files || []);
-    setForm((prev) => ({ ...prev, files: [...prev.files, ...selectedFiles] }));
+    setForm((prev) => ({ ...prev, files: [...prev.files, ...selectedFiles],
+      mediaDetails: [...prev.mediaDetails, ...selectedFiles.map((_, index) => ({ title: "", description: "", is_default: !isEditing && prev.files.length === 0 && index === 0 }))] }));
+    e.target.value = "";
   };
 
   const removeFile = (index) => {
-    setForm((prev) => ({ ...prev, files: prev.files.filter((_, i) => i !== index) }));
+    setForm((prev) => ({ ...prev, files: prev.files.filter((_, i) => i !== index),
+      mediaDetails: prev.mediaDetails.filter((_, i) => i !== index) }));
   };
+
+  const selectedClasses = new Set(form.classAudiences.map((item) => item.class_uuid));
+  const selectedSections = new Set(form.classAudiences.flatMap((item) => item.section_uuids || []));
+  const toggleClass = (classUuid) => setForm((prev) => ({ ...prev,
+    classAudiences: prev.classAudiences.some((item) => item.class_uuid === classUuid)
+      ? prev.classAudiences.filter((item) => item.class_uuid !== classUuid)
+      : [...prev.classAudiences, { class_uuid: classUuid, section_uuids: sections.filter((item) => item.class_uuid === classUuid).map((item) => item.section_uuid) }],
+  }));
+  const toggleSection = (section) => setForm((prev) => ({ ...prev,
+    classAudiences: prev.classAudiences.map((item) => item.class_uuid === section.class_uuid
+      ? { ...item, section_uuids: item.section_uuids.includes(section.section_uuid)
+          ? item.section_uuids.filter((uuid) => uuid !== section.section_uuid)
+          : [...item.section_uuids, section.section_uuid] }
+      : item),
+  }));
+  const updateNewMedia = (index, field, value) => setForm((prev) => ({ ...prev,
+    mediaDetails: prev.mediaDetails.map((item, i) => i === index ? { ...item, [field]: value } : item),
+  }));
+  const updateExistingMedia = (index, field, value) => setExistingMedia((prev) => prev.map((item, i) =>
+    i === index ? { ...item, [field]: value } : item));
 
   return (
     <div
@@ -1436,11 +1533,11 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[94vh] w-full flex-col overflow-hidden rounded-none bg-[#f7fafc] shadow-2xl sm:max-w-[865px] sm:rounded-[10px]">
+      <div className="flex max-h-[94vh] w-full flex-col overflow-hidden rounded-none bg-[#f7fafc] shadow-2xl sm:max-w-[1200px] sm:rounded-[10px]">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-7 pb-3 pt-6">
           <h2 className="text-[21px] font-semibold tracking-[-0.02em] text-[#0a1d32]">
-            {isEditing ? "Edit Gallery Album" : "Create Gallery Album"}
+            {isEditing ? "Update Gallery & Study Material" : "Add Gallery & Study Material"}
           </h2>
 
           <button
@@ -1454,10 +1551,10 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
         </div>
 
         {/* Form */}
-        <form onSubmit={onSubmit} className="overflow-y-auto px-7 pb-6 pt-1">
-          <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
+        <form onSubmit={(event) => onSubmit(event, true)} className="overflow-y-auto px-7 pb-6 pt-1">
+          <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-3">
             {/* Album Title */}
-            <FormField label="Album Title">
+            <FormField label="Event Title">
               <input
                 type="text"
                 value={form.title}
@@ -1469,7 +1566,7 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
             </FormField>
 
             {/* Date */}
-            <FormField label="Date">
+            <FormField label="Start Date">
               <div className="relative">
                 <input
                   type="date"
@@ -1484,6 +1581,30 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
                 />
               </div>
             </FormField>
+
+            <FormField label="End Date">
+              <input type="date" value={form.endDate} min={form.date || undefined}
+                onChange={(e) => updateField("endDate", e.target.value)} className={inputClass} />
+            </FormField>
+
+            <div className="sm:col-span-3 grid gap-4 sm:grid-cols-2">
+              <fieldset className="rounded-lg border bg-white p-4">
+                <legend className="px-1 font-medium">Classes</legend>
+                <label className="mb-3 flex gap-2"><input type="checkbox" checked={classes.length > 0 && selectedClasses.size === classes.length}
+                  onChange={() => updateField("classAudiences", selectedClasses.size === classes.length ? [] : classes.map((item) => ({ class_uuid: item.class_uuid, section_uuids: sections.filter((section) => section.class_uuid === item.class_uuid).map((section) => section.section_uuid) })))} /> All Class</label>
+                <div className="grid max-h-40 grid-cols-2 gap-2 overflow-y-auto">
+                  {classes.map((item) => <label key={item.class_uuid} className="flex gap-2"><input type="checkbox" checked={selectedClasses.has(item.class_uuid)} onChange={() => toggleClass(item.class_uuid)} />{item.class_name}</label>)}
+                </div>
+              </fieldset>
+              <fieldset className="rounded-lg border bg-white p-4">
+                <legend className="px-1 font-medium">Sections</legend>
+                <label className="mb-3 flex gap-2"><input type="checkbox" checked={sections.filter((item) => selectedClasses.has(item.class_uuid)).length > 0 && sections.filter((item) => selectedClasses.has(item.class_uuid)).every((item) => selectedSections.has(item.section_uuid))}
+                  onChange={() => updateField("classAudiences", form.classAudiences.map((item) => ({ ...item, section_uuids: sections.filter((section) => section.class_uuid === item.class_uuid && !selectedSections.has(section.section_uuid)).length ? sections.filter((section) => section.class_uuid === item.class_uuid).map((section) => section.section_uuid) : [] })))} /> All Section</label>
+                <div className="grid max-h-40 grid-cols-2 gap-2 overflow-y-auto">
+                  {sections.filter((item) => selectedClasses.has(item.class_uuid)).map((item) => <label key={item.section_uuid} className="flex gap-2"><input type="checkbox" checked={selectedSections.has(item.section_uuid)} onChange={() => toggleSection(item)} />{item.section_name}</label>)}
+                </div>
+              </fieldset>
+            </div>
 
             {/* Category */}
             <FormField label="Category">
@@ -1510,6 +1631,7 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
                 className={inputClass}
               >
                 <option value="All">All</option>
+                <option value="Teacher">Teacher</option>
                 <option value="Students">Students</option>
                 <option value="Parents">Parents</option>
                 <option value="Students & Parents">Students & Parents</option>
@@ -1517,7 +1639,7 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
             </FormField>
 
             {/* Description */}
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-3">
               <FormField label="Description">
                 <textarea
                   value={form.description}
@@ -1529,7 +1651,7 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
             </div>
 
             {/* Upload */}
-            {!isEditing && <div className="sm:col-span-2">
+            {<div className="sm:col-span-3">
               <FormField label="Upload Photos / Videos">
                 <div className="relative">
                   <input
@@ -1563,17 +1685,41 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
           </div>
 
           {/* Selected Files */}
-          {!isEditing && form.files.length > 0 && (
+          {isEditing && existingMedia.some((item) => !item.deleted) && (
+            <div className="mt-4 space-y-2 rounded-[10px] border bg-white p-3">
+              <p className="font-semibold">Existing Photos</p>
+              {existingMedia.map((media, index) => media.deleted ? null : (
+                <div key={media.uuid} className="grid items-center gap-2 sm:grid-cols-[auto_70px_1fr_1fr_auto]">
+                  <label className="flex items-center gap-1 text-xs"><input type="radio" name="defaultMedia" checked={media.isDefault}
+                    onChange={() => {
+                      setExistingMedia((prev) => prev.map((item, i) => ({ ...item, isDefault: i === index })));
+                      setForm((prev) => ({ ...prev, mediaDetails: prev.mediaDetails.map((item) => ({ ...item, is_default: false })) }));
+                    }} />Default</label>
+                  {media.type === "video" ? <video src={media.url} className="h-12 w-16 object-cover" /> : <img src={media.url} alt="" className="h-12 w-16 object-cover" />}
+                  <input className={inputClass} placeholder="Photo title" value={media.title} onChange={(e) => updateExistingMedia(index, "title", e.target.value)} />
+                  <input className={inputClass} placeholder="Description" value={media.description} onChange={(e) => updateExistingMedia(index, "description", e.target.value)} />
+                  <button type="button" aria-label="Remove photo" onClick={() => updateExistingMedia(index, "deleted", true)}><Trash2 size={18} className="text-red-600" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          {form.files.length > 0 && (
             <div className="mt-4 rounded-[10px] border border-[#dce5eb] bg-white p-3">
               <p className="mb-2 text-[13px] font-semibold text-[#213951]">Selected Files</p>
 
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="space-y-2">
                 {form.files.map((file, index) => (
-                  <SelectedFile
-                    key={`${file.name}-${index}`}
-                    file={file}
-                    onRemove={() => removeFile(index)}
-                  />
+                  <div key={`${file.name}-${index}`} className="grid items-center gap-2 sm:grid-cols-[auto_90px_1fr_1fr_auto]">
+                    <label className="flex items-center gap-1 text-xs"><input type="radio" name="defaultMedia" checked={Boolean(form.mediaDetails[index]?.is_default)}
+                      onChange={() => {
+                        setExistingMedia((prev) => prev.map((item) => ({ ...item, isDefault: false })));
+                        setForm((prev) => ({ ...prev, mediaDetails: prev.mediaDetails.map((item, i) => ({ ...item, is_default: i === index })) }));
+                      }} />Default</label>
+                    <SelectedFile file={file} onRemove={() => removeFile(index)} />
+                    <input className={inputClass} placeholder="Photo title" value={form.mediaDetails[index]?.title || ""} onChange={(e) => updateNewMedia(index, "title", e.target.value)} />
+                    <input className={inputClass} placeholder="Description" value={form.mediaDetails[index]?.description || ""} onChange={(e) => updateNewMedia(index, "description", e.target.value)} />
+                    <button type="button" aria-label="Remove photo" onClick={() => removeFile(index)}><Trash2 size={18} className="text-red-600" /></button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -1591,12 +1737,21 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
             </button>
 
             <button
+              type="button"
+              disabled={isSaving}
+              onClick={(event) => onSubmit(event, false)}
+              className="h-[40px] rounded-[9px] border border-[#0c427d] px-5 text-[14px] font-semibold text-[#0c427d] disabled:opacity-60"
+            >
+              {isEditing ? "Save Changes" : "Save Draft"}
+            </button>
+
+            <button
               type="submit"
               disabled={isSaving}
               className="flex h-[40px] items-center gap-2 rounded-[9px] bg-[#0c427d] px-5 text-[14px] font-semibold text-white shadow-sm transition hover:bg-[#093565] disabled:opacity-60"
             >
               {isSaving && <Loader2 size={15} className="animate-spin" />}
-              {isSaving ? (isEditing ? "Updating..." : "Publishing...") : (isEditing ? "Update Album" : "Publish Album")}
+              {isSaving ? "Saving..." : "Publish Album"}
             </button>
           </div>
         </form>
@@ -1717,17 +1872,18 @@ function AlbumPreviewModal({ album, isLoading, onClose }) {
               {album.media.map((media) => (
                 <div
                   key={media.uuid}
-                  className="relative aspect-[1.7/1] overflow-hidden rounded-[9px] border border-[#dce5eb] bg-[#e9eef2]"
+                  className="overflow-hidden rounded-[9px] border border-[#dce5eb] bg-[#e9eef2]"
                 >
                   {media.type === "video" ? (
-                    <video src={media.url} controls className="h-full w-full object-cover" />
+                    <video src={media.url} controls className="aspect-[1.7/1] w-full object-cover" />
                   ) : (
                     <img
                       src={media.url}
-                      alt={album.title}
-                      className="h-full w-full object-cover"
+                      alt={media.title || album.title}
+                      className="aspect-[1.7/1] w-full object-cover"
                     />
                   )}
+                  {(media.title || media.description) && <div className="p-2 text-sm"><strong>{media.title}</strong><p>{media.description}</p></div>}
                 </div>
               ))}
             </div>

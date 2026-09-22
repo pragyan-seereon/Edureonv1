@@ -9,6 +9,7 @@ import {
   Plus,
   ReceiptText,
   RefreshCw,
+  Search,
   Tags,
   Users,
 } from "lucide-react";
@@ -40,6 +41,7 @@ import {
   createOtherCollection,
   createOtherCollectionRazorpayOrder,
   createOtherCollectionType,
+  createOtherCollectionVisitor,
   getOtherCollections,
   getOtherCollectionReceiptPdf,
   getOtherCollectionRoles,
@@ -131,6 +133,9 @@ export default function OtherCollection() {
   const [typeForm, setTypeForm] = useState(emptyType);
   const [collectionForm, setCollectionForm] = useState(emptyCollection);
   const [saving, setSaving] = useState(false);
+  const [visitorName, setVisitorName] = useState("");
+  const [personPickerOpen, setPersonPickerOpen] = useState(false);
+  const [personSearch, setPersonSearch] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -176,20 +181,33 @@ export default function OtherCollection() {
   const selectRole = async (roleUUID) => {
     setCollectionForm({ ...collectionForm, role_uuid: roleUUID, person_uuid: "" });
     setPeople([]);
+    setVisitorName("");
+    setPersonSearch("");
+    setPersonPickerOpen(false);
     const role = roles.find((item) => (item.role_uuid || item.uuid) === roleUUID);
-    const roleName = String(role?.name || role?.role_name || role?.code || "").toLowerCase();
+    const roleCode = String(role?.role_code || role?.code || role?.role_name || "").toUpperCase();
+    if (roleCode === "VISITOR") return;
     try {
-      const response = roleName.includes("student")
+      const response = roleCode === "STUDENT"
         ? await getAllStudents()
         : await getEmployees();
-      setPeople(listFrom(response));
+      const people = listFrom(response);
+      setPeople(roleCode === "TEACHER"
+        ? people.filter((person) => String(person.teaching_status || "").toLowerCase() === "teaching")
+        : people);
     } catch (error) {
       toast.error(errorMessage(error, "Unable to load people for this role."));
     }
   };
 
-  const personUUID = (person) => person.student_uuid || person.employee_uuid || person.person_uuid || person.uuid;
+  const personUUID = (person) => person.student_uuid || person.employee_uuid || person.visitor_uuid || person.person_uuid || person.uuid;
   const personName = (person) => person.full_name || person.name || [person.first_name, person.last_name].filter(Boolean).join(" ") || personUUID(person);
+  const isVisitor = roles.find((role) => (role.role_uuid || role.uuid) === collectionForm.role_uuid)?.role_code === "VISITOR";
+  const selectedPerson = people.find((person) => personUUID(person) === collectionForm.person_uuid);
+  const filteredPeople = people.filter((person) =>
+    [personName(person), person.admission_no, person.student_no, person.employee_no, person.phone]
+      .filter(Boolean).some((value) => String(value).toLowerCase().includes(personSearch.trim().toLowerCase()))
+  );
 
   const submitType = async (event) => {
     event.preventDefault();
@@ -209,6 +227,10 @@ export default function OtherCollection() {
 
   const submitCollection = async (event) => {
     event.preventDefault();
+    if (isVisitor ? !visitorName.trim() : !collectionForm.person_uuid) {
+      toast.error(isVisitor ? "Enter a visitor name." : "Select a person.");
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -220,6 +242,11 @@ export default function OtherCollection() {
         transaction_number: collectionForm.transaction_number || null,
         remarks: collectionForm.remarks || null,
       };
+      if (isVisitor && !payload.person_uuid) {
+        const { data: visitor } = await createOtherCollectionVisitor({ full_name: visitorName.trim() });
+        payload.person_uuid = visitor.visitor_uuid;
+        setCollectionForm((current) => ({ ...current, person_uuid: visitor.visitor_uuid }));
+      }
       if (payload.payment_mode === "UPI") {
         const { data: order } = await createOtherCollectionRazorpayOrder(payload);
         await loadRazorpay();
@@ -252,6 +279,8 @@ export default function OtherCollection() {
         toast.success("Offline collection recorded.");
       }
       setCollectionForm(emptyCollection);
+      setVisitorName("");
+      setPersonSearch("");
       setCollectionDialogOpen(false);
       if (payload.payment_mode !== "UPI") await loadData();
     } catch (error) {
@@ -593,21 +622,80 @@ export default function OtherCollection() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="person">Person</Label>
-              <select
-                id="person"
-                required
-                disabled={!collectionForm.role_uuid}
-                className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#173b73]/40 disabled:opacity-50"
-                value={collectionForm.person_uuid}
-                onChange={(event) => setCollectionForm({ ...collectionForm, person_uuid: event.target.value })}
+              {isVisitor ? (
+                <Input
+                  id="person"
+                  required
+                  maxLength={150}
+                  placeholder="Enter visitor name"
+                  value={visitorName}
+                  onChange={(event) => {
+                    setVisitorName(event.target.value);
+                    setCollectionForm((current) => ({ ...current, person_uuid: "" }));
+                  }}
+                />
+              ) : (
+              <div
+                className="relative"
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) setPersonPickerOpen(false);
+                }}
               >
-                <option value="">Select a person</option>
-                {people.map((person) => (
-                  <option key={personUUID(person)} value={personUUID(person)}>
-                    {personName(person)}
-                  </option>
-                ))}
-              </select>
+                <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="person"
+                  role="combobox"
+                  aria-expanded={personPickerOpen}
+                  aria-controls="person-options"
+                  autoComplete="off"
+                  disabled={!collectionForm.role_uuid}
+                  placeholder="Search by name or number"
+                  className="pl-9"
+                  value={personPickerOpen ? personSearch : selectedPerson ? personName(selectedPerson) : personSearch}
+                  onFocus={() => {
+                    setPersonSearch("");
+                    setPersonPickerOpen(true);
+                  }}
+                  onChange={(event) => {
+                    setPersonSearch(event.target.value);
+                    setCollectionForm((current) => ({ ...current, person_uuid: "" }));
+                    setPersonPickerOpen(true);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setPersonPickerOpen(false);
+                  }}
+                />
+                {personPickerOpen && (
+                  <div id="person-options" role="listbox" className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md">
+                    {filteredPeople.length ? filteredPeople.map((person) => (
+                      <button
+                        key={personUUID(person)}
+                        type="button"
+                        role="option"
+                        aria-selected={collectionForm.person_uuid === personUUID(person)}
+                        className="flex w-full flex-col rounded px-3 py-2 text-left text-sm hover:bg-accent focus:bg-accent focus:outline-none"
+                        onClick={() => {
+                          setCollectionForm((current) => ({ ...current, person_uuid: personUUID(person) }));
+                          setPersonSearch(personName(person));
+                          setPersonPickerOpen(false);
+                        }}
+                      >
+                        <span className="font-medium">{personName(person)}</span>
+                        {(person.admission_no || person.student_no || person.employee_no || person.phone) && (
+                          <span className="text-xs text-muted-foreground">
+                            {person.admission_no || person.student_no || person.employee_no || person.phone}
+                          </span>
+                        )}
+                      </button>
+                    )) : (
+                      <p className="px-3 py-4 text-sm text-muted-foreground">
+                        {people.length ? "No matching people." : "No people available for this role."}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="collection-type">Collection type</Label>

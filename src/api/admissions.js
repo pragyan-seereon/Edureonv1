@@ -915,6 +915,7 @@ export const applyMpsatCutoff = ({
   cutoffPercentage,
   minimumMarks,
   maximumMarks,
+  maximumQualifyingMarks,
   shift = "BEST",
   applicationNumbers,
 }) =>
@@ -929,6 +930,9 @@ export const applyMpsatCutoff = ({
         : {}),
       ...(maximumMarks !== "" && maximumMarks != null
         ? { maximum_marks: Number(maximumMarks) }
+        : {}),
+      ...(maximumQualifyingMarks !== "" && maximumQualifyingMarks != null
+        ? { maximum_qualifying_marks: Number(maximumQualifyingMarks) }
         : {}),
       session: getSessionYear(),
       shift,
@@ -951,11 +955,12 @@ export const createQualifiedMpsAdmissions = (shift = "BEST") =>
     params: { session: getSessionYear(), shift },
   });
 
-export const getMpsetReport = (reportType) =>
+export const getMpsetReport = (reportType, shift = "BEST") =>
   api.get(`/mpset-reports/${reportType}`, {
     headers: getHeaders(),
     params: {
       session: getSessionYear(),
+      shift,
     },
   });
 

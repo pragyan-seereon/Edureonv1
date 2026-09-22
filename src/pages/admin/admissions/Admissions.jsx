@@ -7679,7 +7679,8 @@ const getApiErrorMessage = (err, fallback = "Something went wrong") => {
   return stringify(detail) || stringify(message) || err?.message || fallback;
 };
 
-const MPS_DEFAULT_MAXIMUM_MARKS = 300;
+const MPS_SHIFT_1_MAXIMUM_MARKS = 400;
+const MPS_SHIFT_2_MAXIMUM_MARKS = 700;
 
 const stageColor = {
   Inquiry: "border-l-muted-foreground",
@@ -7772,8 +7773,10 @@ export default function Admissions() {
   const [mpsResultRows, setMpsResultRows] = useState([]);
   const [mpsResultsLoading, setMpsResultsLoading] = useState(false);
   const [mpsCutoff, setMpsCutoff] = useState("80");
+  const [mpsCutoffShift, setMpsCutoffShift] = useState("BEST");
   const [mpsMinimumMarks, setMpsMinimumMarks] = useState("");
-  const [mpsMaximumMarks, setMpsMaximumMarks] = useState("300");
+  const [mpsMaximumMarks, setMpsMaximumMarks] = useState("");
+  const [mpsMaximumQualifyingMarks, setMpsMaximumQualifyingMarks] = useState("");
   const [mpsApplyingCutoff, setMpsApplyingCutoff] = useState(false);
   const [mpsCreatingAdmissions, setMpsCreatingAdmissions] = useState(false);
   const [mpsAdmissionShift, setMpsAdmissionShift] = useState("SHIFT_1");
@@ -7903,40 +7906,32 @@ export default function Admissions() {
       const savedCutoff = rows.find(
         (row) => Number(row.qualifying_percentage) > 0
       )?.qualifying_percentage;
+      const savedShift = rows.find(
+        (row) => row.qualifying_shift && Number(row.qualifying_percentage) > 0
+      )?.qualifying_shift;
+      if (["BEST", "SHIFT_1", "SHIFT_2"].includes(savedShift)) {
+        setMpsCutoffShift(savedShift);
+      }
       if (savedCutoff != null) {
         setMpsCutoff(String(savedCutoff));
       }
-      const savedMaximum = rows.find(
-        (row) => Number(row.maximum_marks) > 0
-      )?.maximum_marks;
-      const highestImportedScore = Math.max(
-        0,
-        ...rows.flatMap((row) => [
-          Number(row.shift1_total) || 0,
-          Number(row.shift2_total) || 0,
-        ])
-      );
-      const invalidSavedMaximum = Number(savedMaximum) < highestImportedScore;
-      const effectiveMaximum = invalidSavedMaximum
-        ? MPS_DEFAULT_MAXIMUM_MARKS
-        : Number(savedMaximum);
-      if (invalidSavedMaximum) {
-        setMpsMaximumMarks(String(MPS_DEFAULT_MAXIMUM_MARKS));
-        if (savedCutoff != null) {
-          setMpsMinimumMarks(String(Number(
-            ((Number(savedCutoff) * MPS_DEFAULT_MAXIMUM_MARKS) / 100).toFixed(2)
-          )));
-        }
-        toast.warning(
-          `Saved maximum marks (${savedMaximum}) is below an uploaded score (${highestImportedScore}). Reset to ${MPS_DEFAULT_MAXIMUM_MARKS}; apply cutoff to correct the saved results.`
-        );
-      } else if (savedMaximum != null) {
-        setMpsMaximumMarks(String(savedMaximum));
-      }
-      if (savedCutoff != null && Number.isFinite(effectiveMaximum)) {
+      if (savedShift && savedShift !== "BEST") {
+        const savedMaximum = rows.find(
+          (row) => Number(row.maximum_marks) > 0
+        )?.maximum_marks;
+        const maximum = Number(savedMaximum) || selectedShiftDefaultMaximum(savedShift);
+        const cutoff = Number(savedCutoff) || 0;
+        const savedUpper = rows.find(
+          (row) => row.qualifying_maximum_marks != null
+        )?.qualifying_maximum_marks;
+        setMpsMaximumMarks(String(maximum));
         setMpsMinimumMarks(String(Number(
-          ((Number(savedCutoff) * effectiveMaximum) / 100).toFixed(2)
+          ((cutoff * maximum) / 100).toFixed(2)
         )));
+        setMpsMaximumQualifyingMarks(String(
+          Number(savedUpper ?? maximum)
+        ));
+        await loadMpsReport(mpsReportType, savedShift);
       }
     } catch (err) {
       setMpsResultRows([]);
@@ -8365,10 +8360,13 @@ export default function Admissions() {
     }
   };
 
-  const loadMpsReport = async (reportType = mpsReportType) => {
+  const loadMpsReport = async (
+    reportType = mpsReportType,
+    shift = mpsCutoffShift,
+  ) => {
     try {
       setMpsReportLoading(true);
-      const response = await getMpsetReport(reportType);
+      const response = await getMpsetReport(reportType, shift);
       setMpsReportRows(
         Array.isArray(response?.data?.data) ? response.data.data : []
       );
@@ -8448,21 +8446,33 @@ export default function Admissions() {
 
   const handleApplyMpsCutoff = async () => {
     const cutoff = Number(mpsCutoff);
-    const minimumMarks = mpsMinimumMarks === "" ? null : Number(mpsMinimumMarks);
-    const maximumMarks = mpsMaximumMarks === "" ? null : Number(mpsMaximumMarks);
+    const minimumMarks = Number(mpsMinimumMarks);
+    const maximumMarks = Number(mpsMaximumMarks);
+    const maximumQualifyingMarks = Number(mpsMaximumQualifyingMarks);
+    const manualShift = mpsCutoffShift !== "BEST";
     if (
-      (minimumMarks == null && (!Number.isFinite(cutoff) || cutoff < 0 || cutoff > 100)) ||
-      (minimumMarks != null && (!Number.isFinite(minimumMarks) || !Number.isFinite(maximumMarks) || maximumMarks <= 0 || minimumMarks > maximumMarks))
+      !Number.isFinite(cutoff) || cutoff < 0 || cutoff > 100 ||
+      (manualShift && (
+        !Number.isFinite(minimumMarks) ||
+        !Number.isFinite(maximumMarks) ||
+        !Number.isFinite(maximumQualifyingMarks) ||
+        maximumMarks <= 0 ||
+        minimumMarks < 0 ||
+        minimumMarks > maximumQualifyingMarks ||
+        maximumQualifyingMarks > maximumMarks
+      ))
     ) {
-      toast.error("Enter a valid cutoff percentage, or valid minimum and maximum marks");
+      toast.error("Enter a valid From marks, To marks, and Total marks range");
       return;
     }
     try {
       setMpsApplyingCutoff(true);
       const response = await applyMpsatCutoff({
-        cutoffPercentage: minimumMarks == null ? cutoff : null,
-        minimumMarks,
-        maximumMarks: minimumMarks == null ? null : maximumMarks,
+        cutoffPercentage: cutoff,
+        shift: mpsCutoffShift,
+        ...(manualShift
+          ? { minimumMarks, maximumMarks, maximumQualifyingMarks }
+          : {}),
       });
       const summary = response?.data;
       if (summary?.cutoff_percentage != null) {
@@ -8479,34 +8489,56 @@ export default function Admissions() {
     }
   };
 
+  const selectedShiftDefaultMaximum = (shift) => (
+    shift === "SHIFT_1"
+      ? MPS_SHIFT_1_MAXIMUM_MARKS
+      : MPS_SHIFT_2_MAXIMUM_MARKS
+  );
+
+  const handleMpsCutoffShiftChange = (shift) => {
+    setMpsCutoffShift(shift);
+    if (shift === "BEST") {
+      setMpsMinimumMarks("");
+      setMpsMaximumMarks("");
+      setMpsMaximumQualifyingMarks("");
+      return;
+    }
+    const maximum = selectedShiftDefaultMaximum(shift);
+    setMpsMaximumMarks(String(maximum));
+    setMpsMaximumQualifyingMarks(String(maximum));
+    setMpsMinimumMarks(String(Number(
+      ((Number(mpsCutoff) || 0) * maximum / 100).toFixed(2)
+    )));
+  };
+
   const handleMpsCutoffChange = (value) => {
     setMpsCutoff(value);
-    const cutoff = Number(value);
     const maximum = Number(mpsMaximumMarks);
-    if (value !== "" && Number.isFinite(cutoff) && Number.isFinite(maximum) && maximum > 0) {
-      setMpsMinimumMarks(String(Number(((cutoff * maximum) / 100).toFixed(2))));
+    if (mpsCutoffShift !== "BEST" && value !== "" && Number.isFinite(maximum) && maximum > 0) {
+      const minimum = Number(((Number(value) * maximum) / 100).toFixed(2));
+      setMpsMinimumMarks(String(minimum));
     }
   };
 
   const handleMpsMinimumMarksChange = (value) => {
     setMpsMinimumMarks(value);
-    const minimum = Number(value);
     const maximum = Number(mpsMaximumMarks);
-    if (value !== "" && Number.isFinite(minimum) && Number.isFinite(maximum) && maximum > 0) {
-      setMpsCutoff(String(Number(((minimum / maximum) * 100).toFixed(2))));
+    if (value !== "" && Number.isFinite(maximum) && maximum > 0) {
+      const cutoff = Number(((Number(value) / maximum) * 100).toFixed(2));
+      setMpsCutoff(String(cutoff));
     }
   };
 
   const handleMpsMaximumMarksChange = (value) => {
     setMpsMaximumMarks(value);
-    const maximum = Number(value);
     const minimum = Number(mpsMinimumMarks);
-    const cutoff = Number(mpsCutoff);
-    if (value === "" || !Number.isFinite(maximum) || maximum <= 0) return;
-    if (mpsMinimumMarks !== "" && Number.isFinite(minimum)) {
-      setMpsCutoff(String(Number(((minimum / maximum) * 100).toFixed(2))));
-    } else if (mpsCutoff !== "" && Number.isFinite(cutoff)) {
-      setMpsMinimumMarks(String(Number(((cutoff * maximum) / 100).toFixed(2))));
+    if (value !== "" && Number.isFinite(minimum) && Number(value) > 0) {
+      const cutoff = Number(((minimum / Number(value)) * 100).toFixed(2));
+      setMpsCutoff(String(cutoff));
+    }
+    const upper = Number(mpsMaximumQualifyingMarks);
+    if (!Number.isFinite(upper) || upper > Number(value)) {
+      setMpsMaximumQualifyingMarks(value);
     }
   };
 
@@ -8534,17 +8566,11 @@ export default function Admissions() {
   );
   const getMpsShiftEvaluation = (row, shift) => {
     const total = Number(shift === "shift1" ? row.shift1_total : row.shift2_total);
-    const savedMaximum = Number(row.maximum_marks);
-    const highestUploadedTotal = Math.max(
-      Number(row.shift1_total) || 0,
-      Number(row.shift2_total) || 0
-    );
-    // A legacy/invalid cutoff may have stored 100 even though the imported
-    // MPSAT totals are out of 300. Never show impossible percentages >100.
-    const maximum = savedMaximum >= highestUploadedTotal
-      ? savedMaximum
-      : MPS_DEFAULT_MAXIMUM_MARKS;
+    const maximum = shift === "shift1"
+      ? MPS_SHIFT_1_MAXIMUM_MARKS
+      : MPS_SHIFT_2_MAXIMUM_MARKS;
     const cutoff = Number(row.qualifying_percentage);
+    const upperMark = Number(row.qualifying_maximum_marks);
     const percentage = Number.isFinite(total) ? (total / maximum) * 100 : null;
 
     if (percentage == null) return { percentage: null, status: "PENDING", qualified: false };
@@ -8553,10 +8579,24 @@ export default function Admissions() {
     }
     return {
       percentage,
-      status: percentage >= cutoff ? "QUALIFIED" : "NOT_QUALIFIED",
-      qualified: percentage >= cutoff,
+      status: percentage >= cutoff && (!Number.isFinite(upperMark) || total <= upperMark)
+        ? "QUALIFIED"
+        : "NOT_QUALIFIED",
+      qualified: percentage >= cutoff && (!Number.isFinite(upperMark) || total <= upperMark),
     };
   };
+
+  const mpsRangeMatchCount = useMemo(() => {
+    if (mpsCutoffShift === "BEST") return null;
+    const from = Number(mpsMinimumMarks);
+    const to = Number(mpsMaximumQualifyingMarks);
+    const totalKey = mpsCutoffShift === "SHIFT_1" ? "shift1_total" : "shift2_total";
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return 0;
+    return mpsResultRows.filter((row) => {
+      const score = Number(row[totalKey]);
+      return Number.isFinite(score) && score >= from && score <= to;
+    }).length;
+  }, [mpsCutoffShift, mpsMinimumMarks, mpsMaximumQualifyingMarks, mpsResultRows]);
 
   const mpsReportColumns = useMemo(() => {
     const columns = [
@@ -9520,7 +9560,7 @@ const activeAdmissions = useMemo(
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Next Step: Apply Cutoff</CardTitle>
               <p className="mt-1 text-xs text-muted-foreground">
-                Enter a percentage, or enter minimum and maximum marks. The system calculates the cutoff percentage and only qualified students appear next.
+                Select a shift and enter a score range. The cutoff percentage is calculated automatically from From marks ÷ Total marks.
               </p>
             </CardHeader>
             <CardContent className="flex flex-wrap items-center gap-2">
@@ -9535,27 +9575,55 @@ const activeAdmissions = useMemo(
                 value={mpsCutoff}
                 onChange={(event) => handleMpsCutoffChange(event.target.value)}
               />
-              <Label htmlFor="mps-minimum-marks">Minimum marks</Label>
-              <Input
-                id="mps-minimum-marks"
-                className="h-9 w-24"
-                type="number"
-                min="0"
-                step="0.01"
-                value={mpsMinimumMarks}
-                placeholder="Optional"
-                onChange={(event) => handleMpsMinimumMarksChange(event.target.value)}
-              />
-              <Label htmlFor="mps-maximum-marks">Maximum marks</Label>
-              <Input
-                id="mps-maximum-marks"
-                className="h-9 w-24"
-                type="number"
-                min="1"
-                step="0.01"
-                value={mpsMaximumMarks}
-                onChange={(event) => handleMpsMaximumMarksChange(event.target.value)}
-              />
+              <Select value={mpsCutoffShift} onValueChange={handleMpsCutoffShiftChange}>
+                <SelectTrigger className="h-9 w-36">
+                  <SelectValue placeholder="Select shift" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BEST">Best of Both</SelectItem>
+                  <SelectItem value="SHIFT_1">Shift 1</SelectItem>
+                  <SelectItem value="SHIFT_2">Shift 2</SelectItem>
+                </SelectContent>
+              </Select>
+              {mpsCutoffShift !== "BEST" && (
+                <>
+                  <Label htmlFor="mps-minimum-marks">From marks</Label>
+                  <Input
+                    id="mps-minimum-marks"
+                    className="h-9 w-24"
+                    type="number"
+                    min="0"
+                    value={mpsMinimumMarks}
+                    onChange={(event) => handleMpsMinimumMarksChange(event.target.value)}
+                  />
+                  <Label htmlFor="mps-maximum-qualifying-marks">To marks</Label>
+                  <Input
+                    id="mps-maximum-qualifying-marks"
+                    className="h-9 w-24"
+                    type="number"
+                    min={mpsMinimumMarks || 0}
+                    value={mpsMaximumQualifyingMarks}
+                    onChange={(event) => setMpsMaximumQualifyingMarks(event.target.value)}
+                  />
+                  <Label htmlFor="mps-maximum-marks">Total marks</Label>
+                  <Input
+                    id="mps-maximum-marks"
+                    className="h-9 w-24"
+                    type="number"
+                    min="1"
+                    value={mpsMaximumMarks}
+                    onChange={(event) => handleMpsMaximumMarksChange(event.target.value)}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    Matching students: {mpsRangeMatchCount}
+                  </span>
+                </>
+              )}
+              {mpsCutoffShift === "BEST" && (
+                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  Shift 1: {Number(((Number(mpsCutoff) || 0) * 4).toFixed(2))} / 400 · Shift 2: {Number(((Number(mpsCutoff) || 0) * 7).toFixed(2))} / 700
+                </div>
+              )}
               <Button onClick={handleApplyMpsCutoff} disabled={mpsApplyingCutoff}>
                 {mpsApplyingCutoff && <Loader2 className="h-4 w-4 animate-spin" />}
                 Apply Cutoff and Show Qualified Results

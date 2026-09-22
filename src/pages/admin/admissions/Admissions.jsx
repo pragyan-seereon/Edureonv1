@@ -7563,6 +7563,8 @@ import {
   reinstateAdmission,
   importMpsRegistrations,
   importMpsetResults,
+  getMpsetResults,
+  applyMpsatCutoff,
   createQualifiedMpsAdmissions,
   getMpsetReport,
 } from "../../../api/admissions";
@@ -7677,6 +7679,9 @@ const getApiErrorMessage = (err, fallback = "Something went wrong") => {
   return stringify(detail) || stringify(message) || err?.message || fallback;
 };
 
+const MPS_SHIFT_1_MAXIMUM_MARKS = 400;
+const MPS_SHIFT_2_MAXIMUM_MARKS = 700;
+
 const stageColor = {
   Inquiry: "border-l-muted-foreground",
   Lead: "border-l-info",
@@ -7765,7 +7770,16 @@ export default function Admissions() {
   const [mpsLoadedReportType, setMpsLoadedReportType] = useState("website");
   const [mpsReportRows, setMpsReportRows] = useState([]);
   const [mpsReportLoading, setMpsReportLoading] = useState(false);
+  const [mpsResultRows, setMpsResultRows] = useState([]);
+  const [mpsResultsLoading, setMpsResultsLoading] = useState(false);
+  const [mpsCutoff, setMpsCutoff] = useState("80");
+  const [mpsCutoffShift, setMpsCutoffShift] = useState("BEST");
+  const [mpsMinimumMarks, setMpsMinimumMarks] = useState("");
+  const [mpsMaximumMarks, setMpsMaximumMarks] = useState("");
+  const [mpsMaximumQualifyingMarks, setMpsMaximumQualifyingMarks] = useState("");
+  const [mpsApplyingCutoff, setMpsApplyingCutoff] = useState(false);
   const [mpsCreatingAdmissions, setMpsCreatingAdmissions] = useState(false);
+  const [mpsAdmissionShift, setMpsAdmissionShift] = useState("SHIFT_1");
 
   // ---- reject dialog ----
   const [rejectFor, setRejectFor] = useState(null);
@@ -7881,6 +7895,52 @@ export default function Admissions() {
   // sessionYear lives in useSessionStore (persisted), so switching it
   // here or anywhere else in the app that shares the store will flow
   // through to this page automatically.
+  const loadMpsResults = async () => {
+    try {
+      setMpsResultsLoading(true);
+      const response = await getMpsetResults();
+      setMpsResultRows(
+        Array.isArray(response?.data?.data) ? response.data.data : []
+      );
+      const rows = Array.isArray(response?.data?.data) ? response.data.data : [];
+      const savedCutoff = rows.find(
+        (row) => Number(row.qualifying_percentage) > 0
+      )?.qualifying_percentage;
+      const savedShift = rows.find(
+        (row) => row.qualifying_shift && Number(row.qualifying_percentage) > 0
+      )?.qualifying_shift;
+      if (["BEST", "SHIFT_1", "SHIFT_2"].includes(savedShift)) {
+        setMpsCutoffShift(savedShift);
+      }
+      if (savedCutoff != null) {
+        setMpsCutoff(String(savedCutoff));
+      }
+      if (savedShift && savedShift !== "BEST") {
+        const savedMaximum = rows.find(
+          (row) => Number(row.maximum_marks) > 0
+        )?.maximum_marks;
+        const maximum = Number(savedMaximum) || selectedShiftDefaultMaximum(savedShift);
+        const cutoff = Number(savedCutoff) || 0;
+        const savedUpper = rows.find(
+          (row) => row.qualifying_maximum_marks != null
+        )?.qualifying_maximum_marks;
+        setMpsMaximumMarks(String(maximum));
+        setMpsMinimumMarks(String(Number(
+          ((cutoff * maximum) / 100).toFixed(2)
+        )));
+        setMpsMaximumQualifyingMarks(String(
+          Number(savedUpper ?? maximum)
+        ));
+        await loadMpsReport(mpsReportType, savedShift);
+      }
+    } catch (err) {
+      setMpsResultRows([]);
+      toast.error(getApiErrorMessage(err, "Failed to load MPSAT results"));
+    } finally {
+      setMpsResultsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
     loadClasses();
@@ -8300,10 +8360,13 @@ export default function Admissions() {
     }
   };
 
-  const loadMpsReport = async (reportType = mpsReportType) => {
+  const loadMpsReport = async (
+    reportType = mpsReportType,
+    shift = mpsCutoffShift,
+  ) => {
     try {
       setMpsReportLoading(true);
-      const response = await getMpsetReport(reportType);
+      const response = await getMpsetReport(reportType, shift);
       setMpsReportRows(
         Array.isArray(response?.data?.data) ? response.data.data : []
       );
@@ -8319,6 +8382,7 @@ export default function Admissions() {
   useEffect(() => {
     if (tab === "mpsat") {
       loadMpsReport(mpsReportType);
+      loadMpsResults();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, sessionYear]);
@@ -8329,7 +8393,7 @@ export default function Admissions() {
       toast.success(
         response?.data?.message || "MPSAT registrations imported successfully"
       );
-      await loadMpsReport();
+      await Promise.all([loadMpsReport(), loadMpsResults()]);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Failed to import MPSAT registrations"));
     }
@@ -8341,7 +8405,7 @@ export default function Admissions() {
       toast.success(
         response?.data?.message || "MPSAT results imported successfully"
       );
-      await loadMpsReport();
+      await Promise.all([loadMpsReport(), loadMpsResults()]);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Failed to import MPSAT results"));
     }
@@ -8350,15 +8414,131 @@ export default function Admissions() {
   const handleCreateQualifiedAdmissions = async () => {
     try {
       setMpsCreatingAdmissions(true);
-      const response = await createQualifiedMpsAdmissions();
-      toast.success(
-        response?.data?.message || "Qualified admissions created successfully"
-      );
+      const response = await createQualifiedMpsAdmissions(mpsAdmissionShift);
+      const summary = response?.data;
+      const created = Number(summary?.created) || 0;
+      const alreadyExists = Number(summary?.already_exists) || 0;
+      const skipped = Number(summary?.skipped) || 0;
+
       await Promise.all([loadData(), loadMpsReport()]);
+
+      if (created > 0) {
+        toast.success(
+          `${created} ${mpsAdmissionShift.replace("_", " ")} admission(s) created. Opening Admissions Pipeline.`
+        );
+        setTab("pipeline");
+      } else if (alreadyExists > 0) {
+        toast.info(
+          `No new admissions created. ${alreadyExists} application(s) already exist in the Admissions Pipeline.`
+        );
+        setTab("pipeline");
+      } else {
+        toast.error(
+          `No admissions created. ${skipped} student(s) were skipped. Import matching registrations and apply the cutoff for ${mpsAdmissionShift.replace("_", " ")}.`
+        );
+      }
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Failed to create qualified admissions"));
     } finally {
       setMpsCreatingAdmissions(false);
+    }
+  };
+
+  const handleApplyMpsCutoff = async () => {
+    const cutoff = Number(mpsCutoff);
+    const minimumMarks = Number(mpsMinimumMarks);
+    const maximumMarks = Number(mpsMaximumMarks);
+    const maximumQualifyingMarks = Number(mpsMaximumQualifyingMarks);
+    const manualShift = mpsCutoffShift !== "BEST";
+    if (
+      !Number.isFinite(cutoff) || cutoff < 0 || cutoff > 100 ||
+      (manualShift && (
+        !Number.isFinite(minimumMarks) ||
+        !Number.isFinite(maximumMarks) ||
+        !Number.isFinite(maximumQualifyingMarks) ||
+        maximumMarks <= 0 ||
+        minimumMarks < 0 ||
+        minimumMarks > maximumQualifyingMarks ||
+        maximumQualifyingMarks > maximumMarks
+      ))
+    ) {
+      toast.error("Enter a valid From marks, To marks, and Total marks range");
+      return;
+    }
+    try {
+      setMpsApplyingCutoff(true);
+      const response = await applyMpsatCutoff({
+        cutoffPercentage: cutoff,
+        shift: mpsCutoffShift,
+        ...(manualShift
+          ? { minimumMarks, maximumMarks, maximumQualifyingMarks }
+          : {}),
+      });
+      const summary = response?.data;
+      if (summary?.cutoff_percentage != null) {
+        setMpsCutoff(String(summary.cutoff_percentage));
+      }
+      toast.success(
+        `Cutoff applied: ${summary?.qualified ?? 0} qualified, ${summary?.not_qualified ?? 0} not qualified`
+      );
+      await Promise.all([loadMpsReport(), loadMpsResults()]);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to apply MPSAT cutoff"));
+    } finally {
+      setMpsApplyingCutoff(false);
+    }
+  };
+
+  const selectedShiftDefaultMaximum = (shift) => (
+    shift === "SHIFT_1"
+      ? MPS_SHIFT_1_MAXIMUM_MARKS
+      : MPS_SHIFT_2_MAXIMUM_MARKS
+  );
+
+  const handleMpsCutoffShiftChange = (shift) => {
+    setMpsCutoffShift(shift);
+    if (shift === "BEST") {
+      setMpsMinimumMarks("");
+      setMpsMaximumMarks("");
+      setMpsMaximumQualifyingMarks("");
+      return;
+    }
+    const maximum = selectedShiftDefaultMaximum(shift);
+    setMpsMaximumMarks(String(maximum));
+    setMpsMaximumQualifyingMarks(String(maximum));
+    setMpsMinimumMarks(String(Number(
+      ((Number(mpsCutoff) || 0) * maximum / 100).toFixed(2)
+    )));
+  };
+
+  const handleMpsCutoffChange = (value) => {
+    setMpsCutoff(value);
+    const maximum = Number(mpsMaximumMarks);
+    if (mpsCutoffShift !== "BEST" && value !== "" && Number.isFinite(maximum) && maximum > 0) {
+      const minimum = Number(((Number(value) * maximum) / 100).toFixed(2));
+      setMpsMinimumMarks(String(minimum));
+    }
+  };
+
+  const handleMpsMinimumMarksChange = (value) => {
+    setMpsMinimumMarks(value);
+    const maximum = Number(mpsMaximumMarks);
+    if (value !== "" && Number.isFinite(maximum) && maximum > 0) {
+      const cutoff = Number(((Number(value) / maximum) * 100).toFixed(2));
+      setMpsCutoff(String(cutoff));
+    }
+  };
+
+  const handleMpsMaximumMarksChange = (value) => {
+    setMpsMaximumMarks(value);
+    const minimum = Number(mpsMinimumMarks);
+    if (value !== "" && Number.isFinite(minimum) && Number(value) > 0) {
+      const cutoff = Number(((minimum / Number(value)) * 100).toFixed(2));
+      setMpsCutoff(String(cutoff));
+    }
+    const upper = Number(mpsMaximumQualifyingMarks);
+    if (!Number.isFinite(upper) || upper > Number(value)) {
+      setMpsMaximumQualifyingMarks(value);
     }
   };
 
@@ -8376,10 +8556,53 @@ export default function Admissions() {
     };
   }, [mpsReportRows]);
 
+  const mpsShift1Rows = useMemo(
+    () => mpsResultRows.filter((row) => row.shift1_total != null),
+    [mpsResultRows]
+  );
+  const mpsShift2Rows = useMemo(
+    () => mpsResultRows.filter((row) => row.shift2_total != null),
+    [mpsResultRows]
+  );
+  const getMpsShiftEvaluation = (row, shift) => {
+    const total = Number(shift === "shift1" ? row.shift1_total : row.shift2_total);
+    const maximum = shift === "shift1"
+      ? MPS_SHIFT_1_MAXIMUM_MARKS
+      : MPS_SHIFT_2_MAXIMUM_MARKS;
+    const cutoff = Number(row.qualifying_percentage);
+    const upperMark = Number(row.qualifying_maximum_marks);
+    const percentage = Number.isFinite(total) ? (total / maximum) * 100 : null;
+
+    if (percentage == null) return { percentage: null, status: "PENDING", qualified: false };
+    if (!Number.isFinite(cutoff) || cutoff <= 0) {
+      return { percentage, status: "PENDING", qualified: false };
+    }
+    return {
+      percentage,
+      status: percentage >= cutoff && (!Number.isFinite(upperMark) || total <= upperMark)
+        ? "QUALIFIED"
+        : "NOT_QUALIFIED",
+      qualified: percentage >= cutoff && (!Number.isFinite(upperMark) || total <= upperMark),
+    };
+  };
+
+  const mpsRangeMatchCount = useMemo(() => {
+    if (mpsCutoffShift === "BEST") return null;
+    const from = Number(mpsMinimumMarks);
+    const to = Number(mpsMaximumQualifyingMarks);
+    const totalKey = mpsCutoffShift === "SHIFT_1" ? "shift1_total" : "shift2_total";
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return 0;
+    return mpsResultRows.filter((row) => {
+      const score = Number(row[totalKey]);
+      return Number.isFinite(score) && score >= from && score <= to;
+    }).length;
+  }, [mpsCutoffShift, mpsMinimumMarks, mpsMaximumQualifyingMarks, mpsResultRows]);
+
   const mpsReportColumns = useMemo(() => {
     const columns = [
       { header: "Admission No", accessor: (row) => row.admission_no },
       { header: "Student Name", accessor: (row) => row.student_name },
+      { header: "Qualified Shift", accessor: (row) => row.qualified_shift || "" },
       { header: "Percentage", accessor: (row) => row.percentage },
     ];
 
@@ -8448,7 +8671,7 @@ export default function Admissions() {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.text(
-      `${mpsLoadedReportType.toUpperCase()} REPORT  |  SESSION ${sessionYear}  |  80% AND ABOVE`,
+      `${mpsLoadedReportType.toUpperCase()} REPORT  |  SESSION ${sessionYear}  |  ${mpsCutoff}% AND ABOVE`,
       14,
       18
     );
@@ -9211,7 +9434,7 @@ const activeAdmissions = useMemo(
                 <div>
                   <CardTitle className="text-base">MPSAT Management</CardTitle>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Import registrations and results, create qualified admissions, and view 80%+ reports.
+                    Import registrations and results, apply a cutoff, then create qualified admissions.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -9223,6 +9446,15 @@ const activeAdmissions = useMemo(
                     label="MPSAT Results"
                     onFile={handleMpsResultImport}
                   />
+                  <Select value={mpsAdmissionShift} onValueChange={setMpsAdmissionShift}>
+                    <SelectTrigger className="h-8 w-28 text-xs">
+                      <SelectValue placeholder="Admission shift" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SHIFT_1">Shift 1</SelectItem>
+                      <SelectItem value="SHIFT_2">Shift 2</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button
                     size="sm"
                     onClick={handleCreateQualifiedAdmissions}
@@ -9233,11 +9465,170 @@ const activeAdmissions = useMemo(
                     ) : (
                       <CheckCircle2 className="h-4 w-4" />
                     )}
-                    Create Qualified Admissions
+                    Create {mpsAdmissionShift === "SHIFT_1" ? "Shift 1" : "Shift 2"} Admissions
                   </Button>
                 </div>
               </div>
             </CardHeader>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Imported MPSAT Results</CardTitle>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Review every imported score before continuing to the cutoff step.
+                  </p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={loadMpsResults} disabled={mpsResultsLoading}>
+                  <RefreshCw className={mpsResultsLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+                  Refresh
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-5 p-4 xl:grid-cols-2">
+              {[
+                { title: "Shift 1 Results", rows: mpsShift1Rows, key: "shift1" },
+                { title: "Shift 2 Results", rows: mpsShift2Rows, key: "shift2" },
+              ].map((shift) => (
+                <div key={shift.key} className="overflow-x-auto rounded-lg border">
+                  <div className="border-b bg-muted/40 px-3 py-2 text-sm font-medium">
+                    {shift.title} ({shift.rows.length})
+                  </div>
+                  <Table>
+                    <TableHeader><TableRow>
+                      <TableHead>Application No.</TableHead><TableHead>Roll No.</TableHead>
+                      <TableHead>Exam Shift</TableHead><TableHead>Candidate</TableHead>
+                      {shift.key === "shift1" ? (
+                        <>
+                          <TableHead>Physics</TableHead><TableHead>Math</TableHead>
+                          <TableHead>Chemistry</TableHead><TableHead>Biology</TableHead>
+                        </>
+                      ) : (
+                        <>
+                          <TableHead>Physics</TableHead><TableHead>Math</TableHead>
+                          <TableHead>Chemistry</TableHead><TableHead>Biology</TableHead>
+                          <TableHead>English</TableHead><TableHead>Economics</TableHead>
+                          <TableHead>SST</TableHead>
+                        </>
+                      )}
+                      <TableHead>Total</TableHead><TableHead>Percentage</TableHead>
+                    </TableRow></TableHeader>
+                    <TableBody>
+                      {mpsResultsLoading && <TableRow><TableCell colSpan={shift.key === "shift1" ? 10 : 13} className="py-7 text-center"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></TableCell></TableRow>}
+                      {!mpsResultsLoading && shift.rows.length === 0 && <TableRow><TableCell colSpan={shift.key === "shift1" ? 10 : 13} className="py-7 text-center text-muted-foreground">No {shift.title.toLowerCase()} data imported.</TableCell></TableRow>}
+                      {!mpsResultsLoading && shift.rows.map((row) => {
+                        const evaluation = getMpsShiftEvaluation(row, shift.key);
+                        return (
+                          <TableRow key={`${shift.key}-${row.id ?? row.application_no}`}>
+                            <TableCell className="font-mono text-xs">{row.application_no}</TableCell>
+                            <TableCell className="font-mono text-xs">{row.roll_no || "-"}</TableCell>
+                            <TableCell>{row.shift || "-"}</TableCell>
+                            <TableCell>{row.candidate_name || "-"}</TableCell>
+                            {shift.key === "shift1" ? (
+                              <>
+                                <TableCell>{row.shift1_physics ?? "-"}</TableCell>
+                                <TableCell>{row.shift1_math ?? "-"}</TableCell>
+                                <TableCell>{row.shift1_chem ?? "-"}</TableCell>
+                                <TableCell>{row.shift1_bio ?? "-"}</TableCell>
+                              </>
+                            ) : (
+                              <>
+                                <TableCell>{row.shift2_phy ?? "-"}</TableCell>
+                                <TableCell>{row.shift2_math ?? "-"}</TableCell>
+                                <TableCell>{row.shift2_chem ?? "-"}</TableCell>
+                                <TableCell>{row.shift2_bio ?? "-"}</TableCell>
+                                <TableCell>{row.shift2_eng ?? "-"}</TableCell>
+                                <TableCell>{row.shift2_eco ?? "-"}</TableCell>
+                                <TableCell>{row.shift2_sst ?? "-"}</TableCell>
+                              </>
+                            )}
+                            <TableCell>{shift.key === "shift1" ? row.shift1_total : row.shift2_total}</TableCell>
+                            <TableCell>{evaluation.percentage == null ? "-" : `${evaluation.percentage.toFixed(2)}%`}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Next Step: Apply Cutoff</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Select a shift and enter a score range. The cutoff percentage is calculated automatically from From marks ÷ Total marks.
+              </p>
+            </CardHeader>
+            <CardContent className="flex flex-wrap items-center gap-2">
+              <Label htmlFor="mps-cutoff">Cutoff percentage</Label>
+              <Input
+                id="mps-cutoff"
+                className="h-9 w-24"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={mpsCutoff}
+                onChange={(event) => handleMpsCutoffChange(event.target.value)}
+              />
+              <Select value={mpsCutoffShift} onValueChange={handleMpsCutoffShiftChange}>
+                <SelectTrigger className="h-9 w-36">
+                  <SelectValue placeholder="Select shift" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BEST">Best of Both</SelectItem>
+                  <SelectItem value="SHIFT_1">Shift 1</SelectItem>
+                  <SelectItem value="SHIFT_2">Shift 2</SelectItem>
+                </SelectContent>
+              </Select>
+              {mpsCutoffShift !== "BEST" && (
+                <>
+                  <Label htmlFor="mps-minimum-marks">From marks</Label>
+                  <Input
+                    id="mps-minimum-marks"
+                    className="h-9 w-24"
+                    type="number"
+                    min="0"
+                    value={mpsMinimumMarks}
+                    onChange={(event) => handleMpsMinimumMarksChange(event.target.value)}
+                  />
+                  <Label htmlFor="mps-maximum-qualifying-marks">To marks</Label>
+                  <Input
+                    id="mps-maximum-qualifying-marks"
+                    className="h-9 w-24"
+                    type="number"
+                    min={mpsMinimumMarks || 0}
+                    value={mpsMaximumQualifyingMarks}
+                    onChange={(event) => setMpsMaximumQualifyingMarks(event.target.value)}
+                  />
+                  <Label htmlFor="mps-maximum-marks">Total marks</Label>
+                  <Input
+                    id="mps-maximum-marks"
+                    className="h-9 w-24"
+                    type="number"
+                    min="1"
+                    value={mpsMaximumMarks}
+                    onChange={(event) => handleMpsMaximumMarksChange(event.target.value)}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    Matching students: {mpsRangeMatchCount}
+                  </span>
+                </>
+              )}
+              {mpsCutoffShift === "BEST" && (
+                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  Shift 1: {Number(((Number(mpsCutoff) || 0) * 4).toFixed(2))} / 400 · Shift 2: {Number(((Number(mpsCutoff) || 0) * 7).toFixed(2))} / 700
+                </div>
+              )}
+              <Button onClick={handleApplyMpsCutoff} disabled={mpsApplyingCutoff}>
+                {mpsApplyingCutoff && <Loader2 className="h-4 w-4 animate-spin" />}
+                Apply Cutoff and Show Qualified Results
+              </Button>
+            </CardContent>
           </Card>
 
           <Card className="overflow-hidden border-border/60 shadow-sm">
@@ -9248,10 +9639,10 @@ const activeAdmissions = useMemo(
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
                       <TrendingUp className="h-4 w-4" />
                     </span>
-                    MPSAT Premium Report
+                    Qualified MPSAT Results
                   </CardTitle>
                   <p className="mt-1 pl-11 text-xs text-muted-foreground">
-                    Performance analytics for students scoring 80% and above
+                    Only students qualified by the applied cutoff are shown below.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -9311,7 +9702,9 @@ const activeAdmissions = useMemo(
                     Qualified Students
                   </div>
                   <div className="mt-1 text-2xl font-semibold">{mpsReportStats.total}</div>
-                  <div className="text-xs text-muted-foreground">80% and above</div>
+                  <div className="text-xs text-muted-foreground">
+                    {mpsCutoff}% cutoff and above
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-info/15 bg-gradient-to-br from-info/15 via-background to-background p-5 shadow-sm">
                   <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -9336,6 +9729,7 @@ const activeAdmissions = useMemo(
                   <TableRow>
                     <TableHead>Admission No.</TableHead>
                     <TableHead>Student Name</TableHead>
+                    <TableHead>Qualified Shift</TableHead>
                     <TableHead>Percentage</TableHead>
                     {mpsLoadedReportType === "website" && (
                       <>
@@ -9380,6 +9774,7 @@ const activeAdmissions = useMemo(
                     <TableRow key={`${row.admission_no}-${row.student_name}`}>
                       <TableCell className="font-mono text-xs">{row.admission_no}</TableCell>
                       <TableCell className="font-medium">{row.student_name}</TableCell>
+                      <TableCell>{row.qualified_shift || "-"}</TableCell>
                       <TableCell>{row.percentage ?? "-"}%</TableCell>
                       {mpsLoadedReportType === "website" && (
                         <>

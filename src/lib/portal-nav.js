@@ -220,6 +220,8 @@ const teacherGroups = [
     items: [
       { title: "Dashboard", url: "/teacher/dashboard", icon: LayoutDashboard },
       { title: "My Classes", url: "/teacher/classes", icon: School },
+      { title: "Gallery", url: "/teacher/gallery", icon: Images },
+
       {
         title: "Take Attendance",
         url: "/teacher/attendance",

@@ -883,16 +883,84 @@ export const importMpsRegistrations = (file) =>
 export const importMpsetResults = (file) =>
   uploadMpsExcel("/mpset-results/import-excel", file);
 
-export const createQualifiedMpsAdmissions = () =>
-  api.post("/mpset-results/create-qualified-admissions", null, {
+export const getMpsetResults = async () => {
+  const limit = 500;
+  const request = (skip) => api.get("/mpset-results", {
     headers: getHeaders(),
+    params: { session: getSessionYear(), skip, limit },
   });
 
-export const getMpsetReport = (reportType) =>
+  const firstResponse = await request(0);
+  const firstPage = firstResponse?.data ?? {};
+  const total = Number(firstPage.total) || 0;
+  const remainingPages = [];
+  for (let skip = limit; skip < total; skip += limit) {
+    remainingPages.push(request(skip));
+  }
+  const responses = await Promise.all(remainingPages);
+
+  return {
+    ...firstResponse,
+    data: {
+      ...firstPage,
+      data: [
+        ...(firstPage.data ?? []),
+        ...responses.flatMap((response) => response?.data?.data ?? []),
+      ],
+    },
+  };
+};
+
+export const applyMpsatCutoff = ({
+  cutoffPercentage,
+  minimumMarks,
+  maximumMarks,
+  maximumQualifyingMarks,
+  shift = "BEST",
+  applicationNumbers,
+}) =>
+  api.post(
+    "/mpsat-qualification/apply-cutoff",
+    {
+      ...(cutoffPercentage !== "" && cutoffPercentage != null
+        ? { cutoff_percentage: Number(cutoffPercentage) }
+        : {}),
+      ...(minimumMarks !== "" && minimumMarks != null
+        ? { minimum_marks: Number(minimumMarks) }
+        : {}),
+      ...(maximumMarks !== "" && maximumMarks != null
+        ? { maximum_marks: Number(maximumMarks) }
+        : {}),
+      ...(maximumQualifyingMarks !== "" && maximumQualifyingMarks != null
+        ? { maximum_qualifying_marks: Number(maximumQualifyingMarks) }
+        : {}),
+      session: getSessionYear(),
+      shift,
+      ...(applicationNumbers?.length
+        ? { application_numbers: applicationNumbers }
+        : {}),
+    },
+    { headers: getHeaders() },
+  );
+
+export const getQualifiedMpsStudents = () =>
+  api.get("/mpsat-qualification/qualified-students", {
+    headers: getHeaders(),
+    params: { session: getSessionYear() },
+  });
+
+export const createQualifiedMpsAdmissions = (shift = "BEST") =>
+  api.post("/mpset-results/create-qualified-admissions", null, {
+    headers: getHeaders(),
+    params: { session: getSessionYear(), shift },
+  });
+
+export const getMpsetReport = (reportType, shift = "BEST") =>
   api.get(`/mpset-reports/${reportType}`, {
     headers: getHeaders(),
     params: {
       session: getSessionYear(),
+      shift,
     },
   });
 
@@ -931,6 +999,9 @@ export default {
   importAdmissions,
   importMpsRegistrations,
   importMpsetResults,
+  getMpsetResults,
+  applyMpsatCutoff,
+  getQualifiedMpsStudents,
   createQualifiedMpsAdmissions,
   getMpsetReport,
 };

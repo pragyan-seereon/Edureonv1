@@ -126,13 +126,14 @@ export const deleteAlbum = async (albumUuid) => {
 // ---------------- Student and Parent APIs ----------------
 
 // List published portal albums (audience filtered by logged-in user's role)
-export const getPortalAlbums = async ({ page = 1, pageSize = 20, category, search } = {}) => {
+export const getPortalAlbums = async ({ page = 1, pageSize = 20, category, search, sessionYear } = {}) => {
   const { data } = await api.get("/gallery/portal/albums", {
     params: {
       page,
       page_size: pageSize,
       ...(category ? { category } : {}),
       ...(search ? { search } : {}),
+      ...(sessionYear ? { session_year: sessionYear } : {}),
     },
     headers: getHeaders(),
   });
@@ -147,4 +148,58 @@ export const getPortalAlbumDetail = async (albumUuid) => {
   });
 
   return data.data;
+};
+
+export const updateAlbumMedia = async (albumUuid, mediaUuid, payload) => {
+  const { data } = await api.patch(`/gallery/albums/${albumUuid}/media/${mediaUuid}`, payload, {
+    headers: getHeaders(),
+  });
+  return data;
+};
+
+// ---------------- Teacher Gallery APIs ----------------
+export const getTeacherAlbums = async (sessionYear) => {
+  const { data } = await api.get("/gallery/teacher/albums", {
+    headers: getHeaders(),
+    params: sessionYear ? { session_year: sessionYear } : undefined,
+  });
+  return data.data;
+};
+
+export const getTeacherAlbumDetail = async (albumUuid) => {
+  const { data } = await api.get(`/gallery/teacher/albums/${albumUuid}`, { headers: getHeaders() });
+  return data.data;
+};
+
+export const createTeacherAlbum = async (formData) => {
+  const { data } = await api.post("/gallery/teacher/albums", formData, {
+    headers: { ...getHeaders(), "Content-Type": undefined },
+  });
+  return data;
+};
+
+export const updateTeacherAlbum = async (albumUuid, payload) => {
+  const { data } = await api.patch(`/gallery/teacher/albums/${albumUuid}`, payload, { headers: getHeaders() });
+  return data;
+};
+
+export const publishTeacherAlbum = async (albumUuid) => {
+  const { data } = await api.patch(`/gallery/teacher/albums/${albumUuid}/publish`, null, { headers: getHeaders() });
+  return data;
+};
+
+export const addTeacherAlbumMedia = async (albumUuid, files) => {
+  const formData = new FormData();
+  [...files].forEach((file) => formData.append("files", file));
+  const { data } = await api.post(`/gallery/teacher/albums/${albumUuid}/media`, formData, {
+    headers: { ...getHeaders(), "Content-Type": undefined },
+  });
+  return data;
+};
+
+export const getTeacherMediaBlob = async (mediaUuid) => {
+  const { data } = await api.get(`/gallery/teacher/media/${mediaUuid}/content`, {
+    headers: getHeaders(), responseType: "blob",
+  });
+  return data;
 };

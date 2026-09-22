@@ -3335,9 +3335,11 @@ const addAssignment = async (data) => {
     await createFeeAssignment(payload);
     toast.success("Assignment Created");
     fetchAssignments();
+    return true;
   } catch (e) {
     console.error(e.response?.data);
     toast.error(getErrorMessage(e, "Failed to create assignment"));
+    return false;
   }
 };
 
@@ -4483,9 +4485,13 @@ function AssignmentPanel({ students, classes: classList = [], sections: sectionL
     [students, clsUuid, secUuid, q, selectedClassName, sectionsForSelectedClass]
   );
 const structuresForTarget = useMemo(() => {
+  if (target === "Students" && picked.size) {
+    const selectedClasses = new Set(students.filter((s) => picked.has(s.student_uuid)).map((s) => s.class_name));
+    return structures.filter((s) => selectedClasses.size === 1 && selectedClasses.has(s.class_name));
+  }
   if (!clsUuid) return structures; // no class picked yet — show everything
   return structures.filter((s) => s.class_name === selectedClassName);
-}, [structures, clsUuid, selectedClassName]);
+}, [structures, clsUuid, selectedClassName, target, picked, students]);
   const struct = structures.find((s) => s.fee_structure_uuid === structureId);
 
   const adhocAnnual = adhoc.reduce((a, c) => {
@@ -4537,32 +4543,40 @@ const assignmentStudentRows = useMemo(() => {
   const updRow = (i, patch) => setAdhoc((a) => a.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
   const rmRow = (i) => setAdhoc((a) => a.filter((_, idx) => idx !== i));
 
-  const doAssign = () => {
+  const doAssign = async () => {
     if (mode === "Structure" && !structureId) { toast.error("Pick a structure"); return; }
     if (mode === "Components" && adhoc.length === 0) { toast.error("Add at least one component"); return; }
     if (target === "Class" && !clsUuid) { toast.error("Pick a class"); return; }
     if (target === "Students" && picked.size === 0) { toast.error("Pick students"); return; }
+    const selectedStudents = target === "Students"
+      ? students.filter((student) => picked.has(student.student_uuid))
+      : filtered;
+    if (selectedStudents.length === 0) { toast.error("No students match this assignment."); return; }
+    if (mode === "Structure" && selectedStudents.some((student) =>
+      student.class_name !== structures.find((structure) => structure.fee_structure_uuid === structureId)?.class_name
+    )) {
+      toast.error("Choose a fee structure for the selected students' class.");
+      return;
+    }
     if (mode === "Components" && adhoc.some((c) => !c.component_uuid)) {
       toast.error("Custom (non-library) components aren't supported yet — pick each component from \"Quick add from library\" instead of \"Custom\".");
       return;
     }
-  onAdd({
+    const created = await onAdd({
       mode,
       structure_uuid: mode === "Structure" ? structureId : "",
       custom_components: mode === "Components" ? adhoc : undefined,
       target,
       classes: clsUuid ? [clsUuid] : [],
       sections: secUuid ? [secUuid] : [],
-      student_uuids:
-        target === "Students"
-          ? Array.from(picked)
-          : filtered.map((s) => s.student_uuid), // Class/Section: send exactly the matched students shown in the confirmation list
+      student_uuids: selectedStudents.map((student) => student.student_uuid),
       discount_uuids: [], // discounts are applied at collection time, not at assignment time
       academic_year: ACADEMIC_YEAR,
     });
-      setPicked(new Set());
-      setAdhoc([]);
-    };
+    if (!created) return;
+    setPicked(new Set());
+    setAdhoc([]);
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -7772,8 +7786,8 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
         role_name: txn.role_name || txn.person_type || "â€”",
         is_other_collection: txn.source_type === "OTHER_COLLECTION",
         source_uuid: txn.source_uuid,
-        class_name: students.find(s => s.student_uuid === txn.student_uuid)?.class_name || "—",
-        section: students.find(s => s.student_uuid === txn.student_uuid)?.section_name || "",
+        class_name: "—",
+        section: "",
         amount: txn.total_amount || 0,
         mode: txn.payment_mode || "—",
         components: txn.details?.map(d => ({ 
@@ -7814,10 +7828,21 @@ function TransactionsPanel({ students, structures, paidMonths, onCancel, onRefun
     fetchPayments();
   }, []);
 
-  const rows = ledger.filter((r) => 
-    (kind === "All" || r.kind === kind) && 
-    (!q || r.student_name?.toLowerCase().includes(q.toLowerCase()) || r.id?.toLowerCase().includes(q.toLowerCase()))
+  const studentsByUUID = useMemo(
+    () => new Map(students.map((student) => [student.student_uuid, student])),
+    [students]
   );
+  const rows = ledger.filter((r) =>
+    (kind === "All" || r.kind === kind) &&
+    (!q || r.student_name?.toLowerCase().includes(q.toLowerCase()) || r.id?.toLowerCase().includes(q.toLowerCase()))
+  ).map((row) => {
+    const student = studentsByUUID.get(row.student_uuid);
+    return {
+      ...row,
+      class_name: student?.class_name || row.class_name,
+      section: student?.section_name || row.section,
+    };
+  });
 
   const grouped = useMemo(() => {
     const map = new Map();

@@ -11,6 +11,7 @@ const normalizeAlbum = (album) => ({
   title: album.title,
   category: album.category,
   date: album.album_date,
+  endDate: album.end_date,
   description: album.description,
   mediaCount: album.media_count ?? 0,
   cover: album.cover_media?.file_url,
@@ -53,6 +54,8 @@ export default function Gallery() {
           uuid: media.media_uuid,
           url: media.file_url,
           video: isVideo(media),
+          title: media.title,
+          description: media.description,
         })),
       });
     } catch (err) {

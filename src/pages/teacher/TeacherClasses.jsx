@@ -15,6 +15,7 @@ import {
   ClipboardList,
   Crown,
   Loader2,
+  Images,
 } from "lucide-react";
 import { getTeacherClasses } from "../../api/teacherclass"; 
 
@@ -84,13 +85,18 @@ export default function TeacherClasses() {
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between">
                   <div>
-                    <CardTitle className="font-display text-xl">
-                      Class {c.class_name}
-                    </CardTitle>
-                    <CardDescription>
-                      {c.subject_name} · Room {c.room_label}
-                    </CardDescription>
-                  </div>
+  <CardTitle className="font-display text-xl">
+    Class {c.class_name}
+    {c.section_name && (
+      <span className="text-muted-foreground font-normal">
+        {" "}- {c.section_name}
+      </span>
+    )}
+  </CardTitle>
+  <CardDescription>
+    {c.subject_name} · Room {c.room_label}
+  </CardDescription>
+</div>
                   {c.is_class_teacher && (
                     <Badge className="bg-warning/15 text-warning border-warning/20">
                       <Crown className="h-3 w-3" />
@@ -132,9 +138,20 @@ export default function TeacherClasses() {
                     </Link>
                   </Button>
                   <Button variant="outline" size="sm" asChild>
-                    <Link to="/teacher/assignments">
+                    <Link
+                      to={`/teacher/assignments?classUuid=${encodeURIComponent(c.class_uuid)}&sectionUuid=${encodeURIComponent(c.section_uuid)}&classFilter=${encodeURIComponent(c.section_name ? `${c.class_name}-${c.section_name}` : c.class_name)}`}
+                    >
                       <ClipboardList className="h-4 w-4" />
                       Assignments
+                    </Link>
+                  </Button>
+
+                    <Button variant="outline" size="sm" asChild>
+                    <Link
+                      to={`/teacher/gallery?classUuid=${encodeURIComponent(c.class_uuid)}&sectionUuid=${encodeURIComponent(c.section_uuid)}`}
+                    >
+                      <Images className="h-4 w-4" />
+                      Gallery
                     </Link>
                   </Button>
                 </div>

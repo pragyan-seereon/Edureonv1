@@ -9,6 +9,7 @@ function buildRows(students) {
     "#": i + 1,
     "Student No": s.student_no,
     "Student Name": s.student_name,
+    Gender: s.gender ?? s.student_gender ?? "Not specified",
     Status: STATUS_LABEL[s.attendance_status] ?? s.attendance_status,
   }));
 }
@@ -40,11 +41,12 @@ export function exportAttendancePDF(report) {
 
   autoTable(doc, {
     startY: 40,
-    head: [["#", "Student No", "Student Name", "Status"]],
+    head: [["#", "Student No", "Student Name", "Gender", "Status"]],
     body: students.map((s, i) => [
       i + 1,
       s.student_no,
       s.student_name,
+      s.gender ?? s.student_gender ?? "Not specified",
       STATUS_LABEL[s.attendance_status] ?? s.attendance_status,
     ]),
   });
@@ -56,6 +58,9 @@ export function exportAttendanceExcel(report) {
   const { section_name, attendance_date, students } = report;
 
   const ws = XLSX.utils.json_to_sheet(buildRows(students));
+  // Enable Excel's filter controls for all columns, including Gender. This
+  // lets teachers select only Male or Female rows after opening the export.
+  ws["!autofilter"] = { ref: `A1:E${Math.max(students.length + 1, 2)}` };
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Attendance");
   XLSX.writeFile(wb, `attendance_${section_name}_${attendance_date}.xlsx`);

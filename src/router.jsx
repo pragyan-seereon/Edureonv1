@@ -88,6 +88,7 @@ import TeacherExams from "./pages/teacher/TeacherExams";
 import TeacherTimetable from "./pages/teacher/Teachertimetable";
 import TeacherNotices from "./pages/teacher/TeacherNotices";
 import TeacherDocuments from "./pages/teacher/TeacherDocuments";
+import TeacherGallery from "./pages/teacher/TeacherGallery";
 import AdminGallery from "./pages/admin/AdminGallery";
 
 const router = createBrowserRouter([
@@ -149,6 +150,7 @@ const router = createBrowserRouter([
       //teacher routes
       { path: "/teacher/dashboard", element: <TeacherDashboard /> },
       { path: "/teacher/classes", element: <TeacherClasses /> },
+      { path: "/teacher/gallery", element: <TeacherGallery /> },
       { path: "/teacher/attendance", element: <TeacherAttendance /> },
       { path: "/teacher/leave", element: <TeacherLeave /> },
       { path: "/teacher/lesson-plans", element: <TeacherLessonPlans /> },

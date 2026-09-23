@@ -1537,7 +1537,7 @@ function CreateAlbumModal({ form, setForm, onClose, onSubmit, isSaving, isEditin
         {/* Modal Header */}
         <div className="flex items-center justify-between px-7 pb-3 pt-6">
           <h2 className="text-[21px] font-semibold tracking-[-0.02em] text-[#0a1d32]">
-            {isEditing ? "Update Gallery & Study Material" : "Add Gallery & Study Material"}
+            {isEditing ? "Update Gallery" : "Add Gallery"}
           </h2>
 
           <button

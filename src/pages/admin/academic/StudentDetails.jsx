@@ -1,3 +1,4 @@
+import { Checkbox } from "../../../components/ui/checkbox";
 
 // import {
 //   getStudentByUuid,
@@ -2041,12 +2042,26 @@ export default function StudentDetails() {
           </SectionCard>
 
           <SectionCard icon={<HeartPulse className="h-4 w-4" />} title="Services">
+            <div className="flex flex-wrap gap-x-6 gap-y-3 border-b pb-4 mb-4">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={!!s.is_rte_student} disabled aria-label="RTE Student" />
+                RTE Student
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={!!s.employee_discount} disabled aria-label="EMP Discount" />
+                EMP Discount
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={!!s.sibling_discount} disabled aria-label="Sibling Discount" />
+                Sibling Discount
+              </label>
+            </div>
             <DetailGrid rows={[
-              ["Fee Status", s.fee_status],
-              ["Transport Required", s.transport_required ? "Yes" : "No"],
-              ["Mode of Conveyance", s.mode_of_conveyance],
+              ["Fooding Required", s.fooding_required ? "Yes" : "No"],
               ["Hostel Required", s.hostel_required ? "Yes" : "No"],
-              ["RTE Student", s.is_rte_student ? "Yes" : "No"],
+              ["Transport Required", s.transport_required ? "Yes" : "No"],
+              ["Fee Status", s.fee_status],
+              ["Mode of Conveyance", s.mode_of_conveyance],
             ]} />
           </SectionCard>
 

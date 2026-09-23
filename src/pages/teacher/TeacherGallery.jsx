@@ -151,7 +151,7 @@ export default function TeacherGallery() {
         if (form.endDate) data.append("end_date", form.endDate);
         data.append("session_year", sessionYear);
         data.append("class_audiences", JSON.stringify([{ class_uuid: classUuid, section_uuids: [sectionUuid] }]));
-        data.append("audience", "TEACHER");
+        data.append("audience", "STUDENTS");
         data.append("description", form.description);
         data.append("is_published", String(publish));
         form.files.forEach((file) => data.append("files", file));

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Images, X, CalendarDays, FolderOpen, Video, Loader2 } from "lucide-react";
 import { getPortalAlbumDetail, getPortalAlbums } from "../../api/gallery";
+import useSessionStore from "../../store/sessionStore";
 
 const isVideo = (media) =>
   String(media?.media_type || "").toUpperCase() === "VIDEO" ||
@@ -20,6 +21,7 @@ const normalizeAlbum = (album) => ({
 });
 
 export default function Gallery() {
+  const sessionYear = useSessionStore((state) => state.sessionYear);
   const [albums, setAlbums] = useState([]);
   const [selectedAlbum, setSelectedAlbum] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,7 +32,7 @@ export default function Gallery() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await getPortalAlbums({ page: 1, pageSize: 100 });
+      const response = await getPortalAlbums({ page: 1, pageSize: 100, sessionYear });
       setAlbums((response.data || []).map(normalizeAlbum));
     } catch (err) {
       setError(err?.response?.data?.detail || "Couldn't load the gallery. Please try again.");
@@ -39,13 +41,13 @@ export default function Gallery() {
     }
   };
 
-  useEffect(() => { loadAlbums(); }, []);
+  useEffect(() => { loadAlbums(); }, [sessionYear]);
 
   const openAlbum = async (album) => {
     setSelectedAlbum(album);
     setIsAlbumLoading(true);
     try {
-      const detail = await getPortalAlbumDetail(album.uuid);
+      const detail = await getPortalAlbumDetail(album.uuid, sessionYear);
       setSelectedAlbum({
         ...album,
         title: detail.title || album.title,

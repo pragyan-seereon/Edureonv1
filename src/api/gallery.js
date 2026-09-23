@@ -142,8 +142,9 @@ export const getPortalAlbums = async ({ page = 1, pageSize = 20, category, searc
 };
 
 // Open a portal album (full album + ordered media)
-export const getPortalAlbumDetail = async (albumUuid) => {
+export const getPortalAlbumDetail = async (albumUuid, sessionYear) => {
   const { data } = await api.get(`/gallery/portal/albums/${albumUuid}`, {
+    params: sessionYear ? { session_year: sessionYear } : undefined,
     headers: getHeaders(),
   });
 

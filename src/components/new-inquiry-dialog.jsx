@@ -1,3 +1,4 @@
+import { Checkbox } from "./ui/checkbox";
 ﻿
 
 
@@ -1798,7 +1799,12 @@ const initialState = {
   birth_certificate_no: "",
 
   // Services
+  fooding_required: "No",
+  hostel_required: "No",
+  transport_required: "No",
   is_rte_student: "No",
+  employee_discount: "No",
+  sibling_discount: "No",
 
   // Medical Details
   medical_notes: "",
@@ -1856,7 +1862,12 @@ const TAB_OF_FIELD = {
   pin_code: "guardian",
   birth_certificate_no: "guardian",
 
+  fooding_required: "services",
+  hostel_required: "services",
+  transport_required: "services",
   is_rte_student: "services",
+  employee_discount: "services",
+  sibling_discount: "services",
 
   medical_notes: "medical",
 };
@@ -2299,14 +2310,19 @@ export function NewInquiryDialog({ trigger, onCreate }) {
         session_year: sessionYear,
       }).forEach(([key, value]) => {
         // Boolean fields are appended below in their final boolean form.
-        if (key === "is_rte_student") return;
+        if (["is_rte_student", "employee_discount", "sibling_discount", "fooding_required", "hostel_required", "transport_required"].includes(key)) return;
 
         if (value !== null && value !== undefined && value !== "") {
           formData.append(key, value);
         }
       });
 
+      formData.append("fooding_required", d.fooding_required === "Yes");
+      formData.append("hostel_required", d.hostel_required === "Yes");
+      formData.append("transport_required", d.transport_required === "Yes");
       formData.append("is_rte_student", d.is_rte_student === "Yes");
+      formData.append("employee_discount", d.employee_discount === "Yes");
+      formData.append("sibling_discount", d.sibling_discount === "Yes");
 
       // Documents
       Object.entries(uploaded).forEach(([key, file]) => {
@@ -2970,8 +2986,22 @@ export function NewInquiryDialog({ trigger, onCreate }) {
 
           {/* ── SERVICES ── */}
           <TabsContent value="services" className="grid sm:grid-cols-2 gap-3 mt-4">
-            <F label="RTE Student">
-              <Select value={d.is_rte_student} onValueChange={(v) => set("is_rte_student", v)}>
+            <div className="col-span-full flex flex-wrap gap-x-6 gap-y-3 border-b pb-4">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={d.is_rte_student === "Yes"} onCheckedChange={(checked) => set("is_rte_student", checked === true ? "Yes" : "No")} aria-label="RTE Student" />
+                RTE Student
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={d.employee_discount === "Yes"} onCheckedChange={(checked) => set("employee_discount", checked === true ? "Yes" : "No")} aria-label="EMP Discount" />
+                EMP Discount
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={d.sibling_discount === "Yes"} onCheckedChange={(checked) => set("sibling_discount", checked === true ? "Yes" : "No")} aria-label="Sibling Discount" />
+                Sibling Discount
+              </label>
+            </div>
+            <F label="Fooding Required">
+              <Select value={d.fooding_required} onValueChange={(v) => set("fooding_required", v)}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="No">No</SelectItem>
@@ -2979,6 +3009,25 @@ export function NewInquiryDialog({ trigger, onCreate }) {
                 </SelectContent>
               </Select>
             </F>
+            <F label="Hostel Required">
+              <Select value={d.hostel_required} onValueChange={(v) => set("hostel_required", v)}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="No">No</SelectItem>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                </SelectContent>
+              </Select>
+            </F>
+            <F label="Transport Required">
+              <Select value={d.transport_required} onValueChange={(v) => set("transport_required", v)}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="No">No</SelectItem>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                </SelectContent>
+              </Select>
+            </F>
+
           </TabsContent>
 
           {/* ── MEDICAL ── */}

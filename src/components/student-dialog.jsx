@@ -1,3 +1,4 @@
+import { Checkbox } from "./ui/checkbox";
 
 
 
@@ -586,7 +587,12 @@ function mapRecordToForm(record) {
     pin: record.pin_code || "",
 
     // Services
+    foodingRequired: record.fooding_required ? "Yes" : "No",
+    hostelRequired: record.hostel_required ? "Yes" : "No",
+    transportRequired: record.transport_required ? "Yes" : "No",
     isRteStudent: record.is_rte_student ? "Yes" : "No",
+    employeeDiscount: record.employee_discount ? "Yes" : "No",
+    siblingDiscount: record.sibling_discount ? "Yes" : "No",
 
     // Medical
     medicalNotes: record.medical_notes || "",
@@ -649,7 +655,12 @@ const empty = {
   pin: "",
 
   // services
+  foodingRequired: "No",
+  hostelRequired: "No",
+  transportRequired: "No",
   isRteStudent: "No",
+  employeeDiscount: "No",
+  siblingDiscount: "No",
   // medical
   medicalNotes: "",
 };
@@ -1111,7 +1122,12 @@ export function StudentDialog({ open, onOpenChange, student }) {
 
     try {
       const formData = new FormData();
+      formData.append("fooding_required", f.foodingRequired === "Yes");
+      formData.append("hostel_required", f.hostelRequired === "Yes");
+      formData.append("transport_required", f.transportRequired === "Yes");
       formData.append("is_rte_student", f.isRteStudent === "Yes");
+      formData.append("employee_discount", f.employeeDiscount === "Yes");
+      formData.append("sibling_discount", f.siblingDiscount === "Yes");
       formData.append("current_step", "services");
 
       await updateStudentStep4(uuid, formData, instituteUUID);
@@ -1406,9 +1422,20 @@ export function StudentDialog({ open, onOpenChange, student }) {
         f.birthCertificateNo
       );
 
+      formData.append("fooding_required", f.foodingRequired === "Yes");
+      formData.append("hostel_required", f.hostelRequired === "Yes");
+      formData.append("transport_required", f.transportRequired === "Yes");
       formData.append(
         "is_rte_student",
         f.isRteStudent === "Yes"
+      );
+      formData.append(
+        "employee_discount",
+        f.employeeDiscount === "Yes"
+      );
+      formData.append(
+        "sibling_discount",
+        f.siblingDiscount === "Yes"
       );
 
       formData.append(
@@ -2139,17 +2166,48 @@ export function StudentDialog({ open, onOpenChange, student }) {
 
           {/* ── SERVICES ── */}
           <TabsContent value="services" className="grid sm:grid-cols-2 gap-3 mt-4">
-            <F label="RTE Student">
-              <Select value={f.isRteStudent} onValueChange={(v) => set("isRteStudent", v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+            <div className="col-span-full flex flex-wrap gap-x-6 gap-y-3 border-b pb-4">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={f.isRteStudent === "Yes"} onCheckedChange={(checked) => set("isRteStudent", checked === true ? "Yes" : "No")} aria-label="RTE Student" />
+                RTE Student
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={f.employeeDiscount === "Yes"} onCheckedChange={(checked) => set("employeeDiscount", checked === true ? "Yes" : "No")} aria-label="EMP Discount" />
+                EMP Discount
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={f.siblingDiscount === "Yes"} onCheckedChange={(checked) => set("siblingDiscount", checked === true ? "Yes" : "No")} aria-label="Sibling Discount" />
+                Sibling Discount
+              </label>
+            </div>
+            <F label="Fooding Required">
+              <Select value={f.foodingRequired} onValueChange={(v) => set("foodingRequired", v)}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="No">No</SelectItem>
                   <SelectItem value="Yes">Yes</SelectItem>
                 </SelectContent>
               </Select>
             </F>
+            <F label="Hostel Required">
+              <Select value={f.hostelRequired} onValueChange={(v) => set("hostelRequired", v)}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="No">No</SelectItem>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                </SelectContent>
+              </Select>
+            </F>
+            <F label="Transport Required">
+              <Select value={f.transportRequired} onValueChange={(v) => set("transportRequired", v)}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="No">No</SelectItem>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                </SelectContent>
+              </Select>
+            </F>
+
           </TabsContent>
 
           {/* ── MEDICAL ── */}
@@ -2276,6 +2334,11 @@ export function StudentDialog({ open, onOpenChange, student }) {
 
             <ReviewSection title="Services" onEdit={() => setTab("services")}>
               <ReviewRow label="RTE Student" value={f.isRteStudent} />
+              <ReviewRow label="EMP Discount" value={f.employeeDiscount} />
+              <ReviewRow label="Sibling Discount" value={f.siblingDiscount} />
+              <ReviewRow label="Fooding Required" value={f.foodingRequired} />
+              <ReviewRow label="Hostel Required" value={f.hostelRequired} />
+              <ReviewRow label="Transport Required" value={f.transportRequired} />
             </ReviewSection>
 
             <ReviewSection title="Medical" onEdit={() => setTab("medical")}>

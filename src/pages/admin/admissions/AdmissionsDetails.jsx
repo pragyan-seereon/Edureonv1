@@ -1370,7 +1370,10 @@ function ServicesTab({ inq, id, loadData }) {
     transport_required: inq.transport_required ? "Yes" : "No",
     mode_of_conveyance: inq.mode_of_conveyance || "",
     hostel_required: inq.hostel_required ? "Yes" : "No",
+    fooding_required: inq.fooding_required ? "Yes" : "No",
     is_rte_student: inq.is_rte_student ? "Yes" : "No",
+    employee_discount: inq.employee_discount ? "Yes" : "No",
+    sibling_discount: inq.sibling_discount ? "Yes" : "No",
   });
 
   useEffect(() => {
@@ -1379,7 +1382,10 @@ function ServicesTab({ inq, id, loadData }) {
       transport_required: inq.transport_required ? "Yes" : "No",
       mode_of_conveyance: inq.mode_of_conveyance || "",
       hostel_required: inq.hostel_required ? "Yes" : "No",
+      fooding_required: inq.fooding_required ? "Yes" : "No",
       is_rte_student: inq.is_rte_student ? "Yes" : "No",
+      employee_discount: inq.employee_discount ? "Yes" : "No",
+      sibling_discount: inq.sibling_discount ? "Yes" : "No",
     });
   }, [inq]);
 
@@ -1410,7 +1416,10 @@ function ServicesTab({ inq, id, loadData }) {
         transport_required: d.transport_required === "Yes",
         mode_of_conveyance: d.mode_of_conveyance,
         hostel_required: d.hostel_required === "Yes",
+        fooding_required: d.fooding_required === "Yes",
         is_rte_student: d.is_rte_student === "Yes",
+        employee_discount: d.employee_discount === "Yes",
+        sibling_discount: d.sibling_discount === "Yes",
       });
       await loadData();
       toast.success("Services saved");
@@ -1423,13 +1432,35 @@ function ServicesTab({ inq, id, loadData }) {
     <Card>
       <CardContent className="p-5 space-y-4">
         <div className="grid md:grid-cols-2 gap-4">
-          <F label="Fee Status" error={fieldErrors.fee_status}>
-            <Select value={d.fee_status} onValueChange={(v) => set("fee_status", v)}>
-              <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+            <div className="col-span-full flex flex-wrap gap-x-6 gap-y-3 border-b pb-4">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={d.is_rte_student === "Yes"} onCheckedChange={(checked) => set("is_rte_student", checked === true ? "Yes" : "No")} aria-label="RTE Student" />
+                RTE Student
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={d.employee_discount === "Yes"} onCheckedChange={(checked) => set("employee_discount", checked === true ? "Yes" : "No")} aria-label="EMP Discount" />
+                EMP Discount
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={d.sibling_discount === "Yes"} onCheckedChange={(checked) => set("sibling_discount", checked === true ? "Yes" : "No")} aria-label="Sibling Discount" />
+                Sibling Discount
+              </label>
+            </div>
+          <F label="Fooding Required">
+            <Select value={d.fooding_required} onValueChange={(v) => set("fooding_required", v)}>
+              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="PAID">Paid</SelectItem>
-                <SelectItem value="PARTIAL">Partial</SelectItem>
-                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="No">No</SelectItem>
+                <SelectItem value="Yes">Yes</SelectItem>
+              </SelectContent>
+            </Select>
+          </F>
+          <F label="Hostel Required">
+            <Select value={d.hostel_required} onValueChange={(v) => set("hostel_required", v)}>
+              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="No">No</SelectItem>
+                <SelectItem value="Yes">Yes</SelectItem>
               </SelectContent>
             </Select>
           </F>
@@ -1439,6 +1470,17 @@ function ServicesTab({ inq, id, loadData }) {
               <SelectContent>
                 <SelectItem value="No">No</SelectItem>
                 <SelectItem value="Yes">Yes</SelectItem>
+              </SelectContent>
+            </Select>
+          </F>
+
+          <F label="Fee Status" error={fieldErrors.fee_status}>
+            <Select value={d.fee_status} onValueChange={(v) => set("fee_status", v)}>
+              <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="PAID">Paid</SelectItem>
+                <SelectItem value="PARTIAL">Partial</SelectItem>
+                <SelectItem value="PENDING">Pending</SelectItem>
               </SelectContent>
             </Select>
           </F>
@@ -1453,24 +1495,7 @@ function ServicesTab({ inq, id, loadData }) {
               </SelectContent>
             </Select>
           </F>
-          <F label="Hostel Required">
-            <Select value={d.hostel_required} onValueChange={(v) => set("hostel_required", v)}>
-              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="No">No</SelectItem>
-                <SelectItem value="Yes">Yes</SelectItem>
-              </SelectContent>
-            </Select>
-          </F>
-          <F label="RTE Student">
-            <Select value={d.is_rte_student} onValueChange={(v) => set("is_rte_student", v)}>
-              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="No">No</SelectItem>
-                <SelectItem value="Yes">Yes</SelectItem>
-              </SelectContent>
-            </Select>
-          </F>
+
         </div>
         <div className="flex justify-end pt-2 border-t">
           <Button onClick={saveAll} className="gap-1.5">

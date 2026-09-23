@@ -119,14 +119,18 @@ export const getAssignmentDetail = async (assignmentUuid) => {
 };
 
 
-// Update assignment (multipart/form-data)
 // Update assignment (application/json)
-export const updateAssignment = async (assignmentUuid, payload) => {
+export const updateAssignment = async (uuid, payload, { isDraft = false } = {}) => {
   const { instituteUUID } = useAuthStore.getState();
 
-  const { data } = await api.put(`/assignments/${assignmentUuid}`, payload, {
-    params: { institute_uuid: instituteUUID },
-    headers: getHeaders(), // JSON content-type is axios's default, no override needed
+  const { data } = await api.put(`/assignments`, payload, {
+    params: {
+      ...(isDraft ? { draft_uuid: uuid } : { assignment_uuid: uuid }),
+    },
+    headers: {
+      ...getHeaders(),
+      "X-Institute-UUID": instituteUUID,
+    },
   });
 
   return data;

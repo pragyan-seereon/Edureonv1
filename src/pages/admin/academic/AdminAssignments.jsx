@@ -73,7 +73,7 @@ import {
   getClasses,
   getStudentsBySection,
   saveDraftAssignment,
-  publishAssignment,
+  publishAssignmentDraft,
   getAssignments,
   getAssignmentDetail,
   updateAssignment,
@@ -135,8 +135,9 @@ const emptyForm = {
 // "submitted" number) so the submission rate can be computed the same way
 // the teacher page computes it: (submitted + reviewed) / total.
 const mapAssignment = (a) => ({
-  id: a.assignment_no,
-  uuid: a.assignment_uuid,
+  id: a.assignment_no || a.draft_uuid,
+  uuid: a.assignment_uuid || a.draft_uuid,
+  draftUuid: a.draft_uuid ?? null,
   title: a.title,
   subject: a.subject_name,
   klass: `${a.class_name}-${a.section_name}`,
@@ -474,7 +475,6 @@ export default function AdminAssignments() {
   return Object.keys(errors).length === 0;
 };
 
-  // eslint-disable-next-line no-unused-vars
   const handleSaveDraft = async () => {
     if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
 
@@ -487,8 +487,9 @@ export default function AdminAssignments() {
       const res = await saveDraftAssignment(fd);
       if (res?.success) {
         toast.success(res.message || "Draft saved");
-        setForm((f) => ({ ...f, draftUuid: res.data?.draft_uuid || f.draftUuid }));
-        fetchAssignments();
+        setOpen(false);
+        setForm(emptyForm);
+        await fetchAssignments();
       } else {
         toast.error(res?.message || "Failed to save draft");
       }
@@ -503,16 +504,20 @@ export default function AdminAssignments() {
   const handlePublish = async () => {
     if (!validateAssignmentForm()) return toast.error("Complete the required fields.");
 
-    const fd = buildFormData();
-    fd.append("status", "PUBLISHED");
-
-    // if a draft was already saved, link it so the backend converts/finalizes
-    // it instead of creating a duplicate assignment
-    if (form.draftUuid) fd.append("draft_uuid", form.draftUuid);
-
     setPublishing(true);
     try {
-      const res = await publishAssignment(fd);
+      // Persist the exact form first. Publish then finalises the UUID returned
+      // by the draft endpoint, so files and selected students stay attached to
+      // this assignment rather than being posted a second time.
+      const draftFormData = buildFormData();
+      if (form.draftUuid) draftFormData.append("draft_uuid", form.draftUuid);
+      const draftRes = await saveDraftAssignment(draftFormData);
+      if (!draftRes?.success || !draftRes.data?.draft_uuid) {
+        toast.error(draftRes?.message || "Failed to save draft");
+        return;
+      }
+
+      const res = await publishAssignmentDraft(draftRes.data.draft_uuid);
       if (res?.success) {
         toast.success(res.message || "Published & notified");
         setOpen(false);
@@ -524,6 +529,26 @@ export default function AdminAssignments() {
     } catch (err) {
       console.log(err);
       toast.error(err?.response?.data?.message || "Failed to publish");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handlePublishDraft = async (assignment) => {
+    if (!assignment.draftUuid) return;
+
+    setPublishing(true);
+    try {
+      const res = await publishAssignmentDraft(assignment.draftUuid);
+      if (res?.success) {
+        toast.success(res.message || "Assignment published successfully.");
+        await fetchAssignments();
+      } else {
+        toast.error(res?.message || "Failed to publish assignment");
+      }
+    } catch (err) {
+      console.log(err);
+      toast.error(err?.response?.data?.message || "Failed to publish assignment");
     } finally {
       setPublishing(false);
     }
@@ -1260,15 +1285,15 @@ const handleUpdate = async () => {
                     </Button>
                   ) : (
                     <>
-                      {/* <Button
+                      <Button
                         variant="outline"
                         onClick={handleSaveDraft}
                         disabled={savingDraft || publishing}
                       >
                         {savingDraft ? "Saving..." : "Save Draft"}
-                      </Button> */}
+                      </Button>
                       <Button onClick={handlePublish} disabled={publishing || savingDraft}>
-                        {publishing ? "Publishing..." : "create assignment"}
+                        {publishing ? "Saving & publishing..." : "Create assignment"}
                       </Button>
                     </>
                   )}
@@ -1476,6 +1501,17 @@ const handleUpdate = async () => {
                           </TableCell>
                           <TableCell data-no-row>
                             <div className="flex items-center gap-1">
+                              {a.status === "Draft" && a.draftUuid && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={publishing}
+                                  onClick={() => handlePublishDraft(a)}
+                                >
+                                  {publishing ? "Publishing..." : "Publish"}
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1565,6 +1601,17 @@ const handleUpdate = async () => {
                         data-no-row
                         onClick={(e) => e.stopPropagation()}
                       >
+                        {a.status === "Draft" && a.draftUuid && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            disabled={publishing}
+                            onClick={() => handlePublishDraft(a)}
+                          >
+                            {publishing ? "Publishing..." : "Publish"}
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"

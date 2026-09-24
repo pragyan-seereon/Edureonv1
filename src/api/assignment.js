@@ -70,7 +70,7 @@ export const saveDraftAssignment = async (formData) => {
   return data;
 };
 
-// Publish assignment (multipart/form-data)
+// Legacy form-based publish path, retained for the teacher assignment flow.
 export const publishAssignment = async (formData) => {
   const { instituteUUID } = useAuthStore.getState();
 
@@ -78,7 +78,23 @@ export const publishAssignment = async (formData) => {
     params: { institute_uuid: instituteUUID },
     headers: {
       "X-Institute-UUID": instituteUUID,
-      "Content-Type": undefined, // let the browser set multipart/form-data + boundary
+      "Content-Type": undefined,
+    },
+  });
+
+  return data;
+};
+
+// Publish a previously saved draft. The publish endpoint only needs the
+// draft UUID returned by /assignments/save-draft; sending the form again can
+// create a second assignment instead of finalising the saved draft.
+export const publishAssignmentDraft = async (draftUuid) => {
+  const { instituteUUID } = useAuthStore.getState();
+
+  const { data } = await api.post("/assignments/publish", { draft_uuid: draftUuid }, {
+    params: { institute_uuid: instituteUUID },
+    headers: {
+      "X-Institute-UUID": instituteUUID,
     },
   });
 
@@ -119,14 +135,18 @@ export const getAssignmentDetail = async (assignmentUuid) => {
 };
 
 
-// Update assignment (multipart/form-data)
 // Update assignment (application/json)
-export const updateAssignment = async (assignmentUuid, payload) => {
+export const updateAssignment = async (uuid, payload, { isDraft = false } = {}) => {
   const { instituteUUID } = useAuthStore.getState();
 
-  const { data } = await api.put(`/assignments/${assignmentUuid}`, payload, {
-    params: { institute_uuid: instituteUUID },
-    headers: getHeaders(), // JSON content-type is axios's default, no override needed
+  const { data } = await api.put(`/assignments`, payload, {
+    params: {
+      ...(isDraft ? { draft_uuid: uuid } : { assignment_uuid: uuid }),
+    },
+    headers: {
+      ...getHeaders(),
+      "X-Institute-UUID": instituteUUID,
+    },
   });
 
   return data;

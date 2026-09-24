@@ -79,3 +79,35 @@ export const replyAssignmentInquiry = async (
 
   return data;
 };
+
+// Save (or re-save) a draft — dedicated draft endpoint, never publishes
+export const saveAssignmentDraft = async (formData) => {
+  const { data } = await api.post("/assignments/save-draft", formData, {
+    headers: {
+      ...getHeaders(),
+      // Force axios to drop any default JSON content-type and let the
+      // browser attach the correct multipart boundary for FormData.
+      "Content-Type": undefined,
+    },
+  });
+  return data;
+};
+
+// Pull a saved draft back (used by the review endpoint)
+export const getAssignmentDraftReview = async (draftUuid) => {
+  const { data } = await api.get(
+    `/assignments/drafts/${draftUuid}/review`,
+    { headers: getHeaders() },
+  );
+  return data;
+};
+
+// Publish an existing draft directly from its draft_uuid
+export const publishAssignmentDraft = async (draftUuid) => {
+  const { data } = await api.post(
+    "/assignments/publish",
+    { draft_uuid: draftUuid },
+    { headers: getHeaders() },
+  );
+  return data;
+};

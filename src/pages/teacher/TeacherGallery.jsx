@@ -1,4 +1,6 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   CalendarDays,
   Edit3,
@@ -34,6 +36,9 @@ const normalizeSessionYear = (value) => {
 };
 
 export default function TeacherGallery() {
+  const [searchParams] = useSearchParams();
+  const requestedClassUuid = searchParams.get("classUuid");
+  const requestedSectionUuid = searchParams.get("sectionUuid");
   const sessionYear = useSessionStore((state) => state.sessionYear);
   const [scopes, setScopes] = useState([]);
   const [albums, setAlbums] = useState([]);
@@ -72,10 +77,33 @@ export default function TeacherGallery() {
     [sessionScopes]
   );
 
-  const publishedCount = useMemo(() => albums.filter((album) => album.is_published).length, [albums]);
+  const matchesRequestedClassAndSection = (album) => {
+    if (!requestedClassUuid && !requestedSectionUuid) return true;
+
+    const audiences = album.class_audiences ?? album.audiences ?? [];
+    return audiences.some((audience) => {
+      const classMatches = !requestedClassUuid || audience.class_uuid === requestedClassUuid;
+      const sectionUuids = audience.section_uuids ?? [audience.section_uuid];
+      const sectionMatches =
+        !requestedSectionUuid || sectionUuids.includes(requestedSectionUuid);
+      return classMatches && sectionMatches;
+    });
+  };
+  const filteredAlbums = useMemo(
+    () => albums.filter(matchesRequestedClassAndSection),
+    [albums, requestedClassUuid, requestedSectionUuid],
+  );
+  const filteredSchoolAlbums = useMemo(
+    () => schoolAlbums.filter(matchesRequestedClassAndSection),
+    [schoolAlbums, requestedClassUuid, requestedSectionUuid],
+  );
+  const publishedCount = useMemo(
+    () => filteredAlbums.filter((album) => album.is_published).length,
+    [filteredAlbums],
+  );
   const totalMediaCount = useMemo(
-    () => albums.reduce((sum, album) => sum + (album.media_count || 0), 0),
-    [albums]
+    () => filteredAlbums.reduce((sum, album) => sum + (album.media_count || 0), 0),
+    [filteredAlbums],
   );
 
   const refresh = async () => {
@@ -95,12 +123,24 @@ export default function TeacherGallery() {
   }, []);
 
   useEffect(() => {
-    setClassUuid(classes[0]?.class_uuid || "");
-  }, [sessionYear, classes]);
+    setClassUuid((currentClassUuid) => {
+      if (classes.some((item) => item.class_uuid === requestedClassUuid))
+        return requestedClassUuid;
+      if (classes.some((item) => item.class_uuid === currentClassUuid))
+        return currentClassUuid;
+      return classes[0]?.class_uuid || "";
+    });
+  }, [sessionYear, classes, requestedClassUuid]);
 
   useEffect(() => {
-    setSectionUuid(sections[0]?.section_uuid || "");
-  }, [classUuid, sections]);
+    setSectionUuid((currentSectionUuid) => {
+      if (sections.some((item) => item.section_uuid === requestedSectionUuid))
+        return requestedSectionUuid;
+      if (sections.some((item) => item.section_uuid === currentSectionUuid))
+        return currentSectionUuid;
+      return sections[0]?.section_uuid || "";
+    });
+  }, [classUuid, sections, requestedSectionUuid]);
 
   useEffect(() => {
     setLoading(true);
@@ -234,7 +274,7 @@ export default function TeacherGallery() {
           STATISTICS
       ====================================================== */}
       <div className="mb-7 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <StatCard title="My Albums" value={albums.length} icon={<Images size={22} />} />
+        <StatCard title="My Albums" value={filteredAlbums.length} icon={<Images size={22} />} />
         <StatCard title="Published" value={publishedCount} icon={<Images size={22} />} />
         <StatCard title="Media Files" value={totalMediaCount} icon={<Images size={22} />} />
       </div>
@@ -281,7 +321,7 @@ export default function TeacherGallery() {
         <LoadingState />
       ) : (
         <AlbumGrid
-          albums={albums}
+          albums={filteredAlbums}
           openMenu={openMenu}
           setOpenMenu={setOpenMenu}
           onView={(album) => openPreview(album, false)}
@@ -295,7 +335,7 @@ export default function TeacherGallery() {
       ====================================================== */}
       <div className="mt-9">
         <SectionHeading title="School Gallery" />
-        <AlbumGrid albums={schoolAlbums} onView={(album) => openPreview(album, true)} />
+        <AlbumGrid albums={filteredSchoolAlbums} onView={(album) => openPreview(album, true)} />
       </div>
 
       {/* =====================================================

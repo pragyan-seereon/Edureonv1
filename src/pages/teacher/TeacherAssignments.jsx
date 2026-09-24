@@ -61,6 +61,7 @@ import {
   Link2,
   Pencil,
   Trash2,
+  Eye,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -92,6 +93,8 @@ import {
   gradeSubmission,
   getAssignmentInquiries,
   replyAssignmentInquiry,
+  saveAssignmentDraft,
+  publishAssignmentDraft,
 } from "../../api/teacherassignment";
 import { getTeacherClasses } from "../../api/teacherclass";
 import {
@@ -162,7 +165,8 @@ const ASSIGNMENTS_WORKSPACE_TABS = new Set([
 ]);
 
 const mapAssignment = (a) => ({
-  id: a.assignment_uuid,
+  id: a.assignment_uuid || a.draft_uuid,
+  draftUuid: a.draft_uuid ?? null,
   assignmentNo: a.assignment_no,
   title: a.title,
   subject: a.subject_name,
@@ -368,15 +372,14 @@ export default function TeacherAssignmentsPage() {
   const [openM, setOpenM] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [activeSub, setActiveSub] = useState(null);
+  const [viewingAssignment, setViewingAssignment] = useState(null);
   const [classF, setClassF] = useState(() => targetClassFilter || "All");
   // This page can remount after a mutation. Keep the selected workspace tab
   // outside component state so a material/plan save never falls back to
   // Assignments.
   const [mainTab, setMainTab] = useState(() => {
     const savedTab = sessionStorage.getItem(TEACHER_ASSIGNMENTS_TAB_KEY);
-    return ASSIGNMENTS_WORKSPACE_TABS.has(savedTab)
-      ? savedTab
-      : "assignments";
+    return ASSIGNMENTS_WORKSPACE_TABS.has(savedTab) ? savedTab : "assignments";
   });
   const handleMainTabChange = (tab) => {
     sessionStorage.setItem(TEACHER_ASSIGNMENTS_TAB_KEY, tab);
@@ -480,8 +483,10 @@ export default function TeacherAssignmentsPage() {
 
   // Edit / delete state
   const [editingUuid, setEditingUuid] = useState(null);
+  const [editingIsDraft, setEditingIsDraft] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [publishingId, setPublishingId] = useState(null);
 
   // Loads the teacher's classes/sections/subjects the first time either
   // dialog is opened, then caches them for the rest of the session.
@@ -687,24 +692,56 @@ export default function TeacherAssignmentsPage() {
 
   // eslint-disable-next-line no-unused-vars
 
-   const submitAssignment = async (status, key) => {
+  const submitAssignment = async (status, key) => {
     if (!validateAssignmentForm())
       return toast.error("Complete the required fields.");
 
+    setSubmitStatus(key);
+
+    // "Save" goes to the dedicated draft endpoint and never publishes.
+    if (status === "DRAFT") {
+      const fd = buildFormData();
+      if (formA.draftUuid) fd.append("draft_uuid", formA.draftUuid);
+
+      try {
+        const res = await saveAssignmentDraft(fd);
+        if (res?.success) {
+          toast.success(res.message || "Saved as draft");
+          const draftRow = mapAssignment(res.data);
+          setAllAssignments((rows) => {
+            const exists = rows.some(
+              (r) => r.draftUuid && r.draftUuid === draftRow.draftUuid,
+            );
+            return exists
+              ? rows.map((r) =>
+                  r.draftUuid === draftRow.draftUuid ? draftRow : r,
+                )
+              : [draftRow, ...rows];
+          });
+          setOpenA(false);
+          setFormA(emptyA);
+        } else {
+          toast.error(res?.message || "Failed to save draft");
+        }
+      } catch (err) {
+        console.log(err);
+        toast.error(err?.response?.data?.message || "Failed to save draft");
+      } finally {
+        setSubmitStatus(null);
+      }
+      return;
+    }
+
+    // Review / Publish straight from the form — unchanged behavior.
     const fd = buildFormData();
     fd.append("status", status);
     if (formA.draftUuid) fd.append("draft_uuid", formA.draftUuid);
 
-    setSubmitStatus(key);
     try {
       const res = await publishAssignment(fd);
       if (res?.success) {
         const successMsg =
-          status === "PUBLISHED"
-            ? "Published & notified"
-            : status === "PENDING_REVIEW"
-              ? "Sent for review"
-              : "Saved as draft";
+          status === "PUBLISHED" ? "Published & notified" : "Sent for review";
         toast.success(res.message || successMsg);
         setOpenA(false);
         setFormA(emptyA);
@@ -767,6 +804,7 @@ export default function TeacherAssignmentsPage() {
         existingAttachments: detail.attachments || [],
       });
       setEditingUuid(detail.assignment_uuid || a.id);
+      setEditingIsDraft(!detail.assignment_uuid);
       setFormErrors({});
       setOpenA(true);
     } catch (err) {
@@ -781,12 +819,15 @@ export default function TeacherAssignmentsPage() {
 
     setUpdating(true);
     try {
-      const res = await updateAssignment(editingUuid, buildUpdatePayload());
+      const res = await updateAssignment(editingUuid, buildUpdatePayload(), {
+        isDraft: editingIsDraft,
+      });
       if (res?.success) {
         toast.success(res.message || "Assignment updated");
         setOpenA(false);
         setFormA(emptyA);
         setEditingUuid(null);
+        setEditingIsDraft(false); // <-- ADD THIS LINE
         loadAssignments();
       } else {
         toast.error(res?.message || "Failed to update assignment");
@@ -800,7 +841,6 @@ export default function TeacherAssignmentsPage() {
       setUpdating(false);
     }
   };
-
   const handleDelete = async (a) => {
     if (!canModify(a)) {
       toast.error(
@@ -831,40 +871,67 @@ export default function TeacherAssignmentsPage() {
     }
   };
 
+  // Publishes a saved draft directly from the table, without reopening
+  // the create/edit dialog.
+  const handlePublishDraft = async (a) => {
+    if (!a.draftUuid) return;
+    setPublishingId(a.id);
+    try {
+      const res = await publishAssignmentDraft(a.draftUuid);
+      if (res?.success) {
+        toast.success(res.message || "Assignment published successfully.");
+        loadAssignments();
+      } else {
+        toast.error(res?.message || "Failed to publish assignment");
+      }
+    } catch (err) {
+      console.log(err);
+      toast.error(
+        err?.response?.data?.message || "Failed to publish assignment",
+      );
+    } finally {
+      setPublishingId(null);
+    }
+  };
+
   // ---------------------------------------------------------------------
   // Study materials
   // ---------------------------------------------------------------------
-const emptyM = {
-  title: "",
-  pdfFile: null,
-  externalUrl: "",
-  subject: "",
-  classNum: "",
-  section: "",
-  description: "",
-  existingFileName: "",
-};
+
+  // ---------------------------------------------------------------------
+  // Study materials
+  // ---------------------------------------------------------------------
+  const emptyM = {
+    title: "",
+    pdfFile: null,
+    externalUrl: "",
+    subject: "",
+    classNum: "",
+    section: "",
+    description: "",
+    existingFileName: "",
+  };
   const [formM, setFormM] = useState(emptyM);
   const [formErrorsM, setFormErrorsM] = useState({});
   const [sharingMaterial, setSharingMaterial] = useState(false);
 
   const [editingMaterialUuid, setEditingMaterialUuid] = useState(null);
 
- const handleEditMaterial = (m) => {
-  setFormM({
-    title: m.title || "",
-    pdfFile: null,
-    externalUrl: m.type === "LINK" ? m.url || "" : "",
-    subject: m.subjectUuid || "",
-    classNum: m.classUuid || "",
-    section: m.sectionUuid || "",
-    description: m.description || "",
-    existingFileName: m.type === "PDF" ? m.fileName || "" : "",
-  });
-  setFormErrorsM({});
-  setEditingMaterialUuid(m.id);
-  setOpenM(true);
-};
+  const handleEditMaterial = (m) => {
+    setFormM({
+      title: m.title || "",
+      pdfFile: null,
+      externalUrl: m.type === "LINK" ? m.url || "" : "",
+      subject: m.subjectUuid || "",
+      classNum: m.classUuid || "",
+      section: m.sectionUuid || "",
+      description: m.description || "",
+      existingFileName: m.type === "PDF" ? m.fileName || "" : "",
+    });
+    setFormErrorsM({});
+    setEditingMaterialUuid(m.id);
+    setOpenM(true);
+  };
 
   const handleUpdateMaterial = async () => {
     if (!validateMaterialForm(true))
@@ -892,9 +959,7 @@ const emptyM = {
           const updatedMaterial = detailRes?.data ?? detailRes;
           setMaterials((rows) =>
             rows.map((r) =>
-              r.id === editingMaterialUuid
-                ? mapMaterial(updatedMaterial)
-                : r,
+              r.id === editingMaterialUuid ? mapMaterial(updatedMaterial) : r,
             ),
           );
         } catch (detailErr) {
@@ -1051,6 +1116,7 @@ const emptyM = {
           setFormA(emptyA);
           setFormErrors({});
           setEditingUuid(null);
+          setEditingIsDraft(false);
         }
       }}
     >
@@ -1062,6 +1128,7 @@ const emptyM = {
             setFormA(emptyA);
             setFormErrors({});
             setEditingUuid(null);
+            setEditingIsDraft(false);
           }}
         >
           <Plus className="h-4 w-4" />
@@ -1474,36 +1541,84 @@ const emptyM = {
           </div>
         </div>
 
-               <DialogFooter>
+        <DialogFooter>
           {editingUuid ? (
             <Button onClick={handleUpdate} disabled={updating}>
               {updating ? "Updating..." : "Update Assignment"}
             </Button>
           ) : (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => submitAssignment("DRAFT", "draft")}
-                disabled={submitStatus !== null}
-              >
-                {submitStatus === "draft" ? "Saving..." : "Save"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => submitAssignment("PENDING_REVIEW", "review")}
-                disabled={submitStatus !== null}
-              >
-                {submitStatus === "review" ? "Sending..." : "Review"}
-              </Button>
-              <Button
-                onClick={() => submitAssignment("PUBLISHED", "publish")}
-                disabled={submitStatus !== null}
-              >
-                {submitStatus === "publish" ? "Publishing..." : "Publish"}
-              </Button>
-            </>
+            <Button
+              onClick={() => submitAssignment("DRAFT", "draft")}
+              disabled={submitStatus !== null}
+            >
+              {submitStatus === "draft" ? "Saving..." : "Save"}
+            </Button>
           )}
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  // Shared dialog for sharing study material — rendered inside the
+  // Study Materials tab so the trigger button lives with that tab's content.
+  // Read-only view dialog for a single assignment's data.
+  const ViewAssignmentDialog = (
+    <Dialog
+      open={!!viewingAssignment}
+      onOpenChange={(v) => !v && setViewingAssignment(null)}
+    >
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{viewingAssignment?.title}</DialogTitle>
+          <DialogDescription>
+            {viewingAssignment?.subject} · Class {viewingAssignment?.klass}
+          </DialogDescription>
+        </DialogHeader>
+        {viewingAssignment && (
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              [
+                "Assignment No",
+                viewingAssignment.assignmentNo || viewingAssignment.id,
+              ],
+              ["Type", viewingAssignment.type],
+              ["Subject", viewingAssignment.subject],
+              ["Class", viewingAssignment.klass],
+              ["Assign To", viewingAssignment.assignTo || "—"],
+              ["Status", viewingAssignment.status],
+              ["Assignment Date", viewingAssignment.assignmentDate || "—"],
+              ["Due Date", viewingAssignment.due || "—"],
+              ["Duration", viewingAssignment.duration || "—"],
+              ["Max Marks", viewingAssignment.maxMarks],
+              [
+                "Created By",
+                canModify(viewingAssignment)
+                  ? "You"
+                  : formatRole(viewingAssignment.createdByRole),
+              ],
+              [
+                "Published At",
+                viewingAssignment.publishedAt
+                  ? new Date(viewingAssignment.publishedAt).toLocaleString()
+                  : "—",
+              ],
+              ["Total Students", viewingAssignment.totalStudents ?? 0],
+              ["Submitted", viewingAssignment.submittedCount ?? 0],
+              ["Reviewed", viewingAssignment.reviewedCount ?? 0],
+              ["Pending", viewingAssignment.pendingCount ?? 0],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="space-y-1 rounded-md border border-border/60 p-3"
+              >
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {label}
+                </div>
+                <div className="text-sm font-medium">{value}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -1539,9 +1654,6 @@ const emptyM = {
               ? "Edit study material"
               : "Share study material"}
           </DialogTitle>
-          {/* <DialogDescription>
-            Visible and downloadable for students of the selected class.
-          </DialogDescription> */}
         </DialogHeader>
         <div className="grid gap-3">
           <div className="space-y-1">
@@ -1586,7 +1698,6 @@ const emptyM = {
               <p className="text-xs text-destructive">{formErrorsM.subject}</p>
             )}
           </div>
-          {/* Class + Section — Section only fills in once a Class is chosen */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">
@@ -1659,42 +1770,46 @@ const emptyM = {
           </div>
 
           <div className="space-y-1">
-  <Label className="text-xs">
-    PDF File
-    {!editingMaterialUuid && <span className="text-destructive"> *</span>}
-  </Label>
-  <div className="relative">
-    <Paperclip className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-    <label
-      htmlFor="material-upload"
-      className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
-    >
-      <span
-        className={
-          formM.pdfFile ? "truncate" : "text-muted-foreground"
-        }
-      >
-        {formM.pdfFile ? formM.pdfFile.name : "Attach PDF"}
-      </span>
-    </label>
-    <input
-      id="material-upload"
-      type="file"
-      accept="application/pdf"
-      className="hidden"
-      onChange={(e) => {
-        setFormM({ ...formM, pdfFile: e.target.files?.[0] ?? null });
-        setFormErrorsM((errors) => ({ ...errors, attachment: "" }));
-      }}
-    />
-  </div>
-  {editingMaterialUuid && !formM.pdfFile && formM.existingFileName && (
-    <div className="flex items-center gap-1.5 pl-1 text-xs text-primary truncate">
-      <FileText className="h-3 w-3 shrink-0" />
-      Current: {formM.existingFileName}
-    </div>
-  )}
-</div>
+            <Label className="text-xs">
+              PDF File
+              {!editingMaterialUuid && (
+                <span className="text-destructive"> *</span>
+              )}
+            </Label>
+            <div className="relative">
+              <Paperclip className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <label
+                htmlFor="material-upload"
+                className="flex items-center h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
+              >
+                <span
+                  className={
+                    formM.pdfFile ? "truncate" : "text-muted-foreground"
+                  }
+                >
+                  {formM.pdfFile ? formM.pdfFile.name : "Attach PDF"}
+                </span>
+              </label>
+              <input
+                id="material-upload"
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  setFormM({ ...formM, pdfFile: e.target.files?.[0] ?? null });
+                  setFormErrorsM((errors) => ({ ...errors, attachment: "" }));
+                }}
+              />
+            </div>
+            {editingMaterialUuid &&
+              !formM.pdfFile &&
+              formM.existingFileName && (
+                <div className="flex items-center gap-1.5 pl-1 text-xs text-primary truncate">
+                  <FileText className="h-3 w-3 shrink-0" />
+                  Current: {formM.existingFileName}
+                </div>
+              )}
+          </div>
 
           <div className="space-y-1">
             <Label className="text-xs">
@@ -1749,6 +1864,7 @@ const emptyM = {
       </DialogContent>
     </Dialog>
   );
+
   // ---- Detail view: students of one assignment ----
   if (active) {
     return (
@@ -2247,6 +2363,27 @@ const emptyM = {
                               </TableCell>
                               <TableCell data-no-row>
                                 <div className="flex items-center gap-1">
+                                  {a.status === "Draft" && a.draftUuid && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 px-2 text-xs"
+                                      disabled={publishingId === a.id}
+                                      onClick={() => handlePublishDraft(a)}
+                                    >
+                                      {publishingId === a.id
+                                        ? "Publishing..."
+                                        : "Publish"}
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => setViewingAssignment(a)}
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />
+                                  </Button>
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -2349,6 +2486,27 @@ const emptyM = {
                             data-no-row
                             onClick={(e) => e.stopPropagation()}
                           >
+                            {a.status === "Draft" && a.draftUuid && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs"
+                                disabled={publishingId === a.id}
+                                onClick={() => handlePublishDraft(a)}
+                              >
+                                {publishingId === a.id
+                                  ? "Publishing..."
+                                  : "Publish"}
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => setViewingAssignment(a)}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -2509,6 +2667,7 @@ const emptyM = {
           <LessonPlansTab setMainTab={handleMainTabChange} />
         </TabsContent> */}
       </Tabs>
+      {ViewAssignmentDialog}
     </PageContainer>
   );
 }

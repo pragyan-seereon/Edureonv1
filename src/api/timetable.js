@@ -1,12 +1,15 @@
 
 import api from "./axios";
 import useAuthStore from "../store/authStore";
+import useSessionStore from "../store/sessionStore";
 
 const getHeaders = (academicSession) => {
   const instituteUUID = useAuthStore.getState().instituteUUID;
+  const sessionYear = useSessionStore.getState().sessionYear;
   return {
     "X-Institute-UUID": instituteUUID,
     "institute-uuid": instituteUUID,
+    "session-year": sessionYear,
     ...(academicSession ? { "academic-session": academicSession } : {}),
   };
 };

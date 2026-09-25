@@ -63,6 +63,7 @@ import {
 } from "../../../api/timetable";
 import {
   PaginationBar,
+  // eslint-disable-next-line no-unused-vars
   RowsPerPageSelect,
 } from "../../../components/pagination-controls";
 import { usePagination } from "../../../lib/use-pagination";
@@ -313,6 +314,7 @@ export default function TimeTable() {
     "name",
     "section_name",
   ]);
+  // eslint-disable-next-line no-unused-vars
   const academicYearOptions = useMemo(() => {
   const startYear = new Date().getFullYear() - 3;
   const years = Array.from({ length: 8 }, (_, i) => {
@@ -811,7 +813,7 @@ export default function TimeTable() {
             <div className="min-w-[720px]">
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-slate-50 px-5 py-4 dark:bg-slate-900/40">
                 <h2 className="text-base font-semibold">Timetables</h2>
-                <div className="flex items-center gap-3">
+                {/* <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
                     <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">
                       Academic Year
@@ -830,7 +832,7 @@ export default function TimeTable() {
                     </Select>
                   </div>
                   <RowsPerPageSelect {...timetablePage} />
-                </div>
+                </div> */}
               </div>
               <table className="w-full text-sm">
                 <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wide text-muted-foreground">

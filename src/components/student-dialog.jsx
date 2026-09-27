@@ -585,8 +585,13 @@ function mapRecordToForm(record) {
     state: record.state || "",
     pin: record.pin_code || "",
 
-    // Services
-    isRteStudent: record.is_rte_student ? "Yes" : "No",
+       // Services
+    transportService: record.transport_service || "No",
+    hostelService: record.hostel_service || "No",
+    foodingService: record.fooding_service || "No",
+    employeeDiscount: !!record.employee_discount,
+    siblingDiscount: !!record.sibling_discount,
+    isRteStudent: !!record.is_rte_student,
 
     // Medical
     medicalNotes: record.medical_notes || "",
@@ -648,8 +653,13 @@ const empty = {
   state: "",
   pin: "",
 
-  // services
-  isRteStudent: "No",
+   // services
+  transportService: "No",
+  hostelService: "No",
+  foodingService: "No",
+  employeeDiscount: false,
+  siblingDiscount: false,
+  isRteStudent: false,
   // medical
   medicalNotes: "",
 };
@@ -1105,13 +1115,18 @@ export function StudentDialog({ open, onOpenChange, student }) {
     }
   };
 
-  const saveStep4 = async (uuid, opts = {}) => {
+    const saveStep4 = async (uuid, opts = {}) => {
     const stepErrors = validateServices(f);
     if (!applyValidation(stepErrors, opts.silent)) return false;
 
     try {
       const formData = new FormData();
-      formData.append("is_rte_student", f.isRteStudent === "Yes");
+      formData.append("transport_service", f.transportService);
+      formData.append("hostel_service", f.hostelService);
+      formData.append("fooding_service", f.foodingService);
+      formData.append("employee_discount", f.employeeDiscount);
+      formData.append("sibling_discount", f.siblingDiscount);
+      formData.append("is_rte_student", f.isRteStudent);
       formData.append("current_step", "services");
 
       await updateStudentStep4(uuid, formData, instituteUUID);
@@ -1406,9 +1421,29 @@ export function StudentDialog({ open, onOpenChange, student }) {
         f.birthCertificateNo
       );
 
+           formData.append(
+        "transport_service",
+        f.transportService
+      );
+      formData.append(
+        "hostel_service",
+        f.hostelService
+      );
+      formData.append(
+        "fooding_service",
+        f.foodingService
+      );
+      formData.append(
+        "employee_discount",
+        f.employeeDiscount
+      );
+      formData.append(
+        "sibling_discount",
+        f.siblingDiscount
+      );
       formData.append(
         "is_rte_student",
-        f.isRteStudent === "Yes"
+        f.isRteStudent
       );
 
       formData.append(
@@ -2137,19 +2172,57 @@ export function StudentDialog({ open, onOpenChange, student }) {
 </F>
           </TabsContent>
 
-          {/* ── SERVICES ── */}
-          <TabsContent value="services" className="grid sm:grid-cols-2 gap-3 mt-4">
-            <F label="RTE Student">
-              <Select value={f.isRteStudent} onValueChange={(v) => set("isRteStudent", v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="No">No</SelectItem>
-                  <SelectItem value="Yes">Yes</SelectItem>
-                </SelectContent>
-              </Select>
-            </F>
+                   {/* ── SERVICES ── */}
+          <TabsContent value="services" className="mt-4 space-y-6">
+            {/* Radio-button services */}
+            <div className="grid sm:grid-cols-3 gap-4">
+              {[
+                { key: "transportService", label: "Transport" },
+                { key: "hostelService", label: "Hostel" },
+                { key: "foodingService", label: "Fooding" },
+              ].map((service) => (
+                <div key={service.key} className="space-y-1.5">
+                  <Label className="text-xs font-semibold">{service.label}</Label>
+                  <div className="flex items-center gap-4 pt-1">
+                    {["Yes", "No"].map((opt) => (
+                      <label key={opt} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                        <input
+                          type="radio"
+                          name={service.key}
+                          value={opt}
+                          checked={f[service.key] === opt}
+                          onChange={() => set(service.key, opt)}
+                          className="h-3.5 w-3.5"
+                        />
+                        {opt}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Checkbox options */}
+            <div className="space-y-2 pt-2 border-t">
+              <Label className="text-xs font-semibold text-muted-foreground">Other</Label>
+              <div className="flex flex-wrap gap-6 pt-1">
+                {[
+                  { key: "employeeDiscount", label: "Employee Discount" },
+                  { key: "siblingDiscount", label: "Sibling Discount" },
+                  { key: "isRteStudent", label: "RTE Student" },
+                ].map((item) => (
+                  <label key={item.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!f[item.key]}
+                      onChange={(e) => set(item.key, e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    {item.label}
+                  </label>
+                ))}
+              </div>
+            </div>
           </TabsContent>
 
           {/* ── MEDICAL ── */}
@@ -2274,8 +2347,13 @@ export function StudentDialog({ open, onOpenChange, student }) {
               <ReviewRow label="Permanent Address" value={f.permanentAddress} />
             </ReviewSection>
 
-            <ReviewSection title="Services" onEdit={() => setTab("services")}>
-              <ReviewRow label="RTE Student" value={f.isRteStudent} />
+                        <ReviewSection title="Services" onEdit={() => setTab("services")}>
+              <ReviewRow label="Transport" value={f.transportService} />
+              <ReviewRow label="Hostel" value={f.hostelService} />
+              <ReviewRow label="Fooding" value={f.foodingService} />
+              <ReviewRow label="Employee Discount" value={f.employeeDiscount ? "Yes" : "No"} />
+              <ReviewRow label="Sibling Discount" value={f.siblingDiscount ? "Yes" : "No"} />
+              <ReviewRow label="RTE Student" value={f.isRteStudent ? "Yes" : "No"} />
             </ReviewSection>
 
             <ReviewSection title="Medical" onEdit={() => setTab("medical")}>

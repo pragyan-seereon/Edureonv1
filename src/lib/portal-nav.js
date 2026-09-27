@@ -149,6 +149,7 @@ const superGroups = [
       { title: "Assignments", url: "assignments", icon: ClipboardList },
       { title: "Examinations", url: "/exams", icon: BookOpen },
       { title: "Timetable", url: "/timetable", icon: CalendarDays },
+      { title: "Syllabus", url: "/syllabus", icon: BookOpen }
       
     ],
   },

@@ -29,11 +29,38 @@ export const searchGatePassStudents = async (query = "", page = 1, pageSize = 20
 
 // POST /gate-pass
 // payload: {
-//   pass_type, person_name, student_uuid, class_uuid, section_uuid,
-//   out_time, contact_number, vehicle_number, permission_authority,
-//   accompanied_by, purpose
+//   pass_type, type, person_name, student_uuid, employee_uuid, class_uuid,
+//   section_uuid, department_uuid, out_time, expected_return_at,
+//   contact_number, purpose
 // }
-export const createGatePass = async (payload) => {
+export const createGatePass = async ({
+  pass_type,
+  type,
+  person_name,
+  student_uuid,
+  employee_uuid,
+  class_uuid,
+  section_uuid,
+  department_uuid,
+  out_time,
+  expected_return_at,
+  contact_number,
+  purpose,
+}) => {
+  const payload = {
+    pass_type,
+    type,
+    person_name,
+    student_uuid,
+    employee_uuid,
+    class_uuid,
+    section_uuid,
+    department_uuid,
+    out_time,
+    expected_return_at,
+    contact_number,
+    purpose,
+  };
   const { data } = await api.post("/gate-pass", payload, {
     headers: getHeaders(),
   });

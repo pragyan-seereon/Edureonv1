@@ -90,7 +90,7 @@ import TeacherNotices from "./pages/teacher/TeacherNotices";
 import TeacherDocuments from "./pages/teacher/TeacherDocuments";
 import TeacherGallery from "./pages/teacher/TeacherGallery";
 import AdminGallery from "./pages/admin/AdminGallery";
-
+import Syllabus from "./pages/admin/academic/Syllabus";
 const router = createBrowserRouter([
   {
     element: <AppLayout />,
@@ -182,6 +182,7 @@ const router = createBrowserRouter([
       { path: "/assignments", element: <AdminAssignments /> },
       { path: "/assignments/:id", element: <AssignmentDetail /> },
       { path: "/timetable", element: <TimeTable /> },
+      { path: "/syllabus", element: <Syllabus /> },
       { path: "/subjects/:id", element: <SubjectDetail /> },
       { path: "/classes/:sectionUUID", element: <SectionDetail /> },
       { path: "/sudents/archive", element: <StudentArchive /> },

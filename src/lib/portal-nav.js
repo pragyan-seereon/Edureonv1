@@ -48,7 +48,7 @@ const adminGroups = [
   {
     label: "Overview",
     items: [
-      { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard },
+      { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
       { title: "Analytics", url: "/analytics", icon: BarChart3 },
       { title: "Notifications", url: "/notifications", icon: Bell },
       { title: "Audit Log", url: "/admin/audit", icon: History },
@@ -389,10 +389,20 @@ const parentGroups = [
 // additional institute role appears first in the API's role_codes array.
 export function portalRoleForUser(roleCodes, fallbackRole) {
   const codes = (Array.isArray(roleCodes) ? roleCodes : [])
-    .map((role) => String(role || "").toUpperCase())
+    .map((role) => String(role || "").trim().toUpperCase())
     .filter(Boolean);
 
-  return codes.includes("TEACHER") ? "TEACHER" : codes[0] || fallbackRole || "ADMIN";
+  const canonicalRole = (role) => {
+    const originalCode = String(role || "").trim().toUpperCase();
+    const code = originalCode.replace(/[^A-Z0-9]/g, "");
+    if (code === "COORDINATOR" || code === "COORDINATORROLE") return "COORDINATOR";
+    if (["ACCOUNTHEAD", "ACCOUNTHEADROLE", "ACCOUNTSHEAD", "ACCOUNTSHEADROLE"].includes(code)) {
+      return "ACCOUNTS_HEAD";
+    }
+    return originalCode;
+  };
+
+  return canonicalRole(codes.includes("TEACHER") ? "TEACHER" : codes[0] || fallbackRole || "ADMIN");
 }
 
 export function navForRole(role) {
@@ -414,6 +424,8 @@ export function navForRole(role) {
     case "STAFF":
     case "ADMIN":
     case "ACCOUNTANT":
+    case "ACCOUNTS_HEAD":
+    case "COORDINATOR":
     case "LIBRARIAN":
     case "RECEPTIONIST":
     default:
@@ -556,6 +568,8 @@ export function portalHomeForRole(role) {
     case "STAFF":
     case "ADMIN":
     case "ACCOUNTANT":
+    case "ACCOUNTS_HEAD":
+    case "COORDINATOR":
     case "LIBRARIAN":
     case "RECEPTIONIST":
     case "EMPLOYEE":

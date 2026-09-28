@@ -73,10 +73,7 @@ export default function EmployeesPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalRecords, setTotalRecords] = useState(0);
-  const [pageSize] = useState(10);
+  const totalRecords = employees.length;
 
   // Build department map from backend departments
   const departmentMap = useMemo(() => {
@@ -105,19 +102,30 @@ export default function EmployeesPage() {
   };
 
   // Fetch employees from backend
-  const fetchEmployees = async (params = {}) => {
+  const fetchEmployees = async () => {
     try {
       setLoading(true);
-      const response = await getEmployees({
-        page: currentPage,
-        limit: pageSize,
-        search: q || undefined,
-        staff_type: category !== "all" ? category : undefined,
-        ...params
-      });
-      
+      const allEmployees = [];
+      const seen = new Set();
+      let page = 1;
+      // Follow every API page so counts, filters and the table use all staff.
+      while (true) {
+        const response = await getEmployees({ page, limit: 10 });
+        const records = response.data || [];
+        if (records.length === 0) break;
+        const newRecords = records.filter((employee) => !seen.has(employee.employee_uuid));
+        if (newRecords.length === 0) {
+          throw new Error("Employee API returned a repeated page");
+        }
+        newRecords.forEach((employee) => seen.add(employee.employee_uuid));
+        allEmployees.push(...newRecords);
+        if (response.total_records != null && allEmployees.length >= Number(response.total_records)) break;
+        if (response.total_pages != null && page >= Number(response.total_pages)) break;
+        page += 1;
+      }
+
       // Transform backend response to frontend format
-      const transformedEmployees = (response.data || []).map(emp => ({
+      const transformedEmployees = allEmployees.map(emp => ({
         employee_uuid: emp.employee_uuid,
         employee_no: emp.employee_no,
         id_number: emp.id_number,
@@ -149,8 +157,6 @@ export default function EmployeesPage() {
       }));
       
       setEmployees(transformedEmployees);
-      setTotalPages(response.total_pages || 1);
-      setTotalRecords(response.total_records || transformedEmployees.length);
     } catch (error) {
       console.error("Failed to fetch employees:", error);
       toast.error("Failed to load employees");
@@ -165,8 +171,8 @@ export default function EmployeesPage() {
       const matchesSearch = !q || 
         e.full_name?.toLowerCase().includes(q.toLowerCase()) ||
         e.email?.toLowerCase().includes(q.toLowerCase()) ||
-        e.employee_no?.toLowerCase().includes(q.toLowerCase()) ||
-        e.phone?.includes(q) ||
+        String(e.employee_no ?? "").toLowerCase().includes(q.toLowerCase()) ||
+        String(e.phone ?? "").includes(q) ||
         e.role_name?.toLowerCase().includes(q.toLowerCase());
       
       const matchesDept = !deptFilter || e.department_uuid === deptFilter;
@@ -198,24 +204,10 @@ export default function EmployeesPage() {
     fetchDepartments();
   }, []);
 
-  // Fetch employees when departments are loaded or filters change
+  // Filters run locally against the complete employee list.
   useEffect(() => {
-    if (departments.length > 0 || employees.length === 0) {
-      fetchEmployees();
-    }
-  }, [currentPage, pageSize, departments]);
-
-  // Handle search with debounce
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (currentPage === 1) {
-        fetchEmployees();
-      } else {
-        setCurrentPage(1);
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [q, category, deptFilter]);
+    fetchEmployees();
+  }, [departments, instituteUUID]);
 
   // Handle view employee - shows read-only dialog
   const handleViewEmployee = async (employee) => {
@@ -666,32 +658,9 @@ export default function EmployeesPage() {
             </Table>
           </div>
           
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t">
-              <div className="text-sm text-muted-foreground">
-                Showing {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, totalRecords)} of {totalRecords}
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
+          <div className="px-4 py-3 border-t text-sm text-muted-foreground">
+            Showing {filtered.length} of {totalRecords} employees
+          </div>
         </CardContent>
       </Card>
 

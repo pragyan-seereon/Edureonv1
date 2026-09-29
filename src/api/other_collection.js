@@ -89,3 +89,16 @@ export const cancelOtherCollection = (collectionUUID) =>
       headers: getHeaders(),
     }
   );
+
+// Other collection Excel import and template download.
+export const importOtherCollectionExcel = (formData) =>
+  api.post("/other-collections/import-excel", formData, {
+    headers: { ...getHeaders(), "Content-Type": "multipart/form-data" },
+    skipDataRefresh: true,
+  });
+
+export const downloadOtherCollectionExcelTemplate = () =>
+  api.get("/other-collections/excel-template", {
+    headers: getHeaders(),
+    responseType: "blob",
+  });

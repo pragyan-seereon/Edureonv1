@@ -51,6 +51,7 @@ import {
 } from "../../../api/other_collection";
 import { getAllStudents } from "../../../api/students";
 import { getEmployees } from "../../../api/employee";
+import OtherCollectionExcelUpload from "./OtherCollectionExcelUpload";
 import useSessionStore from "../../../store/sessionStore";
 
 const emptyType = { name: "", description: "" };
@@ -324,7 +325,8 @@ export default function OtherCollection() {
         title="Other Collections"
         description="Record and manage institute-specific payments outside regular fee structures."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <OtherCollectionExcelUpload onImported={loadData} />
             <Button variant="outline" onClick={loadData} disabled={loading}>
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
             </Button>

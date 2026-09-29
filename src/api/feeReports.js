@@ -1,5 +1,10 @@
 import api from "./axios";
 import useAuthStore from "../store/authStore";
+import useSessionStore from "../store/sessionStore";
+
+const getSessionYear = () => {
+  return useSessionStore.getState().sessionYear;
+};
 
 // =====================================================
 // HEADERS
@@ -37,7 +42,7 @@ export const getMonthlyFeeManagementReport = (
 ) => {
   return api.get("/reports/student-fees/monthly-management", {
     headers: getHeaders(),
-    params,
+    params: { ...params, session_year: getSessionYear() },
   });
 };
 

@@ -68,16 +68,9 @@ const studentModel = {
   // ==========================================================
 
   getMyDues: async ({
-    academicYear = null,
     paymentStatus = null,
   } = {}) => {
-    const params = {};
-
-    const year = academicYear || getSessionYear();
-
-    if (year) {
-      params.academic_year = year;
-    }
+    const params = { session_year: getSessionYear() };
 
     if (paymentStatus) {
       params.payment_status = paymentStatus;

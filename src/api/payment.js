@@ -1,5 +1,10 @@
 import api from "./axios";
 import useAuthStore from "../store/authStore";
+import useSessionStore from "../store/sessionStore";
+
+const getSessionYear = () => {
+  return useSessionStore.getState().sessionYear;
+};
 
 const getHeaders = () => {
   const { instituteUUID } = useAuthStore.getState();
@@ -20,7 +25,7 @@ const getHeaders = () => {
 export const getPayments = (params = {}) =>
   api.get("/payments", {
     headers: getHeaders(),
-    params,
+    params: { ...params, session_year: getSessionYear() },
   });
 
 // -----------------------------------------------------
@@ -64,12 +69,11 @@ export const verifyRazorpayPayment = (data) =>
 
 
 export const getAllStudentDues = async ({
-    academic_year = "",
     student_uuid = undefined,
   } = {}) => {
     const response = await api.get("/student-dues", {
       params: {
-        academic_year,
+        session_year: getSessionYear(),
         ...(student_uuid ? { student_uuid } : {}),
       },
       headers: getHeaders(),
@@ -87,6 +91,7 @@ export const getAllStudentDues = async ({
 export const getPaymentDashboard = () =>
   api.get("/payments/dashboard", {
     headers: getHeaders(),
+    params: { session_year: getSessionYear() },
   });
 
 

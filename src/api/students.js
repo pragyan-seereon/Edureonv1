@@ -491,6 +491,11 @@
 
 import api from "./axios";
 import useAuthStore from "../store/authStore";
+import useSessionStore from "../store/sessionStore";
+
+const getSessionYear = () => {
+  return useSessionStore.getState().sessionYear;
+};
 
 const getHeaders = () => {
   const { instituteUUID } = useAuthStore.getState();
@@ -789,10 +794,10 @@ export const getRejectedStudentDocuments = () => {
 // ==========================
 // Get All Students
 // ==========================
-export const getAllStudents = (sessionYear = "") => {
+export const getAllStudents = () => {
   return api.get("/students/", {
     params: {
-      session_year: sessionYear,
+      session_year: getSessionYear(),
     },
     headers: getHeaders(),
   });

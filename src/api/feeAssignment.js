@@ -1,5 +1,10 @@
 import api from "./axios";
 import useAuthStore from "../store/authStore";
+import useSessionStore from "../store/sessionStore";
+
+const getSessionYear = () => {
+  return useSessionStore.getState().sessionYear;
+};
 
 const getHeaders = () => {
   const { instituteUUID } = useAuthStore.getState();
@@ -17,7 +22,7 @@ const getHeaders = () => {
 export const getFeeAssignments = (params = {}) =>
   api.get("/fee-assignments", {
     headers: getHeaders(),
-    params,
+    params: { ...params, session_year: getSessionYear() },
   });
 
 // Get By UUID
@@ -117,6 +122,7 @@ export const importFeeDemandExcel = (file) => {
 export const getAllStudentDiscounts = () =>
   api.get("/fee-assignment-student-discounts", {
     headers: getHeaders(),
+    params: { session_year: getSessionYear() },
   });
 
 // Get By Student UUID
@@ -159,17 +165,13 @@ export const deleteStudentDiscount = (
 
   
 export const getStudentDues = (
-  studentUUID,
-  academicYear = null
+  studentUUID
 ) => {
 
   const params = {
     student_uuid: studentUUID,
+    session_year: getSessionYear(),
   };
-
-  if (academicYear) {
-    params.academic_year = academicYear;
-  }
 
   return api.get(
     "/student-dues",

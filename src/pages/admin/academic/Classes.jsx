@@ -343,10 +343,12 @@ useEffect(() => {
   handleTabChange(tabFromUrl || "subjects");
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [instituteUUID]);
-// useEffect(() => {
-//   handleTabChange("subjects");
-//   // eslint-disable-next-line react-hooks/exhaustive-deps
-// }, []);
+
+useEffect(() => {
+  if (!instituteUUID || activeTab !== "students") return;
+  fetchStudents();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [sessionYear]);
 
   const [secOpen, setSecOpen] = useState(false);
   const [sectionQ, setSectionQ] = useState("");
@@ -1159,8 +1161,9 @@ const performAssign = async () => {
                     await fetchAssignClasses();
                     await fetchAssignSections();
 
-                    setAssignTo((a) => ({
+                      setAssignTo((a) => ({
                       ...a,
+                      session: sessionYear,
                       class: a.class || (stuClass !== "all" ? stuClass : ""),
                       section: "",
                     }));

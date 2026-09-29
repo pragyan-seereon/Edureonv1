@@ -1,5 +1,6 @@
 import api from "./axios";
 import useAuthStore from "../store/authStore";
+import useSessionStore from "../store/sessionStore";
 
 const getHeaders = () => {
   const { instituteUUID } = useAuthStore.getState();
@@ -9,6 +10,10 @@ const getHeaders = () => {
   };
 };
 
+// An explicit argument still wins; otherwise fall back to the active session
+const getSessionYear = (override) =>
+  override ?? useSessionStore.getState().sessionYear;
+
 export const getUnassignedStudents = async (sessionYear) => {
   const { instituteUUID } = useAuthStore.getState();
 
@@ -16,7 +21,7 @@ export const getUnassignedStudents = async (sessionYear) => {
     headers: getHeaders(),
     params: {
       institute_uuid: instituteUUID,
-      session_year: sessionYear,
+      session_year: getSessionYear(sessionYear),
     },
   });
 
@@ -26,7 +31,10 @@ export const getUnassignedStudents = async (sessionYear) => {
 export const assignStudentsToSection = async (payload) => {
   const { data } = await api.post(
     "/sections/assign-students",
-    payload,
+    {
+      ...payload,
+      session_year: getSessionYear(payload?.session_year),
+    },
     {
       headers: getHeaders(),
     }
@@ -34,7 +42,8 @@ export const assignStudentsToSection = async (payload) => {
 
   return data;
 };
-export const getActiveStudents = async () => {
+
+export const getActiveStudents = async (sessionYear) => {
   const { instituteUUID } = useAuthStore.getState();
 
   const { data } = await api.get("/students/", {
@@ -42,6 +51,7 @@ export const getActiveStudents = async () => {
     params: {
       institute_uuid: instituteUUID,
       status: "ACTIVE",
+      session_year: getSessionYear(sessionYear),
     },
   });
 

@@ -50,10 +50,11 @@ import {
   Eye,
   Trophy,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 
 import { toast } from "sonner";
-import { useMemo, useState, useEffect } from "react";
+import { memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { CrudDialog } from "../../../components/crud-dialog";
 import { Input } from "../../../components/ui/input";
 import { Checkbox } from "../../../components/ui/checkbox";
@@ -165,6 +166,15 @@ import {
   RowsPerPageSelect,
 } from "../../../components/pagination-controls";
 
+const apiErrorMessage = (err, fallback) =>
+  err?.response?.data?.detail?.message ||
+  err?.response?.data?.message ||
+  fallback;
+const permissionDeniedMessage = "You do not have permission to perform this action";
+const isPermissionDenied = (err) =>
+  err?.response?.data?.detail?.error_code === "PERMISSION_DENIED" ||
+  apiErrorMessage(err) === permissionDeniedMessage;
+
 export default function Classes() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -172,6 +182,7 @@ export default function Classes() {
   const instituteUUID = useAuthStore((state) => state.instituteUUID);
   const [sections, setSections] = useState([]);
   const [sectionLoading, setSectionLoading] = useState(false);
+  const [sectionLoadError, setSectionLoadError] = useState("");
   const [subjects, setSubjects] = useState([]);
   const mappings = useSubjectMappings();
   const [calendar, setCalendar] = useState([]);
@@ -278,6 +289,7 @@ export default function Classes() {
   const fetchSections = async () => {
     try {
       setSectionLoading(true);
+      setSectionLoadError("");
       const res = await getSections();
       const mapped = (res.data || []).map((s) => ({
         id: s.section_uuid,
@@ -298,7 +310,8 @@ export default function Classes() {
       setSections(mapped);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to fetch sections");
+      if (isPermissionDenied(err)) setSectionLoadError(permissionDeniedMessage);
+      else toast.error(apiErrorMessage(err, "Failed to fetch sections"));
     } finally {
       setSectionLoading(false);
     }
@@ -311,7 +324,7 @@ export default function Classes() {
       fetchClasses();
     } catch (err) {
       console.error(err);
-      toast.error("Delete failed");
+      toast.error(apiErrorMessage(err, "Delete failed"));
     }
   };
 
@@ -480,7 +493,7 @@ const performAssign = async () => {
     fetchStudents();
   } catch (err) {
     console.error(err);
-    toast.error(err?.response?.data?.message || "Failed to assign students");
+    toast.error(apiErrorMessage(err, "Failed to assign students"));
   }
 };
   const submitMapping = (d) => {
@@ -514,7 +527,7 @@ const performAssign = async () => {
       setSubOpen(true);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load subject");
+      toast.error(apiErrorMessage(err, "Failed to load subject"));
     } finally {
       setSubLoading(false);
     }
@@ -629,7 +642,11 @@ const performAssign = async () => {
               </Button>
             </div>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {sectionLoadError ? (
+            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {sectionLoadError}
+            </p>
+          ) : <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {sectionsPage.pageItems.map((s) => {
               const pct = Math.round((s.students / s.cap) * 100);
               return (
@@ -686,7 +703,7 @@ const performAssign = async () => {
         setSecOpen(true);
       } catch (err) {
         console.error(err);
-        toast.error("Failed to load section");
+        toast.error(apiErrorMessage(err, "Failed to load section"));
       } finally {
         setSectionLoading(false);
       }
@@ -704,7 +721,7 @@ const performAssign = async () => {
                                   toast.success("Section deleted");
                                   fetchSections();
                                 } catch (err) {
-                                  toast.error("Delete failed");
+                                  toast.error(apiErrorMessage(err, "Delete failed"));
                                 }
                               }}
                             >
@@ -740,7 +757,7 @@ const performAssign = async () => {
                 </Card>
               );
             })}
-          </div>
+          </div>}
           <PaginationBar {...sectionsPage} itemLabel="sections" showPageSize={false} />
         </TabsContent>
           <TabsContent value="departments" className="mt-4">
@@ -855,7 +872,7 @@ const performAssign = async () => {
                                   toast.success("Subject deleted");
                                   fetchSubjects();
                                 } catch (err) {
-                                  toast.error("Delete failed");
+                                  toast.error(apiErrorMessage(err, "Delete failed"));
                                 }
                               }}
                             >
@@ -1459,7 +1476,7 @@ const performAssign = async () => {
             setCalOpen(false);
           } catch (err) {
             console.error(err);
-            toast.error("Failed to save calendar event");
+            toast.error(apiErrorMessage(err, "Failed to save calendar event"));
             throw err; // let the dialog map field errors too
           }
         }}
@@ -1734,6 +1751,167 @@ function CalendarEventDialog({
 // ================= Classes Tab =================
 // ================= Classes Tab =================
 const STREAMS = ["Science", "Commerce", "Arts", "Vocational", "Other"];
+
+const SubjectOfferingRow = memo(function SubjectOfferingRow({
+  row,
+  index,
+  subjects,
+  onUpdate,
+  onRemove,
+}) {
+  const [updating, setUpdating] = useState(false);
+  const selectedSubject = subjects.find(
+    (subject) => subject.subject_uuid === row.subject_uuid,
+  );
+
+  const updateWithFeedback = (update) => {
+    setUpdating(true);
+    window.requestAnimationFrame(() => {
+      update();
+      window.requestAnimationFrame(() => setUpdating(false));
+    });
+  };
+
+  return (
+    <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+      <div className="space-y-1">
+        <Label className="text-[10px] text-muted-foreground">Subject</Label>
+        <Select
+          value={row.subject_uuid}
+          onValueChange={(value) =>
+            updateWithFeedback(() =>
+              onUpdate(index, { subject_uuid: value, faculty_user_ids: [] }),
+            )
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select Subject" />
+            {updating && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          </SelectTrigger>
+          <SelectContent>
+            {subjects.map((subject) => (
+              <SelectItem key={subject.subject_uuid} value={subject.subject_uuid}>
+                {subject.subject_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[10px] text-muted-foreground">Teacher(s)</Label>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-between font-normal h-9 truncate"
+            >
+              <span className="truncate">
+                {row.faculty_user_ids.length > 0
+                  ? row.faculty_user_ids
+                      .map((id) => selectedSubject?.faculty?.find((faculty) => faculty.employee_uuid === id)?.name)
+                      .filter(Boolean)
+                      .join(", ")
+                  : "Select Faculty"}
+              </span>
+              {updating && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-2" align="start">
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {(selectedSubject?.faculty ?? []).length === 0 && (
+                <div className="text-xs text-muted-foreground py-2 text-center">
+                  No faculty for this subject.
+                </div>
+              )}
+              {selectedSubject?.faculty?.map((faculty) => (
+                <label
+                  key={faculty.employee_uuid}
+                  className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1"
+                >
+                  <Checkbox
+                    checked={row.faculty_user_ids.includes(faculty.employee_uuid)}
+                    onCheckedChange={(checked) => {
+                      const next = checked
+                        ? [...row.faculty_user_ids, faculty.employee_uuid]
+                        : row.faculty_user_ids.filter((id) => id !== faculty.employee_uuid);
+                      updateWithFeedback(() => onUpdate(index, { faculty_user_ids: next }));
+                    }}
+                  />
+                  <span>{faculty.name}</span>
+                </label>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+        {row.faculty_user_ids.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-1">
+            {row.faculty_user_ids.map((id) => {
+              const faculty = selectedSubject?.faculty?.find((item) => item.employee_uuid === id);
+              return (
+                <Badge key={id} variant="secondary" className="text-[10px]">
+                  {faculty ? faculty.name : id}
+                </Badge>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9 text-destructive"
+        onClick={() => updateWithFeedback(() => onRemove(index))}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+});
+
+function ResponsiveDraftField({
+  as = "input",
+  value = "",
+  onDraftChange,
+  className = "",
+  ...props
+}) {
+  const [draft, setDraft] = useState(value);
+  const [updating, setUpdating] = useState(false);
+  const timeoutRef = useRef(null);
+  const Field = as === "textarea" ? Textarea : Input;
+
+  useEffect(() => {
+    setDraft(value ?? "");
+  }, [value]);
+
+  useEffect(() => () => window.clearTimeout(timeoutRef.current), []);
+
+  return (
+    <div className="relative">
+      <Field
+        {...props}
+        value={draft}
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          setDraft(nextValue);
+          onDraftChange(nextValue);
+          setUpdating(true);
+          window.clearTimeout(timeoutRef.current);
+          timeoutRef.current = window.setTimeout(() => setUpdating(false), 220);
+        }}
+        className={`${className} ${updating ? "pr-9" : ""}`}
+      />
+      {updating && (
+        <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+      )}
+    </div>
+  );
+}
+
 function ClassesTab({
   subjects,
   teacherOptions,
@@ -1742,18 +1920,21 @@ function ClassesTab({
 }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [classQ, setClassQ] = useState("");
 
   const fetchClasses = async () => {
     try {
       setLoading(true);
+      setLoadError("");
 
       const res = await getClasses();
 
       setList(res.data || []);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to fetch classes");
+      if (isPermissionDenied(err)) setLoadError(permissionDeniedMessage);
+      else toast.error(apiErrorMessage(err, "Failed to fetch classes"));
     } finally {
       setLoading(false);
     }
@@ -1774,6 +1955,9 @@ function ClassesTab({
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(null);
+  const [editingClassUUID, setEditingClassUUID] = useState(null);
+  const [updatingField, setUpdatingField] = useState(null);
+  const [addingSubject, setAddingSubject] = useState(false);
   const [form, setForm] = useState({
     name: "",
     class_uuid: "",
@@ -1784,8 +1968,10 @@ function ClassesTab({
     present: 0,
     total: 40,
   });
+  const draftValuesRef = useRef({ name: "", streamNotes: "" });
 
   const openNew = () => {
+    setEditingClassUUID(null);
     setEdit(null);
     setForm({
       name: "",
@@ -1794,12 +1980,15 @@ function ClassesTab({
       status: "Active",
       subjectsOffered: [],
     });
+    draftValuesRef.current = { name: "", streamNotes: "" };
     setOpen(true);
   };
 
   const openEdit = async (classUUID) => {
+    if (editingClassUUID) return;
+    setEditingClassUUID(classUUID);
+    setErrors({});
     try {
-      setLoading(true);
       const res = await getClassByUUID(classUUID);
       const c = res.data;
       setEdit(c);
@@ -1815,12 +2004,16 @@ function ClassesTab({
         faculty_user_ids: subject.faculty_employee_uuids || [],    
       })),
       });
+      draftValuesRef.current = {
+        name: c.class_name || "",
+        streamNotes: isKnownStream ? "" : c.stream || "",
+      };
       setOpen(true);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load class");
+      toast.error(apiErrorMessage(err, "Failed to load class"));
     } finally {
-      setLoading(false);
+      setEditingClassUUID(null);
     }
   };
 
@@ -1828,9 +2021,26 @@ function ClassesTab({
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
+  const runFormUpdate = (field, update) => {
+    setUpdatingField(field);
+    window.requestAnimationFrame(() => {
+      update();
+      window.requestAnimationFrame(() => setUpdatingField(null));
+    });
+  };
+
+  const handleAddSubject = () => {
+    setAddingSubject(true);
+    runFormUpdate("add-subject", () => {
+      addSubjectRow();
+      window.requestAnimationFrame(() => setAddingSubject(false));
+    });
+  };
+
   const save = async () => {
+    const submittedForm = { ...form, ...draftValuesRef.current };
     const clientErrors = validateClassForm(
-      form,
+      submittedForm,
       list,
       edit?.class_uuid ?? null,
     );
@@ -1841,12 +2051,12 @@ function ClassesTab({
     setErrors({});
 
     const payload = {
-      class_name: form.name,
-      stream: form.stream,
+      class_name: submittedForm.name,
+      stream: submittedForm.stream,
       custom_stream:
-      form.stream === "Other" ? form.streamNotes.trim() : undefined,
-      status: form.status,
-      subjects: form.subjectsOffered.map((item) => ({
+      submittedForm.stream === "Other" ? submittedForm.streamNotes.trim() : undefined,
+      status: submittedForm.status,
+      subjects: submittedForm.subjectsOffered.map((item) => ({
       subject_uuid: item.subject_uuid,
       faculty_employee_uuids: item.faculty_user_ids,
         })),
@@ -1869,14 +2079,14 @@ function ClassesTab({
       if (Object.keys(apiErrors).length > 0) {
         setErrors(apiErrors);
       } else {
-        toast.error(err?.response?.data?.message || "Failed to save class");
+        toast.error(apiErrorMessage(err, "Failed to save class"));
       }
     } finally {
       setSubmitting(false);
     }
   };
 
-  const addSubjectRow = () =>
+  const addSubjectRow = useCallback(() =>
     setForm((f) => ({
       ...f,
       subjectsOffered: [
@@ -1886,21 +2096,23 @@ function ClassesTab({
           faculty_user_ids: [],
         },
       ],
-    }));
-  const updateSubjectRow = (i, patch) =>
+    })), []);
+  const updateSubjectRow = useCallback((i, patch) =>
     setForm((f) => ({
       ...f,
       subjectsOffered: (f.subjectsOffered ?? []).map((s, idx) =>
         idx === i ? { ...s, ...patch } : s,
       ),
-    }));
-  const removeSubjectRow = (i) =>
+    })), []);
+  const removeSubjectRow = useCallback((i) =>
     setForm((f) => ({
       ...f,
       subjectsOffered: (f.subjectsOffered ?? []).filter((_, idx) => idx !== i),
-    }));
+    })), []);
 
   return (
+    <>
+    {loadError && <p role="alert" className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{loadError}</p>}
     <Card className="border-border/60">
       <CardHeader className="flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
         <div>
@@ -1951,7 +2163,8 @@ function ClassesTab({
                 </TableCell>
                 <TableCell className="text-xs">
                   {c.subjects && c.subjects.length > 0 ? (
-                    c.subjects.map((s, i) => (
+                    <>
+                    {c.subjects.slice(0, 4).map((s, i) => (
                       <div key={i} className="whitespace-nowrap">
                         <span className="font-medium">{s.subject_name}</span>
                         {s.faculty?.length > 0 && (
@@ -1961,7 +2174,11 @@ function ClassesTab({
                           </span>
                         )}
                       </div>
-                    ))
+                    ))}
+                    {c.subjects.length > 4 && (
+                      <div className="text-muted-foreground">+{c.subjects.length - 4} more subjects</div>
+                    )}
+                    </>
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
@@ -1978,9 +2195,14 @@ function ClassesTab({
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7"
+                    disabled={Boolean(editingClassUUID)}
                     onClick={() => openEdit(c.class_uuid)}
                   >
-                    <Pencil className="h-4 w-4" />
+                    {editingClassUUID === c.class_uuid ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Pencil className="h-4 w-4" />
+                    )}
                   </Button>
                   <Button
                     variant="ghost"
@@ -1992,7 +2214,7 @@ function ClassesTab({
                         toast.success("Deleted");
                         fetchClasses();
                       } catch (err) {
-                        toast.error("Delete failed");
+                        toast.error(apiErrorMessage(err, "Delete failed"));
                       }
                     }}
                   >
@@ -2017,19 +2239,13 @@ function ClassesTab({
                 <Label className="text-xs">
                   Class Name <span className="text-destructive">*</span>
                 </Label>
-                <Input
+                <ResponsiveDraftField
                   value={form.name}
-                  onChange={(e) => {
-                    setForm({ ...form, name: e.target.value });
-                    if (errors.name)
-                      setErrors((p) => ({ ...p, name: undefined }));
+                  onDraftChange={(name) => {
+                    draftValuesRef.current.name = name;
                   }}
                   placeholder="e.g. XI"
-                  className={
-                    errors.name
-                      ? "border-destructive focus-visible:ring-destructive"
-                      : ""
-                  }
+                  className={errors.name ? "border-destructive focus-visible:ring-destructive" : ""}
                 />
                 {errors.name && (
                   <p className="text-xs text-destructive flex items-center gap-1">
@@ -2042,10 +2258,15 @@ function ClassesTab({
                 <Label className="text-xs">Stream</Label>
                 <Select
                   value={form.stream}
-                  onValueChange={(v) => setForm({ ...form, stream: v })}
+                  onValueChange={(v) =>
+                    runFormUpdate("stream", () =>
+                      setForm((current) => ({ ...current, stream: v })),
+                    )
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
+                    {updatingField === "stream" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                   </SelectTrigger>
                   <SelectContent>
                     {STREAMS.map((s) => (
@@ -2060,11 +2281,12 @@ function ClassesTab({
             {form.stream === "Other" && (
               <div className="space-y-1.5">
                 <Label className="text-xs">Stream Notes / Details</Label>
-                <Textarea
+                <ResponsiveDraftField
+                  as="textarea"
                   value={form.streamNotes}
-                  onChange={(e) =>
-                    setForm({ ...form, streamNotes: e.target.value })
-                  }
+                  onDraftChange={(streamNotes) => {
+                    draftValuesRef.current.streamNotes = streamNotes;
+                  }}
                   placeholder="Describe the stream / vocational track"
                   rows={2}
                 />
@@ -2072,18 +2294,22 @@ function ClassesTab({
             )}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Subjects Offered</Label>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs">Subjects Offered</Label>
+                </div>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    addSubjectRow();
-                    onRefreshSubjects?.();
-                    onRefreshFaculty?.();
-                  }}
+                  disabled={Boolean(updatingField)}
+                  onClick={handleAddSubject}
                 >
-                  <Plus className="h-3.5 w-3.5" /> Add More Subject
+                  {addingSubject ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="h-3.5 w-3.5" />
+                  )}
+                  Add More Subject
                 </Button>
               </div>
               {(form.subjectsOffered ?? []).length === 0 && (
@@ -2091,147 +2317,30 @@ function ClassesTab({
                   No subjects added yet.
                 </div>
               )}
-              {(form.subjectsOffered ?? []).map((row, i) => {
-                const selectedSubject = subjects.find(
-                  (s) => s.subject_uuid === row.subject_uuid,
-                );
-
-                return (
-                  <div
-                    key={i}
-                    className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end"
-                  >
-                    <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground">
-                        Subject
-                      </Label>
-                      <Select
-                        value={row.subject_uuid}
-                        onValueChange={(value) =>
-                          updateSubjectRow(i, {
-                            subject_uuid: value,
-                            faculty_user_ids: [],
-                          })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Subject" />
-                        </SelectTrigger>
-
-                        <SelectContent>
-                          {subjects.map((subject) => (
-                            <SelectItem
-                              key={subject.subject_uuid}
-                              value={subject.subject_uuid}
-                            >
-                              {subject.subject_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                                      <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground">
-                        Teacher(s)
-                      </Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="w-full justify-start font-normal h-9 truncate"
-                          >
-                           {row.faculty_user_ids.length > 0
-                              ? row.faculty_user_ids
-                                  .map(
-                                    (id) =>
-                                      selectedSubject?.faculty?.find(
-                                        (f) => f.employee_uuid === id,
-                                      )?.name,
-                                  )
-                                  .filter(Boolean)
-                                  .join(", ")
-                              : "Select Faculty"}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-64 p-2" align="start">
-                          <div className="max-h-48 overflow-y-auto space-y-1">
-                            {(selectedSubject?.faculty ?? []).length === 0 && (
-                              <div className="text-xs text-muted-foreground py-2 text-center">
-                                No faculty for this subject.
-                              </div>
-                            )}
-                           {selectedSubject?.faculty?.map((faculty) => (
-                              <label
-                                key={faculty.employee_uuid}
-                                className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1"
-                              >
-                                <Checkbox
-                                  checked={row.faculty_user_ids.includes(
-                                    faculty.employee_uuid,
-                                  )}
-                                  onCheckedChange={(checked) => {
-                                    const next = checked
-                                      ? [
-                                          ...row.faculty_user_ids,
-                                          faculty.employee_uuid,
-                                        ]
-                                      : row.faculty_user_ids.filter(
-                                          (id) => id !== faculty.employee_uuid,
-                                        );
-                                    updateSubjectRow(i, {
-                                      faculty_user_ids: next,
-                                    });
-                                  }}
-                                />
-                                <span>{faculty.name}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                     {row.faculty_user_ids.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pt-1">
-                          {row.faculty_user_ids.map((id) => {
-                            const f = selectedSubject?.faculty?.find(
-                              (x) => x.employee_uuid === id,
-                            );
-                            return (
-                              <Badge
-                                key={id}
-                                variant="secondary"
-                                className="text-[10px]"
-                              >
-                                {f ? f.name : id}
-                              </Badge>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 text-destructive"
-                      onClick={() => removeSubjectRow(i)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                );
-              })}
+              {(form.subjectsOffered ?? []).map((row, i) => (
+                <SubjectOfferingRow
+                  key={i}
+                  row={row}
+                  index={i}
+                  subjects={subjects}
+                  onUpdate={updateSubjectRow}
+                  onRemove={removeSubjectRow}
+                />
+              ))}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Status</Label>
               <Select
                 value={form.status}
-                onValueChange={(v) => setForm({ ...form, status: v })}
+                onValueChange={(v) =>
+                  runFormUpdate("status", () =>
+                    setForm((current) => ({ ...current, status: v })),
+                  )
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
+                  {updatingField === "status" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Active">Active</SelectItem>
@@ -2251,6 +2360,7 @@ function ClassesTab({
         </DialogContent>
       </Dialog>
     </Card>
+    </>
   );
 }
 // ================= Promotions Tab =================
@@ -2466,7 +2576,7 @@ const promote = async () => {
     const detail = err?.response?.data?.detail;
     const msg = Array.isArray(detail)
       ? detail.map((d) => d.msg).join(", ")
-      : detail || err?.response?.data?.message || "Failed to promote students";
+      : detail || apiErrorMessage(err, "Failed to promote students");
     toast.error(msg);
   }
 };
@@ -2912,7 +3022,7 @@ const handleSecNewClassChange = (v) => {
     fetchTransferStudents(secQ); // refresh the list from the server
   } catch (err) {
     console.error(err);
-    toast.error(err?.response?.data?.message || "Failed to move students");
+    toast.error(apiErrorMessage(err, "Failed to move students"));
   }
 };
 
@@ -2975,7 +3085,7 @@ const handleSecNewClassChange = (v) => {
     fetchStreamStudents();
   } catch (err) {
     console.error(err);
-    toast.error(err?.response?.data?.message || "Failed to change stream");
+    toast.error(apiErrorMessage(err, "Failed to change stream"));
   }
 };
 
@@ -3558,7 +3668,7 @@ function DepartmentsTab() {
     setOpen(true);
   } catch (err) {
     console.error(err);
-    toast.error("Failed to load department");
+    toast.error(apiErrorMessage(err, "Failed to load department"));
   } finally {
     setLoading(false);
   }
@@ -3596,14 +3706,15 @@ function DepartmentsTab() {
       reset();
     } catch (err) {
       console.error(err);
-      const apiErrors = mapApiErrorToDepartmentFieldErrors(err);
-      if (Object.keys(apiErrors).length > 0) {
-        setErrors(apiErrors);
+      if (isPermissionDenied(err)) {
+        toast.error(permissionDeniedMessage);
       } else {
-        toast.error(
-          err?.response?.data?.message ||
-            (edit ? "Failed to update department" : "Failed to create department"),
-        );
+        const apiErrors = mapApiErrorToDepartmentFieldErrors(err);
+        if (Object.keys(apiErrors).length > 0) {
+          setErrors(apiErrors);
+        } else {
+          toast.error(apiErrorMessage(err, edit ? "Failed to update department" : "Failed to create department"));
+        }
       }
     } finally {
       setSubmitting(false);
@@ -3617,7 +3728,7 @@ function DepartmentsTab() {
       fetchDepartments();
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.message || "Failed to delete department");
+      toast.error(apiErrorMessage(err, "Failed to delete department"));
     }
   };
 
@@ -3893,7 +4004,7 @@ function DepartmentsTab() {
 //       if (Object.keys(apiErrors).length > 0) {
 //         setErrors(apiErrors);
 //       } else {
-//         toast.error(err?.response?.data?.message || "Failed to save section");
+//         toast.error(apiErrorMessage(err, "Failed to save section"));
 //       }
 //     } finally {
 //       setSubmitting(false);
@@ -4343,11 +4454,15 @@ function SectionDialog({ open, onOpenChange, edit, sections = [], onSubmit }) {
     try {
       await onSubmit(payload);
     } catch (err) {
-      const apiErrors = mapApiErrorToSectionFieldErrors(err);
-      if (Object.keys(apiErrors).length > 0) {
-        setErrors(apiErrors);
+      if (isPermissionDenied(err)) {
+        toast.error(permissionDeniedMessage);
       } else {
-        toast.error(err?.response?.data?.message || "Failed to save section");
+        const apiErrors = mapApiErrorToSectionFieldErrors(err);
+        if (Object.keys(apiErrors).length > 0) {
+          setErrors(apiErrors);
+        } else {
+          toast.error(apiErrorMessage(err, "Failed to save section"));
+        }
       }
     } finally {
       setSubmitting(false);
@@ -4695,9 +4810,7 @@ function SubjectDialog({
       if (Object.keys(apiErrors).length > 0) {
         setErrors(apiErrors);
       } else {
-        toast.error(
-          edit ? "Failed to update subject" : "Failed to create subject",
-        );
+        toast.error(apiErrorMessage(err, edit ? "Failed to update subject" : "Failed to create subject"));
       }
     } finally {
       setSubmitting(false);

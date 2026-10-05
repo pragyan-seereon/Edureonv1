@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Settings,
   Shield,
+  // eslint-disable-next-line no-unused-vars
   BarChart3,
   Bell,
   FileText,
@@ -49,7 +50,7 @@ const adminGroups = [
     label: "Overview",
     items: [
       { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-      { title: "Analytics", url: "/analytics", icon: BarChart3 },
+      // { title: "Analytics", url: "/analytics", icon: BarChart3 },
       { title: "Notifications", url: "/notifications", icon: Bell },
       { title: "Audit Log", url: "/admin/audit", icon: History },
     ],
@@ -59,13 +60,13 @@ const adminGroups = [
     items: [
       { title: "Admissions", url: "/admissions", icon: KanbanSquare },
       { title: "Students", url: "/students", icon: GraduationCap },
+      { title: "Studentarchive", url: "/sudents/archive", icon: Megaphone },
       { title: "Classes & Sections", url: "/classes", icon: School },
       { title: "Timetable", url: "/timetable", icon: CalendarDays },
       { title: "Assignments", url: "/assignments", icon: ClipboardList },
       { title: "Attendance", url: "/attendance", icon: FileText },
       { title: "Examinations", url: "/exams", icon: BookOpen },
       { title: "Notices", url: "/notices", icon: Megaphone },
-      { title: "Studentarchive", url: "/sudents/archive", icon: Megaphone },
 
     ],
   },
@@ -179,7 +180,7 @@ const superGroups = [
     label: "Operations",
     items: [
       { title: "Fees & Finance", url: "/fees", icon: IndianRupee },
-      { title: "Fee Collection", url: "/fee-collection", icon: IndianRupee },
+      // { title: "Fee Collection", url: "/fee-collection", icon: IndianRupee },
       { title: "Other Collection", url: "/other-collections", icon: Receipt },
       // { title: "Expenses", url: "/expenses", icon: Receipt },
       // { title: "Assets", url: "/assets", icon: Boxes },
@@ -573,10 +574,10 @@ export function portalHomeForRole(role) {
     case "LIBRARIAN":
     case "RECEPTIONIST":
     case "EMPLOYEE":
-      return "/admin/dashboard";
+      return "/dashboard";
 
     default:
-      return "/admin/dashboard";
+      return "/dashboard";
   }
 }
 export function portalLabelForRole(role) {

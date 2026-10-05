@@ -96,7 +96,7 @@ const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       // {index: true, element: <Navigate to={defaultPrivatePath} replace />},
-     { path: "/admin/dashboard", element: <DashboardPage /> },
+      { path: "/dashboard", element: <DashboardPage /> },
 
       // auth routes
       { path: "/login", element: <Login />},

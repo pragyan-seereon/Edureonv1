@@ -83,6 +83,15 @@ import {
   deleteBuilding 
 } from "../../../api/infrastructure";
 import { toast } from "sonner";
+
+const apiErrorMessage = (err, fallback) =>
+  err?.response?.data?.detail?.message ||
+  err?.response?.data?.message ||
+  fallback;
+const permissionDeniedMessage = "You do not have permission to perform this action";
+const isPermissionDenied = (err) =>
+  err?.response?.data?.detail?.error_code === "PERMISSION_DENIED" ||
+  apiErrorMessage(err) === permissionDeniedMessage;
 import {
   validateUniqueName,
   validateUniqueCode,
@@ -286,6 +295,7 @@ function FacilitiesMultiSelect({ value, onChange, options }) {
 }
 export default function Infrastructure() {
   const [tree, setTree] = useState([]);
+  const [loadError, setLoadError] = useState("");
   const [expanded, setExpanded] = useState(new Set(["Main Academic Block"]));
   const [q, setQ] = useState("");
 
@@ -349,7 +359,7 @@ export default function Infrastructure() {
     await fetchInfrastructure();
   } catch (err) {
     console.error(err);
-    toast.error(err.response?.data?.message || "Failed to delete building");
+    toast.error(apiErrorMessage(err, "Failed to delete building"));
   }
 };
   // const deleteBlock = (b, bl) => {
@@ -369,7 +379,7 @@ export default function Infrastructure() {
     await fetchInfrastructure();
   } catch (err) {
     console.error(err);
-    toast.error(err.response?.data?.message || "Failed to delete block");
+    toast.error(apiErrorMessage(err, "Failed to delete block"));
   }
 };
   // const deleteFloor = (b, bl, f) => {
@@ -397,7 +407,7 @@ export default function Infrastructure() {
     await fetchInfrastructure();
   } catch (err) {
     console.error(err);
-    toast.error(err.response?.data?.message || "Failed to delete floor");
+    toast.error(apiErrorMessage(err, "Failed to delete floor"));
   }
 };
  const removeRoomFromState = (b, bl, f, no) => {
@@ -443,6 +453,7 @@ export default function Infrastructure() {
 
   const fetchInfrastructure = async () => {
     try {
+      setLoadError("");
       const buildingsRes = await getBuildings();
 
       const buildings = await Promise.all(
@@ -503,7 +514,8 @@ export default function Infrastructure() {
       setTree(buildings);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load infrastructure");
+      if (isPermissionDenied(err)) setLoadError(permissionDeniedMessage);
+      else toast.error(apiErrorMessage(err, "Failed to load infrastructure"));
     }
   };
 
@@ -546,7 +558,7 @@ export default function Infrastructure() {
             setAddBuilding(false);
           } catch (err) {
             toast.error(
-              err.response?.data?.message || "Failed to create building",
+              apiErrorMessage(err, "Failed to create building"),
             );
           }
         }}
@@ -584,7 +596,7 @@ export default function Infrastructure() {
       setEditBuilding(null);
     } catch (err) {
       toast.error(
-        err.response?.data?.message || "Failed to update building"
+        apiErrorMessage(err, "Failed to update building")
       );
     }
   }}
@@ -621,7 +633,7 @@ export default function Infrastructure() {
         console.error(err);
 
         toast.error(
-          err.response?.data?.message || "Failed to create block"
+          apiErrorMessage(err, "Failed to create block")
         );
       }
     }}
@@ -666,8 +678,7 @@ export default function Infrastructure() {
         setEditBlock(null);
       } catch (err) {
         toast.error(
-          err.response?.data?.message ||
-            "Failed to update block"
+          apiErrorMessage(err, "Failed to update block")
         );
       }
     }}
@@ -702,7 +713,7 @@ export default function Infrastructure() {
       } catch (err) {
         console.error(err);
         toast.error(
-          err.response?.data?.message || "Failed to create floor"
+          apiErrorMessage(err, "Failed to create floor")
         );
       }
     }}
@@ -740,7 +751,7 @@ export default function Infrastructure() {
       } catch (err) {
         console.error(err);
         toast.error(
-          err.response?.data?.message || "Failed to update floor"
+          apiErrorMessage(err, "Failed to update floor")
         );
       }
     }}
@@ -781,7 +792,7 @@ export default function Infrastructure() {
               console.error(err);
 
               toast.error(
-                err.response?.data?.message || "Failed to create room",
+                apiErrorMessage(err, "Failed to create room"),
               );
             }
           }}
@@ -822,7 +833,7 @@ export default function Infrastructure() {
         console.error(err);
 
         toast.error(
-          err.response?.data?.message || "Failed to update room"
+          apiErrorMessage(err, "Failed to update room")
         );
       }
     }}
@@ -859,6 +870,12 @@ export default function Infrastructure() {
           tone="warning"
         />
       </div>
+
+      {loadError && (
+        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {loadError}
+        </p>
+      )}
 
       <Tabs defaultValue="tree" className="space-y-4">
         <TabsList>
@@ -1202,7 +1219,7 @@ export default function Infrastructure() {
     } catch (err) {
       console.error(err);
       toast.error(
-        err.response?.data?.message || "Failed to delete room"
+        apiErrorMessage(err, "Failed to delete room")
       );
     }
   }}
